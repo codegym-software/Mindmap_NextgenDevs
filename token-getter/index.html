@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <title>Lấy token Cognito</title>
+</head>
+<body>
+<h2>Đang xử lý đăng nhập...</h2>
+<div id="status"></div>
+
+<script>
+    const code = new URLSearchParams(window.location.search).get("code");
+    if (!code) {
+        document.getElementById("status").textContent = "Không tìm thấy mã code!";
+    } else {
+        fetch("https://ap-southeast-2t30owwizg.auth.ap-southeast-2.amazoncognito.com/oauth2/token", {
+            method: "POST",
+            headers: { "Content-Type": "application/x-www-form-urlencoded" },
+            body: new URLSearchParams({
+                grant_type: "authorization_code",
+                client_id: "53dnt9mp3e5enn7kcsd4mhuksd",
+                client_secret: "YOUR_CLIENT_SECRET",
+                redirect_uri: window.location.origin + window.location.pathname,
+                code
+            })
+        })
+            .then(r => r.json())
+            .then(data => {
+                if (data.access_token) {
+                    localStorage.setItem("access_token", data.access_token);
+                    document.getElementById("status").textContent = "Đăng nhập thành công!";
+                    document.body.insertAdjacentHTML("beforeend",
+                        `<pre>${JSON.stringify(data, null, 2)}</pre>`);
+                } else {
+                    document.getElementById("status").textContent = "Lỗi: " + JSON.stringify(data);
+                }
+            })
+            .catch(err => {
+                document.getElementById("status").textContent = "Kết nối lỗi: " + err;
+            });
+    }
+</script>
+</body>
+</html>

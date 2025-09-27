@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Backend Test Page</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 40px; }
+        input, button { margin: 5px; }
+        .section { margin-bottom: 30px; }
+        #result { white-space: pre-wrap; background: #f5f5f5; padding: 10px; border-radius: 5px; }
+    </style>
+</head>
+<body>
+    <h1>Backend Test Page</h1>
+    <div class="section">
+        <h2>Register</h2>
+        <input type="text" id="regEmail" placeholder="Email">
+        <input type="password" id="regPassword" placeholder="Password">
+        <button onclick="register()">Register</button>
+    </div>
+    <div class="section">
+        <h2>Login</h2>
+        <input type="text" id="loginEmail" placeholder="Email">
+        <input type="password" id="loginPassword" placeholder="Password">
+        <button onclick="login()">Login</button>
+    </div>
+    <div class="section">
+        <h2>Get Mindmaps</h2>
+        <button onclick="getMindmaps()">Fetch Mindmaps</button>
+    </div>
+    <div class="section">
+        <h2>Create Mindmap</h2>
+        <input type="text" id="mindmapName" placeholder="Mindmap Name">
+        <button onclick="createMindmap()">Create Mindmap</button>
+    </div>
+    <div class="section">
+        <h2>Result</h2>
+        <div id="result"></div>
+    </div>
+    <script>
+        const API_BASE = 'http://localhost:8081'; // Đổi port nếu backend chạy ở port khác
+        let jwt = '';
+        function showResult(data, status, raw) {
+            let resultDiv = document.getElementById('result');
+            let html = `<b>Status:</b> ${status}<br>`;
+            if (typeof data === 'string') {
+                html += `<b>Response:</b> ${data}`;
+            } else if (data && Object.keys(data).length > 0) {
+                html += `<b>Response:</b><pre>${JSON.stringify(data, null, 2)}</pre>`;
+            } else {
+                html += `<b>Response:</b> No data returned or empty response.`;
+            }
+            if (raw) {
+                html += `<br><b>Raw:</b> <pre>${raw}</pre>`;
+            }
+            resultDiv.innerHTML = html;
+        }
+        function register() {
+            fetch(API_BASE + '/api/auth/register', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    email: document.getElementById('regEmail').value,
+                    password: document.getElementById('regPassword').value
+                })
+            })
+            .then(async r => {
+                let raw = await r.text();
+                let data;
+                try { data = JSON.parse(raw); } catch { data = raw; }
+                showResult(data, r.status, raw);
+            })
+            .catch(e => showResult(e.toString(), 'error'));
+        }
+        function login() {
+            fetch(API_BASE + '/api/auth/login', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    email: document.getElementById('loginEmail').value,
+                    password: document.getElementById('loginPassword').value
+                })
+            })
+            .then(async r => {
+                let raw = await r.text();
+                let data;
+                try { data = JSON.parse(raw); } catch { data = raw; }
+                showResult(data, r.status, raw);
+                if (data.token) jwt = data.token;
+            })
+            .catch(e => showResult(e.toString(), 'error'));
+        }
+        function getMindmaps() {
+            fetch(API_BASE + '/api/mindmaps', {
+                headers: { 'Authorization': 'Bearer ' + jwt }
+            })
+            .then(async r => {
+                let raw = await r.text();
+                let data;
+                try { data = JSON.parse(raw); } catch { data = raw; }
+                showResult(data, r.status, raw);
+            })
+            .catch(e => showResult(e.toString(), 'error'));
+        }
+        function createMindmap() {
+            fetch(API_BASE + '/api/mindmaps', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': 'Bearer ' + jwt
+                },
+                body: JSON.stringify({ name: document.getElementById('mindmapName').value })
+            })
+            .then(async r => {
+                let raw = await r.text();
+                let data;
+                try { data = JSON.parse(raw); } catch { data = raw; }
+                showResult(data, r.status, raw);
+            })
+            .catch(e => showResult(e.toString(), 'error'));
+        }
+    </script>
+</body>
+</html>
