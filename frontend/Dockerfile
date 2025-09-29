@@ -1,5 +1,5 @@
 # Sử dụng image Node.js
-FROM node:18-alpine
+FROM node:20.19 AS builder
 
 # Thiết lập thư mục làm việc
 WORKDIR /app
