@@ -14,15 +14,20 @@ import org.springframework.web.bind.annotation.RestController;
 
 import com.example.backend.dto.AuthDto;
 import com.example.backend.service.CognitoService;
+import com.example.backend.repository.UserRepository;
+import com.example.backend.entity.User;
+import java.time.LocalDateTime;
 
 @RestController
 @RequestMapping("/api/auth")
 public class AuthController {
     private static final Logger logger = LoggerFactory.getLogger(AuthController.class);
     private final CognitoService cognitoService;
+    private final UserRepository userRepository;
 
-    public AuthController(CognitoService cognitoService) {
+    public AuthController(CognitoService cognitoService, UserRepository userRepository) {
         this.cognitoService = cognitoService;
+        this.userRepository = userRepository;
     }
 
     @PostMapping("/login")
@@ -42,7 +47,23 @@ public class AuthController {
     public ResponseEntity<?> register(@RequestBody AuthDto.RegisterRequest request) {
         try {
             logger.info("Register request for email: {}", request.email);
+            // First check DB to prevent duplicate
+            if (userRepository.existsByEmail(request.email)) {
+                return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                        .body(new AuthDto.ErrorResponse("Email already exists"));
+            }
             Map<String, Object> result = cognitoService.signUp(request.email, request.password);
+            // Persist user locally (so /checkemail sees it next time)
+            String username = (String) result.get("username");
+            if (username == null) {
+                logger.warn("SignUp result missing username for email {}", request.email);
+            } else if (!userRepository.existsByEmail(request.email)) {
+                User user = new User();
+                user.setEmail(request.email);
+                user.setCognitoUsername(username);
+                user.setCreatedAt(LocalDateTime.now());
+                userRepository.save(user);
+            }
             logger.info("Register successful for email: {}", request.email);
             return ResponseEntity.ok(new AuthDto.SignUpResult(result));
         } catch (Exception e) {
@@ -99,6 +120,23 @@ public class AuthController {
             return ResponseEntity.ok(new AuthDto.SuccessResponse("Password reset successful"));
         } catch (Exception e) {
             logger.error("Reset password failed for username: {}. Error: {}", request.username, e.getMessage());
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(new AuthDto.ErrorResponse(e.getMessage()));
+        }
+    }
+
+    @PostMapping("/checkemail")
+    public ResponseEntity<?> checkEmail(@RequestBody AuthDto.CheckEmailRequest request) {
+        try {
+            logger.info("Check email request (DB) for email: {}", request.email);
+            if (request.email == null || request.email.trim().isEmpty()) {
+                return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                        .body(new AuthDto.ErrorResponse("Email is required"));
+            }
+            boolean exists = userRepository.existsByEmail(request.email.trim());
+            logger.info("Check email result for {} => exists={} (DB)", request.email, exists);
+            return ResponseEntity.ok(Map.of("exists", exists));
+        } catch (Exception e) {
+            logger.error("Check email failed for email: {}. Error: {}", request.email, e.getMessage());
             return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(new AuthDto.ErrorResponse(e.getMessage()));
         }
     }

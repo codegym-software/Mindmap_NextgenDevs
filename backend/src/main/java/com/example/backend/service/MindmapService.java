@@ -3,7 +3,7 @@ package com.example.backend.service;
 import com.example.backend.dto.MindmapDto;
 import com.example.backend.model.Mindmap;
 import com.example.backend.model.Node;
-import com.example.backend.model.User;
+import com.example.backend.entity.User; // fixed import
 import com.example.backend.repository.MindmapRepository;
 import com.example.backend.repository.NodeRepository;
 import com.example.backend.repository.UserRepository;
@@ -11,6 +11,7 @@ import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 import java.util.stream.Collectors;
@@ -30,21 +31,21 @@ public class MindmapService {
 
     private User getOrCreateUser(Jwt jwt) {
         if (jwt == null) throw new IllegalStateException("User not authenticated");
-
-        // Chỉ dùng sub làm email
         String sub = jwt.getClaimAsString("sub");
         if (sub == null || sub.isBlank()) {
             throw new IllegalStateException("No sub in JWT");
         }
-
-        System.out.println("Debug: Using sub = " + sub); // Log để debug
-        return userRepository.findByEmail(sub)
-                .orElseGet(() -> {
-                    User user = new User();
-                    user.setEmail(sub);
-                    user.setPasswordHash("external");
-                    return userRepository.save(user);
-                });
+        String email = jwt.getClaimAsString("email");
+        System.out.println("Debug: Using sub (cognito username) = " + sub + ", email = " + email);
+        User existing = userRepository.findByCognitoUsername(sub);
+        if (existing != null) {
+            return existing;
+        }
+        User user = new User();
+        user.setCognitoUsername(sub);
+        user.setEmail(email != null && !email.isBlank() ? email : ("user-" + sub));
+        user.setCreatedAt(LocalDateTime.now());
+        return userRepository.save(user);
     }
 
     public List<MindmapDto.MindmapCardDto> getMindmaps(Jwt jwt) {
@@ -135,7 +136,8 @@ public class MindmapService {
         }
 
         mindmap.setName(req.name);
-        mindmap.preUpdate(); // Cập nhật updatedAt
+        // updatedAt handled by @PreUpdate when entity is flushed; keep manual hook if needed
+        mindmap.preUpdate();
         mindmapRepository.save(mindmap);
 
         MindmapDto.UpdateResponse response = new MindmapDto.UpdateResponse();

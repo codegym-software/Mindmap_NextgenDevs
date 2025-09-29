@@ -34,6 +34,10 @@ public class AuthDto {
         public String newPassword;
     }
 
+    public static class CheckEmailRequest {
+        public String email;
+    }
+
     public static class AuthenticationResult {
         public Map<String, Object> result;
 

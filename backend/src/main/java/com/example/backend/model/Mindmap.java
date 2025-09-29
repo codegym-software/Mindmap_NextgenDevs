@@ -1,5 +1,7 @@
 package com.example.backend.model;
 
+import com.example.backend.entity.User;
+
 import javax.persistence.*;
 import java.time.Instant;
 
@@ -30,6 +32,13 @@ public class Mindmap {
 
     @PreUpdate
     public void preUpdate() { this.updatedAt = Instant.now(); }
+
+    @PrePersist
+    public void prePersist() {
+        Instant now = Instant.now();
+        if (createdAt == null) createdAt = now;
+        if (updatedAt == null) updatedAt = now;
+    }
 
     // getters / setters
     public Long getId() { return id; }

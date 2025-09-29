@@ -1,4 +1,3 @@
-// backend/src/main/java/com/example/backend/service/CognitoService.java
 package com.example.backend.service;
 
 import java.util.Arrays;
@@ -10,6 +9,7 @@ import java.util.UUID;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
@@ -29,14 +29,21 @@ public class CognitoService {
 
     private static final Logger logger = LoggerFactory.getLogger(CognitoService.class);
 
-    private final String clientId = "53dnt9mp3e5enn7kcsd4mhuksd";
-    private final String clientSecret = "1vh4cpm093kvgjppm66kiku731jja093runh3qnrvnvr05bjs98";
-    private final String region = "ap-southeast-2";
-    private final String cognitoUrl = "https://cognito-idp." + region + ".amazonaws.com/";
+    private final String clientId;
+    private final String clientSecret;
+    private final String region;
+    private final String cognitoUrl;
 
     private final RestTemplate restTemplate;
 
-    public CognitoService() {
+    public CognitoService(
+            @Value("${aws.cognito.clientId}") String clientId,
+            @Value("${aws.cognito.clientSecret}") String clientSecret,
+            @Value("${aws.region}") String region) {
+        this.clientId = clientId;
+        this.clientSecret = clientSecret;
+        this.region = region;
+        this.cognitoUrl = "https://cognito-idp." + region + ".amazonaws.com/";
         this.restTemplate = createRestTemplate();
     }
 
@@ -102,16 +109,16 @@ public class CognitoService {
 
     public Map<String, Object> signUp(String email, String password) {
         try {
-            String username = UUID.randomUUID().toString(); // Tạo username ngẫu nhiên
+            String username = UUID.randomUUID().toString();
             logger.info("Signing up with username: {}, email: {}", username, email);
-            String secretHash = CognitoUtil.calculateSecretHash(username, clientId, clientSecret); // Sử dụng username (UUID) để tính SecretHash
+            String secretHash = CognitoUtil.calculateSecretHash(username, clientId, clientSecret);
 
             Map<String, Object> userAttr = Map.of("Name", "email", "Value", email);
             List<Map<String, Object>> attrs = Collections.singletonList(userAttr);
 
             Map<String, Object> body = new HashMap<>();
             body.put("ClientId", clientId);
-            body.put("Username", username); // Dùng UUID làm username
+            body.put("Username", username);
             body.put("Password", password);
             body.put("UserAttributes", attrs);
             body.put("SecretHash", secretHash);
@@ -133,7 +140,7 @@ public class CognitoService {
             }
 
             Map<String, Object> responseBody = response.getBody();
-            responseBody.put("username", username); // Thêm username vào phản hồi
+            responseBody.put("username", username);
             return responseBody;
         } catch (HttpClientErrorException e) {
             logger.error("SignUp failed for email {}: {}", email, e.getResponseBodyAsString());
@@ -295,6 +302,63 @@ public class CognitoService {
         } catch (Exception e) {
             logger.error("ConfirmForgotPassword failed for username {}: {}", username, e.getMessage());
             throw new RuntimeException("ConfirmForgotPassword failed: " + e.getMessage(), e);
+        }
+    }
+
+    public boolean userExistsByEmail(String email) {
+        if (email == null || email.trim().isEmpty()) {
+            logger.error("Email cannot be empty for user existence check");
+            throw new IllegalArgumentException("Email cannot be empty");
+        }
+        try {
+            logger.info("Checking if email exists: {}", email);
+            String secretHash = CognitoUtil.calculateSecretHash(email, clientId, clientSecret);
+
+            Map<String, Object> body = new HashMap<>();
+            body.put("AuthParameters", Map.of(
+                    "USERNAME", email,
+                    "PASSWORD", "dummy-password",
+                    "SECRET_HASH", secretHash
+            ));
+            body.put("AuthFlow", "USER_PASSWORD_AUTH");
+            body.put("ClientId", clientId);
+
+            HttpHeaders headers = new HttpHeaders();
+            headers.setContentType(new MediaType("application", "x-amz-json-1.1"));
+            headers.set("X-Amz-Target", "AWSCognitoIdentityProviderService.InitiateAuth");
+
+            ResponseEntity<Map> response = restTemplate.exchange(
+                    cognitoUrl,
+                    HttpMethod.POST,
+                    new HttpEntity<>(body, headers),
+                    Map.class
+            );
+
+            logger.info("Email exists (successful InitiateAuth response): {}", email);
+            return true; // Thành công → email tồn tại
+        } catch (HttpClientErrorException e) {
+            String responseBody = e.getResponseBodyAsString();
+            logger.debug("HTTP Status: {}, Response Body: {}", e.getStatusCode(), responseBody);
+            if (responseBody.contains("UserNotFoundException")) {
+                logger.info("Email does not exist: {}", email);
+                return false;
+            } else if (responseBody.contains("NotAuthorizedException")) {
+                if (responseBody.contains("Incorrect username or password")) {
+                    logger.info("Email exists (NotAuthorizedException): {}", email);
+                    return true; // Email tồn tại, mật khẩu sai
+                }
+                logger.error("Unexpected NotAuthorizedException for {}: {}", email, responseBody);
+                throw new RuntimeException("Error checking email: " + responseBody, e);
+            } else if (responseBody.contains("PasswordResetRequiredException")) {
+                logger.info("Email exists (PasswordResetRequired): {}", email);
+                return true;
+            } else {
+                logger.error("Unexpected error checking email existence for {}: {}", email, responseBody);
+                throw new RuntimeException("Error checking email: " + responseBody, e);
+            }
+        } catch (Exception e) {
+            logger.error("Unexpected error checking email existence for {}: {}", email, e.getMessage());
+            throw new RuntimeException("Unexpected error: " + e.getMessage(), e);
         }
     }
 }
