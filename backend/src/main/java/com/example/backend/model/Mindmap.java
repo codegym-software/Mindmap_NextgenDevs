@@ -1,6 +1,6 @@
 package com.example.backend.model;
 
-import com.example.backend.entity.User;
+import com.example.backend.model.User;
 
 import javax.persistence.*;
 import java.time.Instant;

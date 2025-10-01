@@ -15,7 +15,7 @@ import org.springframework.web.bind.annotation.RestController;
 import com.example.backend.dto.AuthDto;
 import com.example.backend.service.CognitoService;
 import com.example.backend.repository.UserRepository;
-import com.example.backend.entity.User;
+import com.example.backend.model.User;
 import java.time.LocalDateTime;
 
 @RestController

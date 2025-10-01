@@ -10,12 +10,13 @@ public class MindmapDto {
 
     public static class UpdateRequest {
         public String name; // Cho phép cập nhật tên mindmap
-        // Có thể thêm các trường khác nếu cần, ví dụ: description
+        // List of nodes to persist (full replacement of current structure except root auto-kept if omitted)
+        public List<NodeDto> nodes; // optional: if null, only name is updated
     }
 
     public static class NodeDto {
-        public Long id;
-        public Long parentId; // Có thể null nếu là root node
+        public Long id; // null => create new
+        public Long parentId; // may be null for root
         public String content;
         public Double positionX;
         public Double positionY;
@@ -26,19 +27,14 @@ public class MindmapDto {
         public Long id;
         public String name;
         public Instant updatedAt;
-        // Thêm createdAt nếu cần
-        // public Instant createdAt;
     }
 
     public static class MindmapFullDto {
         public Long id;
         public String name;
         public List<NodeDto> nodes;
-        // Thêm updatedAt nếu muốn phản hồi thời gian cập nhật
-        // public Instant updatedAt;
     }
 
-    // Added missing response DTOs
     public static class CreateResponse {
         public Long id;
         public String name;
