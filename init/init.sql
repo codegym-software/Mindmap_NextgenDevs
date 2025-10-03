@@ -44,6 +44,11 @@ CREATE TABLE IF NOT EXISTS nodes (
                                     INDEX idx_parent_id (parent_id)
 );
 
+
+
+
+
+
 -- ========================
 -- Bảng Mindmap_Shares (chia sẻ mindmap cho nhiều user)
 -- ========================

@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
-import Login from './components/Login';
+import Login from './components/Login.jsx';
 import Dashboard from './components/Dashboard';
-import MindmapEditorWrapper from './components/MindmapEditor';
+import MindmapEditorWrapper from './components/MindmapEditor/MindmapEditorWrapper';
 import './App.css';
 
 function App() {
