@@ -73,3 +73,12 @@ infra/.yml
 *.orig
 *.rej
 *~
+
+# ==============================
+#. comment
+#===============================
+cognito.txt
+decription-be.txt
+decription-fe.txt
+promt.txt
+structure.txt
