@@ -1,91 +1,71 @@
-# ========================
-# 🧠 CORE
-# ========================
-# Node modules & build output
-node_modules/
-dist/
-build/
-.cache/
-tmp/
-temp/
-
-# Environment files (tuyệt đối không push)
-.env
-.env.*
-!.env.example   # giữ lại file mẫu nếu có
-
-# Logs
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-pnpm-debug.log*
-*.log
-logs/
-*.pid
-*.seed
-*.pid.lock
-
-# IDE / Editor
-.vscode/
-.idea/
-*.swp
-*.swo
-*.bak
-*.tmp
+# ==============================
+#  Global ignores
+# ==============================
 .DS_Store
-
-# ========================
-# 🐳 DOCKER
-# ========================
-# Docker & Compose temporary
-docker-compose.prod.yml
-docker-compose.dev.yml
-.docker/
-Dockerfile.dev
-*.tar
-*.img
-*.bak
+Thumbs.db
+.idea/
+.vscode/
 *.log
+*.tmp
+*.swp
 
-# ========================
-# 🧰 BACKEND (Laravel / Node)
-# ========================
-vendor/
-storage/
-bootstrap/cache/
-*.sqlite
-*.db
-
-# ========================
-# ⚛️ FRONTEND (React / Vite)
-# ========================
-# Output folders
+# ==============================
+#  Node / React / Vite (web/)
+# ==============================
 web/node_modules/
 web/dist/
+web/.vite/
+web/.vite-temp/
 web/.env
 web/.env.*
 !web/.env.example
-web/.vite/
-web/.next/
+web/.eslintcache
+
+# build cache
+web/.parcel-cache/
 web/.turbo/
 
-# ========================
-# 🧱 INFRA
-# ========================
-infra/node_modules/
-infra/.terraform/
-infra/.env
-infra/.env.*
+# ==============================
+#  Java / Spring Boot (api/)
+# ==============================
+api/target/
+api/.classpath
+api/.project
+api/.settings/
+api/*.iml
+api/.mvn/
+api/mvnw
+api/mvnw.cmd
+api/.env
+api/.env.*
+
+# ==============================
+#  Docker / Infra
+# ==============================
+infra/mongo-data/
+infra/mysql-data/
+infra/postgres-data/
+infra/redis-data/
+infra/nginx/logs/
+infra/nginx/cache/
 infra/logs/
 infra/tmp/
-infra/dist/
+*.pid
 
-# ========================
-# 🧑‍💻 OS files
-# ========================
-Thumbs.db
-ehthumbs.db
-Desktop.ini
-$RECYCLE.BIN/
-*.stackdump
+# ==============================
+#  Environment and secrets
+# ==============================
+.env
+.env.*
+!env.example
+*.pem
+*.key
+*.crt
+
+# ==============================
+#  OS & Editor junk
+# ==============================
+*.bak
 *.orig
+*.rej
+*~
