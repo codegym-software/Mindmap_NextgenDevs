@@ -38,10 +38,13 @@ api/mvnw
 api/mvnw.cmd
 api/.env
 api/.env.*
+api/src/main/resources/
 
 # ==============================
 #  Docker / Infra
 # ==============================
+infra/docker-compose.dev.yml
+infra/docker-compose.prod.yml
 infra/mongo-data/
 infra/mysql-data/
 infra/postgres-data/
@@ -51,6 +54,7 @@ infra/nginx/cache/
 infra/logs/
 infra/tmp/
 *.pid
+infra/.yml
 
 # ==============================
 #  Environment and secrets
