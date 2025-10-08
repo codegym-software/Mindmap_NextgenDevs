@@ -1,0 +1,1439 @@
+// WorkFlow của Mindmap // Sử dụng TailWind : Hầu hết hoặc toàn bộ - nếu như không có cái nào tiện hơn.
+// Bạn hãy cấu trúc lại file/ thư mục với mô tả chính xác này và có thể dễ mở rộng trong tương lai;
+// Bạn hãy nhớ rằng mình đang làm Mindmap mà Mindmap thì phải tuỳ chỉnh cao, cá nhân hoá tốt, có nhiều phần mình mô tả có thể bị thiếu bạn có thể gợi ý thêm các phương án để trải nghiêm tốt hơn;
+// Đầu tiên người dùng vào trang sẽ vào thẳng phần Dashboard;
+// Phần giao diện khi chưa đăng nhập sẽ gồm : Bên trái của Header là Logo (bạn chỉ cần gán link ảnh vào đấy tôi sẽ tự chèn sau - có thuộc tính bo góc cho đẹp) Login button (Nếu chưa đăng nhập - phần bên phải của Header như nhiều giao diện của các trang khác), Sign in button (nếu chưa đăng nhập để người dùng có thể đăng ký - bên phải của Header cạnh nút Login); Phần còn lại là phần giao diện chính (chiếm toàn bộ phần còn lại cả foooter): Chỉ có một Botton ở chính giữa cho phần này (nó sẽ khá lớn để người dùng có thể click vào để viết ngay mindmap mà không cần đăng nhập và đặt tên - nó sẽ được đặt tên khi mà người dùng ấn Lưu)
+// Mô tả :
+Hybrid (lưu client trước, sync server sau khi đăng nhập)
+Cách làm:
+Ban đầu, dữ liệu lưu trong localStorage
+Khi user đăng nhập → FE gửi dữ liệu mindmap đang có sang API để "nâng cấp" thành mindmap chính thức, gắn với userId.
+Tránh server phải quản lý nhiều guest data.
+User chỉ sync khi họ muốn giữ lại dữ liệu
+Kết hợp UX/UI
+Header: Logo (trái), Login + Sign Up (phải)
+Main content:
+Một nút rất lớn: "Bắt đầu tạo Mindmap ngay"
+Nếu chưa login → tạo mindmap guest 
+Khi user nhấn "Lưu" → nếu login rồi thì lưu vào DB, nếu chưa login thì yêu cầu login/sign up (và sync dữ liệu sau login).
+// Phần giao diện sau khi Login 4 phần:
+// Phần 1 : Phần Header có logo bên trái và tên bên cạnh như lúc chưa login; bên phải thì không còn các button Login và Signin nữa mà sẽ thay là đăng xuất hay Logout;
+// Phần 2 : Phần Sidebar (có thể kéo chiều rộng và có thể ghim) (luôn ở chế độ thu gọn tức là người dùng chỉ thấy mỗi button dấu 3 chấm ở góc màn hình như ChatGPT khi click chọn thì nó sẽ mở ra như ban đầu) bên trái (biểu tượng là dấu 3 chấm như ChatGPT - full từ đầu đến cuối cả header và footer luôn) nó sẽ gồm 3 phần (giống ChatGPT có thêm 1 gạch mờ ở giữa các phần) : p1 - gồm :Tạo mindmap mới, tìm kiếm mindmap (phần này không thay đổi vị trí được); p2 - gồm các các mindmap (thiết kế làm sao mà nó có thể chứa tầm 4-5 mindmap chỉ cần hiển thị thông tin tên mindmap ngày tạo là được (ví dụ yesterday, 01/01/1999 thông tin ngày chỉ cần nhỏ thôi không cần to)) -- Đặc biệt phần này có thể trượt lên xuống để xem nhiều hơn 4-5 mindmap gần nhất giống ChatGPT; p3 - nó là phần đăng xuất tài khoản (gồm ảnh đại diện, tên) bấm vào thì sẽ đăng xuất và về trang của chế độ khách;
+// Phần Main (Phần còn lại giao diện của tôi gần như không cần footer khi chưa edit) :  nó sẽ được chia làm 2 phần (ví dụ có một đường kẻ mờ để chia từ vị trí (x1,y2) đến (x2,y2) chẳng hạn ở giữa của gạch là dòng chứ : 'Hoặc bạn có thể chọn một mindmap của bạn' kiểu là nó bị đứt ở giữa và có dòng chữ này):
+// Phần Main 1 (phần 3): Nó chỉ có một button dấu cộng (có hình tròn ở ngoài cho đẹp) như trong phần chưa đăng nhập nhưng nó được đặt giữa trong phần trên của main - khi click vào là con trỏ chuột sẽ đang viết chữ luôn (edit) (kể cả chưa login cũng vậy) chứ không phải là cần phải vào rồi bấm vào node gốc mới điền chứ;
+// Phần Main 2 (phần 4): Nó là các Mindmap đã tạo, chỉ tối đa 7 mindmap ở giữa phân main dưới, được thiết kế cân bằng thành ba hàng : Hàng 1 tối đa 2, Hàn 2 tối đa 3, hàng 3 tối đa 2; vậy là đủ tổng 7; các button này (bo góc) có kích thước giống hệ nhau khi click vào thì hiện trình chỉnh sửa của mindmap đó; Phần nào có tên dài hơn mà không hiển thị được hết trong button cố định đó thì bạn cho chữ (tên mindmap) chạy với tốc đọ vừa phải đẻ người đọc có thể đọc được;
+
+// Phần giao diện của Edittor : tất cả sẽ được ẩn đi để nhường hết cho giao diện Edit tôi sẽ mô tả như sau: 
+// Header : bị ẩn đi; nhưng sẽ được thay thế bởi các button cho edit (undo, redo, share (link có thể cho phép nhiều người xem, chỉnh sửa), button sáng tối màn hình, save(lưu file định dạng .pdf, .jpeg, .docx) tuỳ từng kiểu form sẽ có cách trình bày nội dung khác nhau, có thêm cả button tài khoản - không phải để đăng xuất mà để thể hiện có bao nhiêu người đang edit nếu người dùng không xác định thì để dấu ? (là hình tròn ảnh đại diện của người hoặc dùng chữ cái đầu, khi mà có thêm người chỉnh sửa ))
+// Button 3 chấm (Sidebar) : vẫn thế nó sẽ mặc định thu lại chỉ có mỗi cái button đấy thôi; Nhưng nó sẽ được ghim nếu người dùng ấn vào buttonn ghim (có thể là hình cái ghim cho sinh động) 
+// Button mũi tên (chính giữa màn hình ở bên dưới nó là phần footer - nhỏ - khi click vào nó sẽ hiển thị lên thêm mấy phần giao diện nó giống như các button và khi ấn váo có sẽ chuyển cách hiển thị sang cái mà người dùng chọn - hiện nên ngay gần cái button mũi tên chỉ lên luôn)Phần điều chỉnh cách thức hiển thị nó sẽ khác nhau ... các đường nối lại với nhau nối các node lại với nhau, màu của box text node, phương thức trình bày: hình tree, trái sang phải, toả đều các hướng; -- lưu ý: đường nối các node là đường cong chứ không phải thẳng; các node không được đè lên nhau;
+
+// Các Action button trang edit:
+- save: Lưu file;
+- undo, redo: trở lại trạng thái trước và sau;
+- Share: copy link (sau đó chọn quyền : can edit, can view, -- bắt buộc người vào trang edit cũng phải đăng nhập)
+- button sáng tối (icon ban ngày và ban đêm): thay đổi giao diện sáng tối
+- button 3 gạch (sidebar): ấn lần 1 hiện ra, ấn lần 2 thu lại; button ghim khi mở Sidebar (ưu tiên thấp hơn tức là dù đã ấn ghim thì khi mà ấn button 3 gạch vẫn sẽ bị thu lại)
+- button mũi tên hướng lên: ấn vào hiển thị các cách hiển thị mindmap khác nhau cho người dùng chọn, ấn lần 2 thì lại thu lại như ban đầu; các button con sẽ biểu thị được tương đối giao diện đó như thế nào nó có thể là ảnh thêm vào và được vẽ giống sẵn; 
+
+Giao diện Ban đầu (Chưa Đăng Nhập)
+1. Button "Login"
+
+Tên: Login
+Màu sắc:
+
+Nền: Gradient từ xanh dương (bg-gradient-to-r from-blue-600 to-purple-600).
+Hover: Gradient đậm hơn (hover:from-blue-700 hover:to-purple-700).
+Văn bản: Trắng (text-white).
+
+
+Vị trí:
+
+Nằm ở phần header, bên phải (flex items-center justify-end).
+Bên cạnh button "Sign Up" (cách khoảng 8px, space-x-2).
+Trong container header (w-full h-16 px-4 bg-gray-900/80 backdrop-blur-md fixed top-0).
+
+
+Kích cỡ:
+
+Padding: py-2 px-4 (cao 8px, rộng 16px).
+Cỡ chữ: Trung bình (text-base).
+Kích thước tổng: Rộng ~80px, cao ~36px.
+Hover: Phóng to nhẹ (hover:scale-105).
+
+
+Icon: Không có.
+Action:
+
+Chuyển hướng đến giao diện đăng nhập (/login), hiển thị form đăng nhập (mô tả chi tiết ở phần sau).
+
+
+Đề xuất UX/UI:
+
+Thêm hiệu ứng transition-all duration-200 để mượt mà khi hover.
+Có thể thêm icon SVG khóa (<svg className="w-4 h-4 mr-1" ...>) để trực quan hơn.
+
+
+
+2. Button "Sign Up"
+
+Tên: Sign Up
+Màu sắc:
+
+Nền: Trong suốt (bg-transparent), viền trắng (border border-white/30).
+Hover: Nền xám nhạt (hover:bg-gray-700/50).
+Văn bản: Trắng (text-white).
+
+
+Vị trí:
+
+Nằm ở phần header, bên phải, cạnh button "Login" (space-x-2).
+Trong container header (w-full h-16 px-4 bg-gray-900/80 backdrop-blur-md fixed top-0).
+
+
+Kích cỡ:
+
+Padding: py-2 px-4.
+Cỡ chữ: Trung bình (text-base).
+Kích thước tổng: Rộng ~90px, cao ~36px.
+Hover: Phóng to nhẹ (hover:scale-105).
+
+
+Icon: Không có.
+Action:
+
+Chuyển hướng đến giao diện đăng ký (/login?mode=register), hiển thị form đăng ký.
+
+
+Đề xuất UX/UI:
+
+Dùng viền để phân biệt với button "Login" (gradient), tạo cảm giác nhẹ nhàng hơn.
+Có thể thêm hiệu ứng ánh sáng (hover:shadow-md) để tăng tính nổi bật.
+
+
+
+3. Button "Bắt đầu tạo Mindmap ngay"
+
+Tên: Bắt đầu tạo Mindmap ngay
+Màu sắc:
+
+Nền: Gradient từ xanh dương nhạt (from-blue-500) sang tím nhạt (to-purple-500).
+Hover: Gradient đậm hơn (hover:from-blue-600 hover:to-purple-600).
+Văn bản: Trắng (text-white).
+
+
+Vị trí:
+
+Nằm ở phần main, chính giữa màn hình (flex items-center justify-center h-screen).
+Trong container main chiếm toàn bộ chiều cao trừ header (h-[calc(100vh-4rem)]).
+
+
+Kích cỡ:
+
+Padding: py-6 px-12 (lớn để nổi bật).
+Cỡ chữ: Rất lớn (text-2xl).
+Kích thước tổng: Rộng ~300px, cao ~80px.
+Bo góc: rounded-xl.
+Hover: Phóng to (hover:scale-110).
+
+
+Icon:
+
+SVG dấu cộng (w-6 h-6 mr-2, trắng, fill-none stroke-current).
+Path: M12 4v16m8-8H4.
+
+
+Action:
+
+Tạo mindmap guest mới, lưu vào localStorage với tên tạm (e.g., Mindmap_Guest_${timestamp}).
+Chuyển hướng đến giao diện editor (/editor), tự động vào chế độ chỉnh sửa (con trỏ chuột sẵn sàng nhập chữ tại node gốc).
+
+
+Đề xuất UX/UI:
+
+Thêm hiệu ứng nhấp nháy nhẹ (animate-pulse) để thu hút sự chú ý.
+Có thể thêm tooltip (hover:tooltip với thư viện như react-tooltip) gợi ý: "Tạo mindmap mà không cần đăng nhập!".
+
+
+
+
+Giao diện Đăng Nhập (sau khi nhấn Login/Sign Up)
+Khi người dùng nhấn Login hoặc Sign Up, giao diện đăng nhập hiển thị (tương tự Login.jsx trước đó). Dưới đây là mô tả các button trong giao diện này, giữ nguyên thiết kế từ yêu cầu trước nhưng điều chỉnh để phù hợp với workflow.
+1. Button "Đăng nhập"
+
+Tên: Đăng nhập
+Màu sắc:
+
+Nền: Gradient từ xanh dương (from-blue-600) sang tím (to-purple-600).
+Hover: Gradient đậm hơn (hover:from-blue-700 hover:to-purple-700).
+Văn bản: Trắng (text-white).
+Disabled: Độ mờ 50% (opacity-50, cursor-not-allowed).
+
+
+Vị trí:
+
+Trong form login mode, dưới input email/password và checkbox "Ghi nhớ đăng nhập".
+Căn giữa ngang trong container form (w-full, space-y-8).
+Trong card chính (max-w-lg w-full p-10 bg-white/10 backdrop-blur-lg rounded-2xl).
+
+
+Kích cỡ:
+
+Padding: py-4 px-6.
+Cỡ chữ: Lớn (text-lg).
+Kích thước tổng: Full width (~400px trong container max-w-lg), cao ~56px.
+Hover: Phóng to nhẹ (hover:scale-105).
+
+
+Icon:
+
+SVG login (w-5 h-5 mr-2, trắng, fill-none stroke-current).
+Path: M11 16l-4-4m0 0l4-4m-4 4h14m-5 4v1a3....
+Loading: SVG xoay (w-5 h-5 mr-2 animate-spin).
+
+
+Action:
+
+Gọi InitiateAuth (Cognito) với email/password.
+Lưu token (access_token, id_token) vào localStorage.
+Sync mindmap guest từ localStorage sang server (gửi API /api/mindmaps/sync với userId).
+Chuyển hướng đến Dashboard đã đăng nhập (/dashboard).
+Hiển thị lỗi nếu thất bại (errors.general).
+
+
+Đề xuất UX/UI:
+
+Thêm hiệu ứng loading mượt mà hơn với animate-spin tùy chỉnh tốc độ.
+Hiển thị thông báo thành công ngắn (toast) trước khi chuyển hướng.
+
+
+
+2. Button "Quên mật khẩu?"
+
+Tên: Quên mật khẩu?
+Màu sắc:
+
+Văn bản: Xanh dương nhạt (text-blue-400).
+Hover: Xanh dương sáng (hover:text-blue-300).
+
+
+Vị trí:
+
+Trong form login mode, dưới input password.
+Căn phải trong flex items-center justify-between.
+Bên phải checkbox "Ghi nhớ đăng nhập".
+
+
+Kích cỡ:
+
+Cỡ chữ: Nhỏ (text-sm).
+Kích thước tổng: Rộng ~100px, cao ~20px.
+
+
+Icon: Không có.
+Action:
+
+Chuyển mode sang forgot (hiển thị form quên mật khẩu).
+
+
+Đề xuất UX/UI:
+
+Thêm hiệu ứng gạch chân khi hover (hover:underline) cho trực quan.
+
+
+
+3. Button "Đăng ký ngay"
+
+Tên: Đăng ký ngay
+Màu sắc:
+
+Văn bản: Xanh dương nhạt (text-blue-400).
+Hover: Xanh dương sáng (hover:text-blue-300).
+
+
+Vị trí:
+
+Trong form login mode, dưới button "Đăng nhập".
+Căn giữa trong text-center mt-4 bên trong <p> ("Chưa có tài khoản?").
+
+
+Kích cỡ:
+
+Cỡ chữ: Trung bình (font-medium).
+Kích thước tổng: Rộng ~100px, cao ~20px.
+
+
+Icon: Không có.
+Action:
+
+Chuyển mode sang register (hiển thị form đăng ký).
+
+
+Đề xuất UX/UI:
+
+Có thể thêm icon nhỏ (w-4 h-4) bên cạnh để nhấn mạnh hành động đăng ký.
+
+
+
+4. Button "Đăng ký"
+
+Tên: Đăng ký
+Màu sắc:
+
+Nền: Gradient từ xanh dương (from-blue-600) sang tím (to-purple-600).
+Hover: Gradient đậm hơn (hover:from-blue-700 hover:to-purple-700).
+Văn bản: Trắng (text-white).
+Disabled: Độ mờ 50% (opacity-50, cursor-not-allowed).
+
+
+Vị trí:
+
+Trong form register mode, dưới input email/password.
+Căn giữa ngang trong container form (w-full, space-y-8).
+
+
+Kích cỡ:
+
+Padding: py-4 px-6.
+Cỡ chữ: Lớn (text-lg).
+Kích thước tổng: Full width (~400px), cao ~56px.
+Hover: Phóng to nhẹ (hover:scale-105).
+
+
+Icon:
+
+Loading: SVG xoay (w-5 h-5 mr-2 animate-spin).
+
+
+Action:
+
+Gọi SignUp (Cognito) với email/password.
+Lưu username (email) vào state, chuyển mode sang confirm.
+Sync mindmap guest từ localStorage sau khi xác nhận.
+
+
+Đề xuất UX/UI:
+
+Thêm thông báo toast khi gửi mã xác nhận thành công.
+
+
+
+5. Button "Đăng nhập" (trong Register mode)
+
+Tên: Đăng nhập
+Màu sắc:
+
+Văn bản: Xanh dương nhạt (text-blue-400).
+Hover: Xanh dương sáng (hover:text-blue-300).
+
+
+Vị trí:
+
+Trong form register mode, dưới button "Đăng ký".
+Căn giữa trong text-center mt-4 bên trong <p> ("Đã có tài khoản?").
+
+
+Kích cỡ:
+
+Cỡ chữ: Trung bình (font-medium).
+Kích thước tổng: Rộng ~80px, cao ~20px.
+
+
+Icon: Không có.
+Action:
+
+Chuyển mode về login.
+
+
+Đề xuất UX/UI:
+
+Thêm hiệu ứng gạch chân khi hover (hover:underline).
+
+
+
+6. Button "Xác nhận"
+
+Tên: Xác nhận
+Màu sắc:
+
+Nền: Gradient từ xanh dương (from-blue-600) sang tím (to-purple-600).
+Hover: Gradient đậm hơn (hover:from-blue-700 hover:to-purple-700).
+Văn bản: Trắng (text-white).
+Disabled: Độ mờ 50% (opacity-50, cursor-not-allowed).
+
+
+Vị trí:
+
+Trong form confirm mode, dưới input mã xác nhận.
+Căn giữa ngang trong container form (w-full, space-y-8).
+
+
+Kích cỡ:
+
+Padding: py-4 px-6.
+Cỡ chữ: Lớn (text-lg).
+Kích thước tổng: Full width (~400px), cao ~56px.
+Hover: Phóng to nhẹ (hover:scale-105).
+
+
+Icon:
+
+Loading: SVG xoay (w-5 h-5 mr-2 animate-spin).
+
+
+Action:
+
+Gọi ConfirmSignUp với username và mã xác nhận.
+Chuyển mode về login nếu thành công.
+Sync mindmap guest từ localStorage sang server.
+
+
+Đề xuất UX/UI:
+
+Thêm countdown timer cho việc gửi lại mã xác nhận.
+
+
+
+7. Button "Gửi lại mã"
+
+Tên: Gửi lại mã
+Màu sắc:
+
+Văn bản: Xanh dương nhạt (text-blue-400).
+Hover: Xanh dương sáng (hover:text-blue-300).
+
+
+Vị trí:
+
+Trong form confirm mode, dưới button "Xác nhận".
+Căn giữa trong text-center mt-4 bên trong <p> ("Không nhận được mã?").
+
+
+Kích cỡ:
+
+Cỡ chữ: Trung bình (font-medium).
+Kích thước tổng: Rộng ~80px, cao ~20px.
+
+
+Icon: Không có.
+Action:
+
+Gọi ResendConfirmationCode với username.
+Hiển thị thông báo thành công hoặc lỗi.
+
+
+Đề xuất UX/UI:
+
+Thêm giới hạn số lần gửi lại (e.g., 3 lần/phút) để tránh spam.
+
+
+
+8. Button "Quay lại đăng nhập" (trong Confirm mode)
+
+Tên: Quay lại đăng nhập
+Màu sắc:
+
+Văn bản: Xanh dương nhạt (text-blue-400).
+Hover: Xanh dương sáng (hover:text-blue-300).
+
+
+Vị trí:
+
+Trong form confirm mode, dưới link "Gửi lại mã".
+Căn giữa trong text-center mt-2.
+
+
+Kích cỡ:
+
+Cỡ chữ: Trung bình (font-medium).
+Kích thước tổng: Rộng ~120px, cao ~20px.
+
+
+Icon: Không có.
+Action:
+
+Chuyển mode về login.
+
+
+Đề xuất UX/UI:
+
+Thêm hiệu ứng nhấp nháy nhẹ khi mã xác nhận sai nhiều lần để nhắc nhở.
+
+
+
+9. Button "Gửi mã khôi phục"
+
+Tên: Gửi mã khôi phục
+Màu sắc:
+
+Nền: Gradient từ xanh dương (from-blue-600) sang tím (to-purple-600).
+Hover: Gradient đậm hơn (hover:from-blue-700 hover:to-purple-700).
+Văn bản: Trắng (text-white).
+Disabled: Độ mờ 50% (opacity-50, cursor-not-allowed).
+
+
+Vị trí:
+
+Trong form forgot mode, dưới input email.
+Căn giữa ngang trong container form (w-full, space-y-8).
+
+
+Kích cỡ:
+
+Padding: py-4 px-6.
+Cỡ chữ: Lớn (text-lg).
+Kích thước tổng: Full width (~400px), cao ~56px.
+Hover: Phóng to nhẹ (hover:scale-105).
+
+
+Icon:
+
+Loading: SVG xoay (w-5 h-5 mr-2 animate-spin).
+
+
+Action:
+
+Gọi ForgotPassword với email.
+Chuyển mode sang reset nếu thành công.
+
+
+Đề xuất UX/UI:
+
+Thêm thông báo toast khi gửi mã thành công.
+
+
+
+10. Button "Quay lại đăng nhập" (trong Forgot mode)
+
+Tên: Quay lại đăng nhập
+Màu sắc:
+
+Văn bản: Xanh dương nhạt (text-blue-400).
+Hover: Xanh dương sáng (hover:text-blue-300).
+
+
+Vị trí:
+
+Trong form forgot mode, dưới button "Gửi mã khôi phục".
+Căn giữa trong text-center mt-4.
+
+
+Kích cỡ:
+
+Cỡ chữ: Trung bình (font-medium).
+Kích thước tổng: Rộng ~120px, cao ~20px.
+
+
+Icon: Không có.
+Action:
+
+Chuyển mode về login.
+
+
+Đề xuất UX/UI:
+
+Đặt vị trí cố định để dễ nhận diện trên mọi mode.
+
+
+
+11. Button "Đặt lại mật khẩu"
+
+Tên: Đặt lại mật khẩu
+Màu sắc:
+
+Nền: Gradient từ xanh dương (from-blue-600) sang tím (to-purple-600).
+Hover: Gradient đậm hơn (hover:from-blue-700 hover:to-purple-700).
+Văn bản: Trắng (text-white).
+Disabled: Độ mờ 50% (opacity-50, cursor-not-allowed).
+
+
+Vị trí:
+
+Trong form reset mode, dưới input mã khôi phục và mật khẩu mới.
+Căn giữa ngang trong container form (w-full, space-y-8).
+
+
+Kích cỡ:
+
+Padding: py-4 px-6.
+Cỡ chữ: Lớn (text-lg).
+Kích thước tổng: Full width (~400px), cao ~56px.
+Hover: Phóng to nhẹ (hover:scale-105).
+
+
+Icon:
+
+Loading: SVG xoay (w-5 h-5 mr-2 animate-spin).
+
+
+Action:
+
+Gọi ConfirmForgotPassword với email, mã khôi phục, và mật khẩu mới.
+Chuyển mode về login nếu thành công.
+
+
+Đề xuất UX/UI:
+
+Thêm xác nhận mật khẩu mới (input thứ hai) để tăng độ chính xác.
+
+
+
+12. Button "Quay lại đăng nhập" (trong Reset mode)
+
+Tên: Quay lại đăng nhập
+Màu sắc:
+
+Văn bản: Xanh dương nhạt (text-blue-400).
+Hover: Xanh dương sáng (hover:text-blue-300).
+
+
+Vị trí:
+
+Trong form reset mode, dưới button "Đặt lại mật khẩu".
+Căn giữa trong text-center mt-4.
+
+
+Kích cỡ:
+
+Cỡ chữ: Trung bình (font-medium).
+Kích thước tổng: Rộng ~120px, cao ~20px.
+
+
+Icon: Không có.
+Action:
+
+Chuyển mode về login.
+
+
+Đề xuất UX/UI:
+
+Thêm hiệu ứng fade-in khi chuyển mode (animate-fade-in).
+
+
+
+13. Button "Đăng nhập bằng Google"
+
+Tên: Đăng nhập bằng Google
+Màu sắc:
+
+Nền: Trắng (bg-white).
+Hover: Xám nhạt (hover:bg-gray-50).
+Văn bản: Xám đậm (text-gray-800).
+
+
+Vị trí:
+
+Dưới tất cả các form, sau dòng phân cách "hoặc" (my-6 flex items-center).
+Căn giữa ngang trong container form (w-full).
+
+
+Kích cỡ:
+
+Padding: py-4 px-6.
+Cỡ chữ: Lớn (text-lg).
+Kích thước tổng: Full width (~400px), cao ~56px.
+Hover: Phóng to nhẹ (hover:scale-105).
+
+
+Icon:
+
+SVG Google (w-5 h-5, multi-color: #4285F4, #34A853, #FBBC05, #EA4335, gap-3).
+
+
+Action:
+
+Chuyển hướng đến Cognito OAuth2 URL (/oauth2/authorize).
+Sau khi nhận code, trao đổi token và sync mindmap guest.
+Chuyển hướng đến Dashboard.
+
+
+Đề xuất UX/UI:
+
+Thêm button cho các nhà cung cấp khác (e.g., GitHub, Facebook) nếu cần.
+
+
+
+14. Button Show/Hide Password
+
+Tên: Không có (toggle password).
+Màu sắc:
+
+SVG: Xám nhạt (text-gray-300).
+Hover: Trắng (hover:text-white).
+
+
+Vị trí:
+
+Trong input password (login, register) và new password (reset).
+Căn phải trong input (absolute right-3 top-1/2 -translate-y-1/2).
+
+
+Kích cỡ:
+
+SVG: w-5 h-5.
+Kích thước tổng: 20x20px.
+
+
+Icon:
+
+Mắt mở (M15 12a3 3...) khi ẩn mật khẩu.
+Mắt đóng (M13.875 18.825...) khi hiển thị mật khẩu.
+Stroke trắng, strokeWidth={2}.
+
+
+Action:
+
+Chuyển đổi type của input giữa text và password.
+
+
+Đề xuất UX/UI:
+
+Thêm hiệu ứng fade khi chuyển đổi trạng thái.
+
+
+
+
+Giao diện Sau Đăng Nhập (Dashboard)
+1. Button "Logout"
+
+Tên: Logout
+Màu sắc:
+
+Nền: Trong suốt (bg-transparent), viền trắng (border border-white/30).
+Hover: Nền xám nhạt (hover:bg-gray-700/50).
+Văn bản: Trắng (text-white).
+
+
+Vị trí:
+
+Trong header, bên phải (flex items-center justify-end).
+Thay thế các button "Login" và "Sign Up".
+Trong container header (w-full h-16 px-4 bg-gray-900/80 backdrop-blur-md fixed top-0).
+
+
+Kích cỡ:
+
+Padding: py-2 px-4.
+Cỡ chữ: Trung bình (text-base).
+Kích thước tổng: Rộng ~80px, cao ~36px.
+Hover: Phóng to nhẹ (hover:scale-105).
+
+
+Icon: Không có.
+Action:
+
+Xóa token và user data khỏi localStorage.
+Chuyển hướng về trang guest (/dashboard).
+
+
+Đề xuất UX/UI:
+
+Thêm xác nhận trước khi đăng xuất (window.confirm).
+
+
+
+2. Button "Dấu 3 chấm" (Sidebar Toggle)
+
+Tên: Không có (toggle sidebar).
+Màu sắc:
+
+Nền: Xám đậm (bg-gray-800).
+Hover: Xám nhạt (hover:bg-gray-700).
+SVG: Trắng (text-white).
+
+
+Vị trí:
+
+Góc trên bên trái màn hình (fixed top-0 left-0).
+Full chiều cao (h-screen w-12), trên cùng header và footer.
+Mặc định thu gọn, chỉ hiển thị button.
+
+
+Kích cỡ:
+
+Container: Rộng 48px, cao 48px (w-12 h-12).
+SVG: w-6 h-6.
+Kích thước tổng: 48x48px.
+
+
+Icon:
+
+SVG 3 chấm dọc (M12 5v.01M12 12v.01M12 19v.01).
+
+
+Action:
+
+Mở/đóng sidebar (w-64 khi mở, w-12 khi thu gọn).
+Nếu đã ghim, vẫn thu gọn khi nhấn.
+
+
+Đề xuất UX/UI:
+
+Thêm hiệu ứng slide mượt mà (transition-all duration-300).
+
+
+
+3. Button "Tạo mindmap mới" (Sidebar - Phần 1)
+
+Tên: Tạo mindmap mới
+Màu sắc:
+
+Nền: Gradient từ xanh dương (from-blue-600) sang tím (to-purple-600).
+Hover: Gradient đậm hơn (hover:from-blue-700 hover:to-purple-700).
+Văn bản: Trắng (text-white).
+
+
+Vị trí:
+
+Trong sidebar, phần 1 (trên cùng, cố định).
+Dưới logo (nếu có trong sidebar), trên input tìm kiếm.
+Căn giữa ngang trong sidebar (w-full px-4).
+
+
+Kích cỡ:
+
+Padding: py-3 px-4.
+Cỡ chữ: Trung bình (text-base).
+Kích thước tổng: Rộng ~200px (trong sidebar w-64), cao ~44px.
+Bo góc: rounded-lg.
+
+
+Icon:
+
+SVG dấu cộng (w-5 h-5 mr-2, trắng).
+
+
+Action:
+
+Tạo mindmap mới, chuyển hướng đến editor (/editor).
+Lưu vào localStorage (guest) hoặc server (đã đăng nhập).
+
+
+Đề xuất UX/UI:
+
+Thêm shortcut (e.g., Ctrl+N) để tạo nhanh.
+
+
+
+4. Button "Tìm kiếm mindmap" (Sidebar - Phần 1)
+
+Tên: Không có (nút tìm kiếm trong input).
+Màu sắc:
+
+SVG: Xám nhạt (text-gray-300).
+Hover: Trắng (hover:text-white).
+
+
+Vị trí:
+
+Trong input tìm kiếm, bên phải (absolute right-3 top-1/2 -translate-y-1/2).
+Trong sidebar, phần 1, dưới button "Tạo mindmap mới".
+
+
+Kích cỡ:
+
+SVG: w-5 h-5.
+Kích thước tổng: 20x20px.
+
+
+Icon:
+
+SVG kính lúp (M21 21l-6-6m2-5a7 7...).
+
+
+Action:
+
+Kích hoạt tìm kiếm mindmap theo tên trong danh sách.
+
+
+Đề xuất UX/UI:
+
+Thêm gợi ý tìm kiếm (autocomplete) dựa trên tên mindmap.
+
+
+
+5. Buttons Mindmap (Sidebar - Phần 2)
+
+Tên: Tên của mindmap (e.g., "Mindmap 1", "Yesterday").
+Màu sắc:
+
+Nền: Xám đậm (bg-gray-800).
+Hover: Xám nhạt (hover:bg-gray-700).
+Văn bản: Trắng (text-white).
+Ngày tạo: Xám nhạt (text-gray-400 text-sm).
+
+
+Vị trí:
+
+Trong sidebar, phần 2 (có thể cuộn, overflow-y-auto).
+Hiển thị 4-5 mindmap gần nhất, mỗi button full width (w-full px-4).
+Dưới phần 1, trên phần 3 (phân cách bởi border-gray-600).
+
+
+Kích cỡ:
+
+Padding: py-3 px-4.
+Cỡ chữ: Trung bình (text-base) cho tên, nhỏ (text-sm) cho ngày.
+Kích thước tổng: Rộng ~200px, cao ~60px (bao gồm tên + ngày).
+Bo góc: rounded-md.
+
+
+Icon: Không có (hoặc thêm biểu tượng mindmap nhỏ nếu muốn).
+Action:
+
+Mở mindmap tương ứng trong editor (/editor/:id).
+
+
+Đề xuất UX/UI:
+
+Tên dài: Dùng animate-marquee để chạy chữ với tốc độ ~2s/chu kỳ.
+Thêm context menu (right-click) để xóa/sao chép mindmap.
+
+
+
+6. Button "Đăng xuất" (Sidebar - Phần 3)
+
+Tên: Đăng xuất
+Màu sắc:
+
+Nền: Trong suốt (bg-transparent).
+Hover: Xám nhạt (hover:bg-gray-700).
+Văn bản: Trắng (text-white).
+Ảnh đại diện: Viền trắng (border-white/20, rounded-full).
+
+
+Vị trí:
+
+Trong sidebar, phần 3 (dưới cùng, cố định).
+Bên dưới danh sách mindmap, dưới đường phân cách (border-gray-600).
+Gồm ảnh đại diện (w-8 h-8) và tên user, button "Đăng xuất" bên dưới.
+
+
+Kích cỡ:
+
+Padding: py-3 px-4.
+Cỡ chữ: Trung bình (text-base).
+Kích thước tổng: Rộng ~200px, cao ~44px.
+
+
+Icon:
+
+SVG đăng xuất (w-5 h-5 mr-2, trắng).
+
+
+Action:
+
+Xóa token và user data khỏi localStorage.
+Chuyển hướng về trang guest (/dashboard).
+
+
+Đề xuất UX/UI:
+
+Thêm ảnh đại diện động (lấy từ Cognito picture hoặc chữ cái đầu).
+
+
+
+7. Button "Tạo mindmap mới" (Main - Phần 1)
+
+Tên: Không có (dấu cộng).
+Màu sắc:
+
+Nền: Gradient từ xanh dương (from-blue-500) sang tím (to-purple-500).
+Hover: Gradient đậm hơn (hover:from-blue-600 hover:to-purple-600).
+SVG: Trắng (text-white).
+
+
+Vị trí:
+
+Trong main, phần 1 (trên cùng, h-1/2).
+Căn giữa ngang và dọc (flex items-center justify-center).
+Trên đường phân cách (border-gray-600) với chữ "Hoặc bạn có thể chọn một mindmap của bạn".
+
+
+Kích cỡ:
+
+Container: w-16 h-16 rounded-full.
+SVG: w-8 h-8.
+Kích thước tổng: 64x64px.
+Hover: Phóng to (hover:scale-110).
+
+
+Icon:
+
+SVG dấu cộng (M12 4v16m8-8H4).
+
+
+Action:
+
+Tạo mindmap mới, chuyển hướng đến editor (/editor).
+Con trỏ chuột tự động vào chế độ nhập chữ tại node gốc.
+
+
+Đề xuất UX/UI:
+
+Thêm hiệu ứng xoay nhẹ khi hover (hover:rotate-45).
+
+
+
+8. Buttons Mindmap (Main - Phần 2)
+
+Tên: Tên mindmap (e.g., "Mindmap 1").
+Màu sắc:
+
+Nền: Xám đậm (bg-gray-800).
+Hover: Xám nhạt (hover:bg-gray-700).
+Văn bản: Trắng (text-white).
+Ngày tạo: Xám nhạt (text-gray-400 text-sm).
+
+
+Vị trí:
+
+Trong main, phần 2 (dưới, h-1/2).
+Sắp xếp 3 hàng: Hàng 1 (2 button), Hàng 2 (3 button), Hàng 3 (2 button).
+Căn giữa ngang (grid grid-cols-3 gap-4, điều chỉnh để cân bằng).
+Dưới đường phân cách (border-gray-600).
+
+
+Kích cỡ:
+
+Padding: py-4 px-6.
+Cỡ chữ: Trung bình (text-base) cho tên, nhỏ (text-sm) cho ngày.
+Kích thước tổng: Rộng ~150px, cao ~80px.
+Bo góc: rounded-lg.
+
+
+Icon: Không có.
+Action:
+
+Mở mindmap trong editor (/editor/:id).
+
+
+Đề xuất UX/UI:
+
+Tên dài: Sử dụng animate-marquee (tốc độ ~2s/chu kỳ).
+Thêm badge cho mindmap đang chỉnh sửa bởi người khác.
+
+
+
+
+Giao diện Editor
+1. Button "Undo"
+
+Tên: Undo
+Màu sắc:
+
+Nền: Xám đậm (bg-gray-800).
+Hover: Xám nhạt (hover:bg-gray-700).
+SVG: Trắng (text-white).
+
+
+Vị trí:
+
+Trong header của editor (thay thế header chính, w-full h-12 bg-gray-900/80 backdrop-blur-md fixed top-0).
+Căn trái (flex items-center space-x-2).
+
+
+Kích cỡ:
+
+Padding: py-2 px-3.
+SVG: w-5 h-5.
+Kích thước tổng: Rộng ~40px, cao ~32px.
+
+
+Icon:
+
+SVG mũi tên ngược (M9 15L3 9m0 0l6-6M3 9h12a6 6...).
+
+
+Action:
+
+Hoàn tác thay đổi gần nhất trong mindmap.
+
+
+Đề xuất UX/UI:
+
+Hiển thị disabled (opacity-50) nếu không có hành động để undo.
+
+
+
+2. Button "Redo"
+
+Tên: Redo
+Màu sắc:
+
+Nền: Xám đậm (bg-gray-800).
+Hover: Xám nhạt (hover:bg-gray-700).
+SVG: Trắng (text-white).
+
+
+Vị trí:
+
+Trong header, cạnh button "Undo" (space-x-2).
+
+
+Kích cỡ:
+
+Padding: py-2 px-3.
+SVG: w-5 h-5.
+Kích thước tổng: Rộng ~40px, cao ~32px.
+
+
+Icon:
+
+SVG mũi tên xuôi (M15 15l6-6m0 0l-6-6m6 6H3a6 6...).
+
+
+Action:
+
+Khôi phục thay đổi đã hoàn tác.
+
+
+Đề xuất UX/UI:
+
+Hiển thị disabled nếu không có hành động để redo.
+
+
+
+3. Button "Share"
+
+Tên: Share
+Màu sắc:
+
+Nền: Xám đậm (bg-gray-800).
+Hover: Xám nhạt (hover:bg-gray-700).
+SVG: Trắng (text-white).
+
+
+Vị trí:
+
+Trong header, cạnh button "Redo" (space-x-2).
+
+
+Kích cỡ:
+
+Padding: py-2 px-3.
+SVG: w-5 h-5.
+Kích thước tổng: Rộng ~60px, cao ~32px.
+
+
+Icon:
+
+SVG chia sẻ (M18 16.08c-.76 0-1.44...).
+
+
+Action:
+
+Mở modal chọn quyền: can edit hoặc can view.
+Copy link mindmap vào clipboard.
+Yêu cầu đăng nhập nếu người khác truy cập link.
+
+
+Đề xuất UX/UI:
+
+Thêm thông báo toast khi copy link thành công.
+
+
+
+4. Button "Sáng/Tối"
+
+Tên: Không có (toggle sáng/tối).
+Màu sắc:
+
+Nền: Xám đậm (bg-gray-800).
+Hover: Xám nhạt (hover:bg-gray-700).
+SVG: Trắng (text-white).
+
+
+Vị trí:
+
+Trong header, cạnh button "Share".
+
+
+Kích cỡ:
+
+Padding: py-2 px-3.
+SVG: w-5 h-5.
+Kích thước tổng: Rộng ~40px, cao ~32px.
+
+
+Icon:
+
+Mặt trời (M12 3v1m0 16v1...) khi ở chế độ sáng.
+Mặt trăng (M21 12.79A9 9...) khi ở chế độ tối.
+
+
+Action:
+
+Chuyển đổi giao diện sáng/tối (thay đổi theme trong localStorage).
+
+
+Đề xuất UX/UI:
+
+Lưu trạng thái theme để áp dụng khi tải lại.
+
+
+
+5. Button "Save"
+
+Tên: Save
+Màu sắc:
+
+Nền: Gradient từ xanh dương (from-blue-600) sang tím (to-purple-600).
+Hover: Gradient đậm hơn (hover:from-blue-700 hover:to-purple-700).
+Văn bản: Trắng (text-white).
+
+
+Vị trí:
+
+Trong header, cạnh button "Sáng/Tối".
+
+
+Kích cỡ:
+
+Padding: py-2 px-4.
+Cỡ chữ: Trung bình (text-base).
+Kích thước tổng: Rộng ~80px, cao ~36px.
+
+
+Icon:
+
+SVG đĩa mềm (w-5 h-5 mr-2, trắng).
+
+
+Action:
+
+Mở modal chọn định dạng: .pdf, .jpeg, .docx.
+Lưu mindmap vào server (nếu đăng nhập) hoặc localStorage (guest).
+Nếu guest, yêu cầu đăng nhập và sync sau khi đăng nhập.
+
+
+Đề xuất UX/UI:
+
+Thêm preview trước khi lưu (e.g., ảnh thumbnail).
+
+
+
+6. Button "Tài khoản"
+
+Tên: Không có (hiển thị ảnh đại diện hoặc chữ cái đầu).
+Màu sắc:
+
+Nền: Xám đậm (bg-gray-800).
+Hover: Xám nhạt (hover:bg-gray-700).
+Ảnh/Chữ: Trắng (text-white), viền trắng (border-white/20).
+
+
+Vị trí:
+
+Trong header, bên phải (flex items-center justify-end).
+
+
+Kích cỡ:
+
+Container: w-8 h-8 rounded-full.
+Chữ/Ảnh: text-base (chữ cái đầu) hoặc w-8 h-8 (ảnh).
+
+
+Icon:
+
+Ảnh đại diện hoặc chữ cái đầu (e.g., "A" cho "Alice").
+Dấu ? nếu không xác định (text-gray-400).
+Nếu nhiều người chỉnh sửa, hiển thị số lượng (badge bg-red-500 w-4 h-4).
+
+
+Action:
+
+Hiển thị danh sách người đang chỉnh sửa (tooltip hoặc modal).
+
+
+Đề xuất UX/UI:
+
+Thêm hiệu ứng nhấp nháy khi có người mới tham gia chỉnh sửa.
+
+
+
+7. Button "Dấu 3 chấm" (Sidebar Toggle)
+
+Tên: Không có (giống Dashboard).
+Màu sắc:
+
+Nền: Xám đậm (bg-gray-800).
+Hover: Xám nhạt (hover:bg-gray-700).
+SVG: Trắng (text-white).
+
+
+Vị trí:
+
+Góc trên bên trái (fixed top-0 left-0).
+Full chiều cao (h-screen w-12).
+
+
+Kích cỡ:
+
+Container: w-12 h-12.
+SVG: w-6 h-6.
+
+
+Icon:
+
+SVG 3 chấm dọc (M12 5v.01M12 12v.01M12 19v.01).
+
+
+Action:
+
+Mở/đóng sidebar (w-64 khi mở, w-12 khi thu gọn).
+
+
+Đề xuất UX/UI:
+
+Thêm hiệu ứng slide mượt mà.
+
+
+
+8. Button "Ghim" (Sidebar)
+
+Tên: Không có (pin sidebar).
+Màu sắc:
+
+Nền: Xám đậm (bg-gray-800).
+Hover: Xám nhạt (hover:bg-gray-700).
+SVG: Trắng (text-white).
+
+
+Vị trí:
+
+Trong sidebar khi mở, góc trên bên phải (absolute top-2 right-2).
+
+
+Kích cỡ:
+
+SVG: w-5 h-5.
+Kích thước tổng: 20x20px.
+
+
+Icon:
+
+SVG ghim (M15 5l-1.41 1.41...).
+
+
+Action:
+
+Ghim sidebar để không tự thu gọn (lưu trạng thái vào localStorage).
+Vẫn thu gọn nếu nhấn button "Dấu 3 chấm".
+
+
+Đề xuất UX/UI:
+
+Thêm hiệu ứng xoay khi ghim (rotate-45).
+
+
+
+9. Button "Mũi tên hướng lên" (Footer)
+
+Tên: Không có (toggle layout options).
+Màu sắc:
+
+Nền: Xám đậm (bg-gray-800).
+Hover: Xám nhạt (hover:bg-gray-700).
+SVG: Trắng (text-white).
+
+
+Vị trí:
+
+Trong footer nhỏ (h-12 bg-gray-900/80 fixed bottom-0 w-full).
+Căn giữa ngang (flex items-center justify-center).
+
+
+Kích cỡ:
+
+Container: w-10 h-10 rounded-full.
+SVG: w-6 h-6.
+
+
+Icon:
+
+SVG mũi tên lên (M12 4v16m-8 8l8-8m8 8l-8-8).
+
+
+Action:
+
+Mở/đóng panel chọn layout (tree, trái-phải, tỏa đều).
+Panel hiển thị ngay trên button (absolute bottom-14).
+
+
+Đề xuất UX/UI:
+
+Thêm preview thumbnail cho mỗi layout trong panel.
+
+
+
+10. Buttons Layout (trong Panel)
+
+Tên: Tree, Trái-Phải, Tỏa đều
+Màu sắc:
+
+Nền: Xám đậm (bg-gray-800).
+Hover: Xám nhạt (hover:bg-gray-700).
+Văn bản: Trắng (text-white).
+
+
+Vị trí:
+
+Trong panel mở từ button "Mũi tên" (flex space-x-2 p-2 bg-gray-900 rounded-lg).
+Căn trái, cách nhau 8px.
+
+
+Kích cỡ:
+
+Padding: py-2 px-3.
+Cỡ chữ: Nhỏ (text-sm).
+Kích thước tổng: Rộng ~100px, cao ~32px.
+Thumbnail: w-8 h-8 (nếu có).
+
+
+Icon:
+
+Thumbnail SVG minh họa layout (e.g., tree: M12 2v6m-4 4v6...).
+
+
+Action:
+
+Thay đổi cách hiển thị mindmap (cập nhật state hoặc server).
+
+
+Đề xuất UX/UI:
+
+Thêm mô tả tooltip cho mỗi layout.
+
+
+
+
+Đề xuất Tăng Cường Trải Nghiệm
+
+Cá nhân hóa:
+
+Cho phép người dùng chọn màu gradient cho button chính (lưu vào userPreferences).
+Tùy chỉnh font chữ hoặc kích cỡ node trong editor.
+
+
+Hiệu ứng UX:
+
+Thêm hiệu ứng animate-bounce cho button "Bắt đầu tạo Mindmap ngay" để thu hút.
+Sử dụng react-hot-toast cho thông báo đăng nhập/đăng ký/lưu.
+
+
+Tính năng bổ sung:
+
+Button "Lưu tự động" trong editor (toggle bật/tắt).
+Button "Export as JSON" để hỗ trợ backup mindmap.
+
+
+Responsive:
+
+Điều chỉnh kích cỡ button trên mobile (e.g., giảm text-lg xuống text-base).
+Sidebar trên mobile: Thu gọn mặc định, mở bằng swipe.
+
+
+Hỗ trợ đa người dùng:
+
+Button "Tài khoản" hiển thị danh sách người chỉnh sửa với trạng thái (online/offline).

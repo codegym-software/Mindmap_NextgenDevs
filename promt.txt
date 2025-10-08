@@ -1,0 +1,63 @@
+// Tôi đã build thành công nhưng nó có vẻ gặp lỗi:
+// Khi tôi ấn Login thì lỗi từ cửa sổ console: 
+components-UsGAV-ki.js:98 Error: Minified React error #418; visit https://reactjs.org/docs/error-decoder.html?invariant=418 for the full message or use the non-minified dev environment for full errors and additional helpful warnings.
+    at $o (index-DK8HSD9y.js:38:4806)
+    at _c (index-DK8HSD9y.js:40:45897)
+    at kc (index-DK8HSD9y.js:40:39992)
+    at $d (index-DK8HSD9y.js:40:39964)
+    at gc (index-DK8HSD9y.js:40:34912)
+    at ze (index-DK8HSD9y.js:25:1635)
+    at MessagePort.We (index-DK8HSD9y.js:25:2018)
+overrideMethod @ hook.js:608
+ot @ components-UsGAV-ki.js:98
+lu @ index-DK8HSD9y.js:38
+_c @ index-DK8HSD9y.js:40
+kc @ index-DK8HSD9y.js:40
+$d @ index-DK8HSD9y.js:40
+gc @ index-DK8HSD9y.js:40
+ze @ index-DK8HSD9y.js:25
+We @ index-DK8HSD9y.js:25Understand this error
+index-DK8HSD9y.js:38 Uncaught Error: Minified React error #418; visit https://reactjs.org/docs/error-decoder.html?invariant=418 for the full message or use the non-minified dev environment for full errors and additional helpful warnings.
+    at ki (index-DK8HSD9y.js:38:5266)
+    at Fd (index-DK8HSD9y.js:40:15445)
+    at xc (index-DK8HSD9y.js:40:40164)
+    at kc (index-DK8HSD9y.js:40:40053)
+    at $d (index-DK8HSD9y.js:40:39964)
+    at gc (index-DK8HSD9y.js:40:34912)
+    at ze (index-DK8HSD9y.js:25:1635)
+    at MessagePort.We (index-DK8HSD9y.js:25:2018)
+ki @ index-DK8HSD9y.js:38
+Fd @ index-DK8HSD9y.js:40
+xc @ index-DK8HSD9y.js:40
+kc @ index-DK8HSD9y.js:40
+$d @ index-DK8HSD9y.js:40
+gc @ index-DK8HSD9y.js:40
+ze @ index-DK8HSD9y.js:25
+We @ index-DK8HSD9y.js:25Understand this error
+2index-DK8HSD9y.js:38 Uncaught Error: Minified React error #418; visit https://reactjs.org/docs/error-decoder.html?invariant=418 for the full message or use the non-minified dev environment for full errors and additional helpful warnings.
+    at $o (index-DK8HSD9y.js:38:4806)
+    at _c (index-DK8HSD9y.js:40:45897)
+    at kc (index-DK8HSD9y.js:40:39992)
+    at $d (index-DK8HSD9y.js:40:39964)
+    at gc (index-DK8HSD9y.js:40:34912)
+    at ze (index-DK8HSD9y.js:25:1635)
+    at MessagePort.We (index-DK8HSD9y.js:25:2018)
+$o @ index-DK8HSD9y.js:38
+_c @ index-DK8HSD9y.js:40
+kc @ index-DK8HSD9y.js:40
+$d @ index-DK8HSD9y.js:40
+gc @ index-DK8HSD9y.js:40
+ze @ index-DK8HSD9y.js:25
+We @ index-DK8HSD9y.js:25Understand this error
+index-DK8HSD9y.js:40 Uncaught Error: Minified React error #423; visit https://reactjs.org/docs/error-decoder.html?invariant=423 for the full message or use the non-minified dev environment for full errors and additional helpful warnings.
+    at _c (index-DK8HSD9y.js:40:45556)
+    at kc (index-DK8HSD9y.js:40:39992)
+    at Wd (index-DK8HSD9y.js:40:39920)
+    at Ki (index-DK8HSD9y.js:40:39773)
+    at Nu (index-DK8HSD9y.js:40:36102)
+    at gc (index-DK8HSD9y.js:40:35050)
+    at ze (index-DK8HSD9y.js:25:1635)
+    at MessagePort.We (index-DK8HSD9y.js:25:2018)
+
+// Khi tôi đăng nhập thì có vẻ nó đang không cá nhân hoá mindmap tôi đã tạo những mindmap trước đó và tôi thử đăng nhập vào nhiều tài khoản Google khác nhau thì nó vẫn là những mindmap đó;
+// Tôi vẫn đang không biết xoá mindmap kiểu gì ở phần giao diện Dashboard - Bạn có thể để nó lắng nghe bàn phím (phím delete chẳng hạn) -- Ngoài ra bạn : có thể thêm cho tôi ở mỗi mindmap có button 3 chấm tuỳ chọn gồm : 

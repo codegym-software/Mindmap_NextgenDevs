@@ -1,0 +1,88 @@
+Luồng Hoạt Động Của Dự Án Mindmap
+Dựa trên đoạn script bạn cung cấp và các kiến thức từ dự án (Spring Boot BE, ReactJS FE, AWS Cognito cho xác thực, MongoDB NoSQL database), tôi tổng hợp luồng hoạt động chính sau, với trọng tâm tách biệt BE/FE, chung User Pool nhưng khác App Client, và bảo mật cao (HTTPS + JWT + thêm các biện pháp).
+1. Cấu Trúc Tổng Thể
+
+3 Bên Chính: BE (Spring Boot API), FE (ReactJS UI), AWS Cognito (xác thực).
+User Pool Chung: BE và FE dùng chung User Pool ID ap-southeast-2_t30OWWizg, nhưng khác App Client (BE: qs4o5vsr1c01i0kgh85ted9vo; FE: 2t1lfqfuphveqgh31nfkggg0kl; Common Client: 53dnt9mp3e5enn7kcsd4mhuksd).
+Tách Biệt:
+
+BE chỉ xử lý API (CRUD mindmap), không có UI, gọi Cognito riêng (callback riêng).
+FE xử lý UI và logic client-side (localStorage cho guest, sync sau login), gọi Cognito riêng (callback riêng).
+
+
+Database: MongoDB NoSQL (collection mindmaps với id, userId, name, rootNodeId, content, createdAt, updatedAt).
+Bảo Mật Cao:
+
+HTTPS bắt buộc cho tất cả request.
+JWT: FE gửi Authorization: Bearer <access_token> tới BE.
+BE xác thực JWT từ Cognito client của FE (sử dụng NimbusJwtDecoder với JWKS URI của FE client).
+Thêm bảo mật: Rate limiting (Bucket4j ở BE), CORS , CSRF (Spring Security), refresh token flow (FE dùng refresh_token để làm mới access_token), secure headers (X-Frame-Options, Content-Security-Policy), và môi trường variables cho secrets (client_id, client_secret).
+
+
+
+2. Luồng Đăng Nhập/Đăng Ký (FE Chủ Động)
+
+Chưa Đăng Nhập (Guest):
+
+FE kiểm tra localStorage có cognito_token không. Nếu không, hiển thị Dashboard guest (logo, button Login/Sign Up, button lớn "Bắt đầu tạo Mindmap ngay").
+Nhấn "Bắt đầu tạo Mindmap ngay": FE tạo mindmap guest, lưu vào localStorage (không sync server), mở editor (con trỏ sẵn nhập chữ).
+
+
+Đăng Nhập:
+
+FE redirect đến Cognito Hosted UI (không dùng UI tùy chỉnh để tránh bảo mật rủi ro).
+URL: ${COGNITO_DOMAIN}/oauth2/authorize?response_type=code&client_id=${FE_CLIENT_ID}&redirect_uri=
+Sau đăng nhập, Cognito redirect về http://localhost:.../?code=<code>.
+FE gọi /oauth2/token (FE client) để đổi code lấy access_token, id_token, refresh_token.
+FE lưu access_token vào localStorage (cognito_token), decode id_token để lấy user info (email, name, sub).
+FE sync mindmap guest từ localStorage sang BE (gọi API /api/mindmaps/sync với JWT).
+FE chuyển hướng đến Dashboard đã đăng nhập (sidebar, main với button tạo, mindmap list, editor).
+
+
+Đăng Ký:
+
+Tương tự đăng nhập, nhưng sử dụng Cognito SignUp (FE client), sau đó confirm qua ConfirmSignUp.
+FE gửi email/password tới /oauth2/register nếu cần backend hỗ trợ.
+
+
+Đăng Xuất:
+
+FE xóa cognito_token từ localStorage.
+Redirect về Dashboard guest.
+BE không can thiệp (logout chỉ ở FE).
+
+
+
+3. Luồng API (FE → BE)
+
+FE gửi request tới BE với JWT:
+
+Header: Authorization: Bearer <access_token>.
+
+
+BE nhận request:
+
+Spring Security xác thực JWT từ Cognito FE client (JWKS URI của FE client).
+Nếu hợp lệ, lấy userId từ claim sub.
+Thực hiện CRUD trên MongoDB với userId (e.g., tạo mindmap gắn với userId).
+Nếu không hợp lệ, trả 401 Unauthorized.
+
+
+Sync mindmap guest: FE gửi POST /api/mindmaps/sync với JWT, BE lưu dữ liệu guest vào MongoDB với userId.
+
+4. Bảo Mật Thêm
+
+JWT Xác Thực: BE gọi JWKS của FE client để validate token (không dùng client secret của BE).
+Rate Limiting: BE dùng Bucket4j (100 request/phút/user).
+CORS: BE cho phép chỉ http://localhost/....
+CSRF: Bật ở BE (Spring Security).
+Refresh Token: FE dùng refresh_token để làm mới access_token khi gần hết hạn (gọi /oauth2/token với grant_type=refresh_token).
+Secure Storage: Sử dụng HttpOnly cookies cho token nếu dùng backend proxy (tăng bảo mật so với localStorage).
+Logging: BE log JWT validation để debug (e.g., logger.error("Invalid JWT: " + e.getMessage())).
+
+5. Đề xuất Cải Tiến
+
+Cá Nhân Hóa Mindmap: Cho phép user tùy chỉnh màu node, kiểu đường nối, layout (tree, tỏa, trái-phải) trong editor.
+Đa Người Dùng: Thêm realtime sync (Socket.IO) để nhiều người edit mindmap cùng lúc, hiển thị avatar ở header.
+Guest to Auth: Tự động sync khi login, với confirm "Bạn có mindmap guest, lưu vào tài khoản?".
+
