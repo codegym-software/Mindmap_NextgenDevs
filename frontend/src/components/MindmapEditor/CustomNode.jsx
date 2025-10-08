@@ -18,12 +18,31 @@ const CustomNode = ({ data, selected }) => {
             setTimeout(() => { inputRef.current?.focus(); inputRef.current?.select(); }, 10);
         }
     }, [data.__editToken, data]);
+    // Focus và select chỉ khi bắt đầu edit
     useEffect(() => {
         if (isEditing && inputRef.current) {
             inputRef.current.focus();
             inputRef.current.select();
         }
     }, [isEditing]);
+
+    // Auto-resize textarea khi text thay đổi
+    useEffect(() => {
+        if (isEditing && inputRef.current) {
+            inputRef.current.style.height = 'auto';
+            inputRef.current.style.height = inputRef.current.scrollHeight + 'px';
+        }
+    }, [isEditing, text]);
+
+    // Hàm tự động xuống dòng sau 10 từ
+    const formatTextWithLineBreaks = (inputText) => {
+        const words = inputText.split(' ');
+        const lines = [];
+        for (let i = 0; i < words.length; i += 10) {
+            lines.push(words.slice(i, i + 10).join(' '));
+        }
+        return lines.join('\n');
+    };
 
     const handleDoubleClick = () => {
         if (!isEditing) {
@@ -33,7 +52,8 @@ const CustomNode = ({ data, selected }) => {
     };
     const finishEdit = (save) => {
         if (save && text !== data.label && data.onUpdateLabel) {
-            data.onUpdateLabel(data.id, text);
+            const formattedText = formatTextWithLineBreaks(text);
+            data.onUpdateLabel(data.id, formattedText);
         } else if (!save) {
             setText(data.label);
         }
@@ -68,16 +88,57 @@ const CustomNode = ({ data, selected }) => {
         return v[color] || 'linear-gradient(135deg,#f093fb 0%,#f5576c 100%)';
     };
 
+    // Tính toán kích thước node dựa trên nội dung
+    const getNodeDimensions = () => {
+        const content = isEditing ? text : data.label;
+        const lineCount = content.split('\n').length;
+        const wordsCount = content.trim().split(/\s+/).length;
+        
+        // Tính chiều rộng dựa trên số từ và số dòng
+        let width = 120; // minWidth
+        if (wordsCount > 5) {
+            // Mỗi từ thêm vào sẽ tăng 8px, tối đa 350px
+            width = Math.min(350, 120 + (wordsCount - 5) * 8);
+        }
+        
+        // Nếu có nhiều dòng, đảm bảo width đủ rộng
+        if (lineCount > 1) {
+            width = Math.max(width, 200);
+        }
+        
+        return {
+            minWidth: '120px',
+            maxWidth: width + 'px',
+            width: 'auto'
+        };
+    };
+
+    // Điều chỉnh padding dựa trên nội dung
+    const getPadding = () => {
+        const content = isEditing ? text : data.label;
+        const lineCount = content.split('\n').length;
+        
+        if (lineCount > 2) {
+            return '10px 14px'; // Padding lớn hơn cho nội dung nhiều dòng
+        } else if (lineCount > 1) {
+            return '9px 15px';
+        }
+        return '8px 16px'; // Padding mặc định
+    };
+
     const nodeStyle = {
         background: getGradientBackground(data.color),
         border: selected ? '2px solid #667eea' : '2px solid transparent',
         borderRadius: '12px',
-        padding: '8px 16px',
-        minWidth: '120px',
+        padding: getPadding(),
+        ...getNodeDimensions(),
         textAlign: 'center',
         boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
         cursor: 'pointer',
-        position: 'relative'
+        position: 'relative',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center'
     };
 
     return (
@@ -110,7 +171,7 @@ const CustomNode = ({ data, selected }) => {
             )}
 
             {isEditing ? (
-                <input
+                <textarea
                     ref={inputRef}
                     value={text}
                     onChange={(e)=>setText(e.target.value)}
@@ -124,11 +185,26 @@ const CustomNode = ({ data, selected }) => {
                         fontSize:'14px',
                         fontWeight:'500',
                         textAlign:'center',
-                        width:'100%'
+                        width:'100%',
+                        resize:'none',
+                        minHeight:'24px',
+                        overflow:'hidden',
+                        lineHeight:'1.5',
+                        fontFamily:'inherit'
                     }}
+                    rows={1}
                 />
             ) : (
-                <div style={{ color:'white', fontSize:'14px', fontWeight:'500' }}>{text}</div>
+                <div style={{ 
+                    color:'white', 
+                    fontSize:'14px', 
+                    fontWeight:'500',
+                    whiteSpace:'pre-wrap',
+                    wordBreak:'break-word',
+                    lineHeight:'1.5',
+                    maxWidth:'100%',
+                    overflowWrap:'break-word'
+                }}>{text}</div>
             )}
 
             {!isEditing && hovered && (
