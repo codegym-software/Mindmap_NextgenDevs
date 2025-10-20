@@ -25,7 +25,7 @@ public class RateLimitFilter implements Filter {
     private final Cache<String, Bucket> cache;
     private final int rpm;
 
-    public RateLimitFilter(@Value("${app.rateLimit.requestsPerMinute:120}") int rpm) {
+    public RateLimitFilter(@Value("${app.rateLimit.requestsPerMinute:1200}") int rpm) {
         this.cache = Caffeine.newBuilder()
                 .expireAfterAccess(10, TimeUnit.MINUTES)
                 .maximumSize(10000)

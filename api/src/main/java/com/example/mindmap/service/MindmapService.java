@@ -1,5 +1,7 @@
 package com.example.mindmap.service;
 
+import com.example.mindmap.dto.MindmapCreateRequest;
+import com.example.mindmap.dto.MindmapUpdateRequest;
 import com.example.mindmap.dto.MindmapUpsertRequest;
 import com.example.mindmap.model.Mindmap;
 import com.example.mindmap.repository.MindmapRepository;
@@ -30,9 +32,9 @@ public class MindmapService {
         return m;
     }
 
-    public Mindmap create(String ownerSub, MindmapUpsertRequest req) {
+    public Mindmap create(String ownerSub, MindmapCreateRequest req) {
         Mindmap m = new Mindmap();
-        m.setName(req.getName() == null || req.getName().isBlank() ? "Untitled Mindmap" : req.getName());
+        m.setName(req.getName());
         m.setOwnerSub(ownerSub);
         m.setContent(req.getContent() == null ? defaultContent() : req.getContent());
         m.setCreatedAt(Instant.now());
@@ -40,10 +42,16 @@ public class MindmapService {
         return repo.save(m);
     }
 
-    public Mindmap update(String ownerSub, String id, MindmapUpsertRequest req) {
+    public Mindmap update(String ownerSub, String id, MindmapUpdateRequest req) {
         Mindmap m = getOwned(ownerSub, id);
-        if (req.getName() != null) m.setName(req.getName());
-        if (req.getContent() != null) m.setContent(req.getContent());
+        if (req.getName() != null) {
+            String nm = req.getName().trim();
+            if (nm.isEmpty()) throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "name cannot be blank");
+            m.setName(nm);
+        }
+        if (req.getContent() != null) {
+            m.setContent(req.getContent());
+        }
         m.setUpdatedAt(Instant.now());
         return repo.save(m);
     }
@@ -57,7 +65,8 @@ public class MindmapService {
         Instant now = Instant.now();
         List<Mindmap> batch = guests.stream().map(g -> {
             Mindmap m = new Mindmap();
-            m.setName(g.getName() == null || g.getName().isBlank() ? "Imported Mindmap" : g.getName());
+            String nm = (g.getName() == null || g.getName().isBlank()) ? "Imported Mindmap" : g.getName();
+            m.setName(nm);
             m.setOwnerSub(ownerSub);
             m.setContent(g.getContent() == null ? defaultContent() : g.getContent());
             m.setCreatedAt(now);

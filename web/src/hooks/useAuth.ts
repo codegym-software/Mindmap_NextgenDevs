@@ -9,5 +9,6 @@ export function useAuth() {
     login: ctx.login,
     logout: ctx.logout,
     getAccessToken: ctx.ensureFreshAccessToken,  // Thêm từ họ (refresh auto)
+    user: ctx.user, // 👈 thêm dòng này
   };
 }

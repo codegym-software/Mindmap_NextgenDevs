@@ -1,82 +1,94 @@
-import { useContext } from "react";
-import { ThemeContext } from "../../app/providers/ThemeProvider";
-import Button from "../common/Button";
+// src/components/editor/EditorToolbar.tsx
+import { Sun, Moon, Share2, Undo, Redo, LogOut, Download } from 'lucide-react';
 
-// Định nghĩa kiểu props nhận từ Editor.tsx
 type EditorToolbarProps = {
+  name: string;
+  onNameChange: (v: string) => void;
+  onCommitName: () => void;
+  onDashboard: () => void;
   onUndo: () => void;
   onRedo: () => void;
   onShare: () => void;
   onTheme: () => void;
   onSave: () => void;
+  onSavePdf: () => void;
 };
 
-// Component EditorToolbar nhận props
 export default function EditorToolbar({
-  onUndo,
-  onRedo,
-  onShare,
-  onTheme,
-  onSave
+  name, onNameChange, onCommitName,
+  onDashboard, onUndo, onRedo, onShare, onTheme, onSave, onSavePdf
 }: EditorToolbarProps) {
-  const { toggle } = useContext(ThemeContext);
+
+  // Check current theme for icon display
+  const isDark = document.documentElement.classList.contains("dark");
 
   return (
-    <div className="fixed top-0 inset-x-0 h-12 bg-gray-900/80 backdrop-blur z-30 flex items-center px-3 space-x-2">
+    <div className="fixed top-0 left-0 right-0 h-14 bg-gray-900/80 backdrop-blur-md border-b border-gray-800 flex items-center px-4 gap-2 z-40">
+      {/* Sidebar is now managed separately, so we don't need a margin here */}
+      
+      {/* Back to Dashboard Button */}
       <button
-        onClick={onUndo}
-        className="px-3 py-2 rounded-md bg-gray-800 hover:bg-gray-700 text-white"
+        onClick={onDashboard}
+        className="px-3 py-1.5 rounded-md bg-gray-800 hover:bg-gray-700 text-white font-medium transition-colors flex items-center gap-2"
+        title="Quay về Dashboard"
       >
-        <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-          <path d="M9 14L4 9l5-5" />
-          <path d="M20 20a8 8 0 00-8-8H4" />
-        </svg>
+        <LogOut size={16} />
+        Dashboard
       </button>
 
-      <button
-        onClick={onRedo}
-        className="px-3 py-2 rounded-md bg-gray-800 hover:bg-gray-700 text-white"
-      >
-        <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-          <path d="M15 14l5-5-5-5" />
-          <path d="M4 20a8 8 0 018-8h8" />
-        </svg>
-      </button>
+      {/* Separator */}
+      <div className="w-px h-6 bg-gray-700 mx-2" />
 
-      <button
-        onClick={onShare}
-        className="px-3 py-2 rounded-md bg-gray-800 hover:bg-gray-700 text-white"
-      >
-        <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-          <circle cx="18" cy="5" r="3" />
-          <circle cx="6" cy="12" r="3" />
-          <circle cx="18" cy="19" r="3" />
-          <path d="M8.59 13.51l6.83 3.98M15.41 6.51L8.59 10.49" />
-        </svg>
-      </button>
+      {/* Mindmap Name (Editable) */}
+      <input
+        value={name}
+        onChange={(e) => onNameChange(e.target.value)}
+        onKeyDown={(e) => e.key === "Enter" && (e.target as HTMLInputElement).blur()}
+        onBlur={onCommitName}
+        className="px-3 py-1.5 rounded-md bg-transparent text-white outline-none ring-1 ring-transparent hover:bg-gray-800 focus:bg-gray-800 focus:ring-blue-500 w-64 transition-all"
+        placeholder="Đặt tên mindmap…"
+      />
 
-      <button
-        onClick={() => {
-          onTheme();
-          toggle(); // vẫn giữ theme toggle
-        }}
-        className="px-3 py-2 rounded-md bg-gray-800 hover:bg-gray-700 text-white"
-      >
-        <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-          <path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z" />
-        </svg>
-      </button>
+      <div className="flex-grow" /> {/* Spacer */}
 
-      <Button
-        onClick={onSave}
-        variant="gradient"
-        size="sm"
-        className="ml-auto"
-      >
-        Save
-      </Button>
+      {/* Action Buttons */}
+      <div className="flex items-center gap-2">
+        <button onClick={onUndo} className="p-2 rounded-md hover:bg-gray-700 text-white" title="Undo (Ctrl+Z)">
+          <Undo size={20} />
+        </button>
+        <button onClick={onRedo} className="p-2 rounded-md hover:bg-gray-700 text-white" title="Redo (Ctrl+Y)">
+          <Redo size={20} />
+        </button>
+        
+        <div className="w-px h-6 bg-gray-700 mx-1" />
 
-      <div className="w-8 h-8 rounded-full bg-gray-800 border border-white/20 ml-2" />
+        <button onClick={onShare} className="p-2 rounded-md hover:bg-gray-700 text-white" title="Share">
+          <Share2 size={20} />
+        </button>
+        
+        {/* CORRECTED: Theme toggle button */}
+        <button onClick={onTheme} className="p-2 rounded-md hover:bg-gray-700 text-white" title="Chuyển theme">
+            {isDark ? <Sun size={20} /> : <Moon size={20} />}
+        </button>
+        
+        <div className="w-px h-6 bg-gray-700 mx-1" />
+        
+        {/* Save Buttons */}
+        <button
+          onClick={onSave}
+          className="px-4 py-1.5 rounded-md bg-blue-600 hover:bg-blue-700 text-white font-medium transition-all flex items-center gap-2"
+        >
+          <Download size={16} />
+          Save PNG
+        </button>
+        <button
+          onClick={onSavePdf}
+          className="px-4 py-1.5 rounded-md bg-purple-600 hover:bg-purple-700 text-white font-medium transition-all flex items-center gap-2"
+        >
+           <Download size={16} />
+          Save PDF
+        </button>
+      </div>
     </div>
   );
 }

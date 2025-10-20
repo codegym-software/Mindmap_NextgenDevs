@@ -5,15 +5,18 @@ import { RouterProvider } from "react-router-dom";
 import { router } from "./app/routes";
 import { AuthProvider } from "./app/providers/AuthProvider";
 import { ThemeProvider } from "./app/providers/ThemeProvider";
+import { NotificationProvider } from "./app/providers/NotificationProvider"; // NEW
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
     <ThemeProvider>
       <AuthProvider>
-        <RouterProvider 
-          router={router} 
-          future={{ v7_startTransition: true }}
-        />
+        <NotificationProvider> {/* NEW WRAPPER */}
+          <RouterProvider
+            router={router}
+            future={{ v7_startTransition: true }}
+          />
+        </NotificationProvider>
       </AuthProvider>
     </ThemeProvider>
   </React.StrictMode>

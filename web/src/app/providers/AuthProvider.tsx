@@ -1,10 +1,27 @@
-// src/app/providers/AuthProvider.tsx
 import React, { createContext, useCallback, useEffect, useMemo, useState } from "react";
 import { loadTokens, saveTokens, clearTokens, type Tokens } from "../../services/authStorage";
-import { loginRedirect, getLogoutUrl, exchangeCodeForTokensPKCE, refreshWithCognito } from "../../auth/cognito";
+import { loginRedirect, getLogoutUrl, refreshWithCognito } from "../../auth/cognito";
+
+// 🧩 Decode JWT (để lấy thông tin user từ id_token)
+function decodeJwt(token: string) {
+  try {
+    const base64Url = token.split(".")[1];
+    const base64 = base64Url.replace(/-/g, "+").replace(/_/g, "/");
+    const jsonPayload = decodeURIComponent(
+      atob(base64)
+        .split("")
+        .map(c => "%" + ("00" + c.charCodeAt(0).toString(16)).slice(-2))
+        .join("")
+    );
+    return JSON.parse(jsonPayload);
+  } catch {
+    return null;
+  }
+}
 
 type AuthCtx = {
   tokens: Tokens | null;
+  user: Record<string, any> | null; // 👈 thêm user
   isAuthed: boolean;
   login: () => void;
   logout: () => void;
@@ -13,18 +30,47 @@ type AuthCtx = {
 };
 
 export const AuthContext = createContext<AuthCtx>({
-  tokens: null, isAuthed: false,
-  login: () => {}, logout: () => {},
+  tokens: null,
+  user: null,
+  isAuthed: false,
+  login: () => {},
+  logout: () => {},
   setAuthTokens: () => {},
-  ensureFreshAccessToken: async () => null
+  ensureFreshAccessToken: async () => null,
 });
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [tokens, setTokensState] = useState<Tokens | null>(() => loadTokens());
+  const [user, setUser] = useState<Record<string, any> | null>(() => {
+    const t = loadTokens();
+    return t?.id_token ? decodeJwt(t.id_token) : null;
+  });
 
   const setAuthTokens = useCallback((t: Tokens | null) => {
     setTokensState(t);
-    if (t) saveTokens(t); else clearTokens();
+    if (t) {
+      saveTokens(t);
+      if (t.id_token) {
+        const decoded = decodeJwt(t.id_token);
+        setUser(decoded);
+      }
+    } else {
+      clearTokens();
+      setUser(null);
+    }
+  }, []);
+
+  // Đồng bộ khi tab khác thay đổi localStorage
+  useEffect(() => {
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === "mm_tokens") {
+        const latest = loadTokens();
+        setTokensState(latest);
+        setUser(latest?.id_token ? decodeJwt(latest.id_token) : null);
+      }
+    };
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
   }, []);
 
   const isAuthed = !!tokens?.access_token;
@@ -36,55 +82,52 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const logout = useCallback(() => {
     clearTokens();
     setTokensState(null);
+    setUser(null);
     window.location.href = getLogoutUrl();
   }, []);
 
   const ensureFreshAccessToken = useCallback(async () => {
     if (!tokens) return null;
+
     const now = Math.floor(Date.now() / 1000);
     const soon = now + 60;
-    if ((tokens.expires_at ?? 0) > soon) return tokens.access_token;
 
-    if (!tokens.refresh_token) return tokens.access_token;
-    const next = await refreshWithCognito(tokens.refresh_token).catch(() => null);
-    if (next) {
+    if ((tokens.expires_at ?? 0) > soon) {
+      return tokens.access_token;
+    }
+
+    if (!tokens.refresh_token) {
+      return tokens.access_token;
+    }
+
+    try {
+      const next = await refreshWithCognito(tokens.refresh_token);
       const merged: Tokens = {
         access_token: next.access_token,
         id_token: next.id_token ?? tokens.id_token,
         refresh_token: tokens.refresh_token,
-        expires_at: Math.floor(Date.now()/1000) + (next.expires_in ?? 3600),
+        expires_at: Math.floor(Date.now() / 1000) + (next.expires_in ?? 3600),
       };
       setAuthTokens(merged);
       return merged.access_token;
+    } catch (error) {
+      console.error("Token refresh failed:", error);
+      return tokens.access_token;
     }
-    return tokens.access_token;
   }, [tokens, setAuthTokens]);
 
-  // Handle /callback (optional)
-  useEffect(() => {
-    if (window.location.pathname !== "/callback") return;
-    const url = new URL(window.location.href);
-    const code = url.searchParams.get("code");
-    const state = url.searchParams.get("state");
-    const expected = sessionStorage.getItem("pkce_state");
-    if (!code || !state || state !== expected) return;
-    (async () => {
-      const res = await exchangeCodeForTokensPKCE(code, sessionStorage.getItem("pkce_verifier") ?? "").catch(() => null);
-      if (res) {
-        setAuthTokens({
-          access_token: res.access_token,
-          id_token: res.id_token,
-          refresh_token: res.refresh_token,
-          expires_at: Math.floor(Date.now()/1000) + (res.expires_in ?? 3600),
-        });
-      }
-      sessionStorage.removeItem("pkce_state");
-      sessionStorage.removeItem("pkce_verifier");
-      window.location.replace("/dashboard");
-    })();
-  }, [setAuthTokens]);
-
-  const value = useMemo(() => ({ tokens, isAuthed, login, logout, setAuthTokens, ensureFreshAccessToken }), [tokens, isAuthed, login, logout, setAuthTokens, ensureFreshAccessToken]);
+  const value = useMemo(
+    () => ({
+      tokens,
+      user,
+      isAuthed,
+      login,
+      logout,
+      setAuthTokens,
+      ensureFreshAccessToken,
+    }),
+    [tokens, user, isAuthed, login, logout, setAuthTokens, ensureFreshAccessToken]
+  );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 };

@@ -1,5 +1,7 @@
 package com.example.mindmap.controller;
 
+import com.example.mindmap.dto.MindmapCreateRequest;
+import com.example.mindmap.dto.MindmapUpdateRequest;
 import com.example.mindmap.dto.MindmapUpsertRequest;
 import com.example.mindmap.model.Mindmap;
 import com.example.mindmap.service.MindmapService;
@@ -28,29 +30,29 @@ public class MindmapController {
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
-    public Mindmap create(@AuthenticationPrincipal Jwt jwt, @Valid @RequestBody MindmapUpsertRequest body) {
+    public Mindmap create(@AuthenticationPrincipal Jwt jwt, @Valid @RequestBody MindmapCreateRequest body) {
         return service.create(jwt.getSubject(), body);
     }
 
     @GetMapping("/{id}")
-    public Mindmap get(@AuthenticationPrincipal Jwt jwt, @PathVariable String id) {
+    public Mindmap get(@AuthenticationPrincipal Jwt jwt, @PathVariable("id") String id) {
         return service.getOwned(jwt.getSubject(), id);
     }
 
     @PutMapping("/{id}")
-    public Mindmap update(@AuthenticationPrincipal Jwt jwt, @PathVariable String id, @Valid @RequestBody MindmapUpsertRequest body) {
+    public Mindmap update(@AuthenticationPrincipal Jwt jwt, @PathVariable("id") String id, @Valid @RequestBody MindmapUpdateRequest body) {
         return service.update(jwt.getSubject(), id, body);
     }
 
     @DeleteMapping("/{id}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
-    public void delete(@AuthenticationPrincipal Jwt jwt, @PathVariable String id) {
+    public void delete(@AuthenticationPrincipal Jwt jwt, @PathVariable("id") String id) {
         service.delete(jwt.getSubject(), id);
     }
 
     /**
      * Import/sync từ guest (localStorage FE) vào tài khoản sau khi đăng nhập.
-     * Payload: [{ name, content }, ...]
+     * FE gửi MẢNG: [ { name, content, createdAt? }, ... ]
      */
     @PostMapping("/sync")
     public List<Mindmap> sync(@AuthenticationPrincipal Jwt jwt, @RequestBody List<@Valid MindmapUpsertRequest> guests) {
