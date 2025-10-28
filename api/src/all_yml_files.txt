@@ -1,0 +1,115 @@
+==== ./main/resources/application-prod.yml ====
+# ===================================================================
+# PRODUCTION-READY CONFIGURATION
+# ===================================================================
+# In a real production environment, these values should be set via
+# environment variables or a configuration server (e.g., Spring Cloud Config)
+# for security and flexibility.
+
+server:
+  port: ${SERVER_PORT:8081} # Use environment variable, default to 8081
+
+spring:
+  data:
+    mongodb:
+      # CRITICAL: Use environment variable for the connection string.
+      # DO NOT hardcode production credentials.
+      uri: ${MONGO_URI:mongodb://localhost:27017/mindmap_prod}
+
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          # These should be loaded from environment variables in production
+          issuer-uri: ${APP_SECURITY_ISSUER:https://cognito-idp.ap-southeast-2.amazonaws.com/ap-southeast-2_t30OWWizg}
+          jwk-set-uri: ${APP_SECURITY_JWK_SET_URI:https://cognito-idp.ap-southeast-2.amazonaws.com/ap-southeast-2_t30OWWizg/.well-known/jwks.json}
+
+app:
+  security:
+    frontend-client-id: ${APP_SECURITY_FRONTEND_CLIENT_ID:7so8qnoi7pgne6bq0kq2ppharm}
+    # Audience is optional and can also be an env var if used
+    # audience: ${APP_SECURITY_AUDIENCE:}
+
+  cors:
+    # CRITICAL: Do not use localhost in production. Use the actual frontend domain.
+    # Load from an environment variable. Example: "https://www.your-mindmap-app.com"
+    allowed-origins: ${APP_CORS_ALLOWED_ORIGINS:https://your-production-domain.com}
+
+  rate-limit:
+    # Production rate limit can be adjusted based on expected traffic.
+    enabled: true
+    requests-per-minute: 200 # A more reasonable production limit
+
+# Logging configuration for Production
+logging:
+  level:
+    # Set default log level to INFO for production to reduce noise
+    root: INFO
+    # Specific packages can be set to DEBUG if needed for troubleshooting
+    com.example.mindmap: INFO
+    org.springframework.security: WARN # Reduce security log verbosity
+    org.springframework.web: WARN
+
+==== ./main/resources/application-dev.yml ====
+server:
+  port: 8081
+
+spring:
+  data:
+    mongodb:
+      uri: mongodb://mongo:27017/mindmapdb
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: ${app.security.issuer}
+
+app:
+  security:
+    issuer: https://cognito-idp.ap-southeast-2.amazonaws.com/ap-southeast-2_t30OWWizg
+    frontend-client-id: 7so8qnoi7pgne6bq0kq2ppharm
+    jwk-set-uri: https://cognito-idp.ap-southeast-2.amazonaws.com/ap-southeast-2_t30OWWizg/.well-known/jwks.json  # Thêm dòng này
+  cors:
+    allowed-origins: http://localhost:3000,http://127.0.0.1:3000
+
+logging:
+  level:
+    org.springframework.security: DEBUG
+    org.springframework.security.web: DEBUG
+    org.springframework.security.oauth2: DEBUG
+    org.springframework.security.oauth2.server.resource: DEBUG
+    org.springframework.web: DEBUG
+    com.nimbusds.jose: DEBUG
+    com.example.mindmap: DEBUG
+    
+==== ./main/resources/application.yml ====
+server:
+  port: 8081
+
+spring:
+  data:
+    mongodb:
+      uri: mongodb://localhost:27017/mindmapdb
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: ${app.security.issuer}
+
+app:
+  security:
+    issuer: https://cognito-idp.ap-southeast-2.amazonaws.com/ap-southeast-2_t30OWWizg
+    frontend-client-id: 7so8qnoi7pgne6bq0kq2ppharm
+    jwk-set-uri: https://cognito-idp.ap-southeast-2.amazonaws.com/ap-southeast-2_t30OWWizg/.well-known/jwks.json  # Thêm dòng này
+  cors:
+    allowed-origins: http://localhost:3000,http://127.0.0.1:3000
+
+logging:
+  level:
+    org.springframework.security: DEBUG
+    org.springframework.security.web: DEBUG
+    org.springframework.security.oauth2: DEBUG
+    org.springframework.security.oauth2.server.resource: DEBUG
+    org.springframework.web: DEBUG
+    com.nimbusds.jose: DEBUG
+    com.example.mindmap: DEBUG

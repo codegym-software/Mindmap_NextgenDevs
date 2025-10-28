@@ -1,3 +1,4 @@
+
 ==== ./main.tsx ====
 import React from "react";
 import ReactDOM from "react-dom/client";
@@ -199,7 +200,8 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
 
   const addToast = useCallback((message: string, type: ToastMessage["type"] = "info") => {
-    const id = Date.now();
+    // FIX: Add Math.random() to ensure unique key even with rapid calls
+    const id = Date.now() + Math.random(); 
     setToasts((prevToasts) => [...prevToasts, { id, message, type }]);
     setTimeout(() => {
       setToasts((prevToasts) => prevToasts.filter((toast) => toast.id !== id));
@@ -246,7 +248,7 @@ type State = {
   edges: EdgeData[];
   history: Snapshot[];
   future: Snapshot[];
-  setGraph: (n: NodeData[], e: EdgeData[], opts?: { pushHistory?: boolean }) => void;
+  setGraph: (n: NodeData[], e: EdgeData[]) => void;
   push: (n: NodeData[], e: EdgeData[]) => void;
   undo: () => Snapshot | null;
   redo: () => Snapshot | null;
@@ -259,46 +261,48 @@ export const useEditorStore = create<State>((set, get) => ({
   history: [],
   future: [],
 
-  setGraph: (n, e, opts) => {
-    const { pushHistory = false } = opts || {};
-    if (pushHistory) {
-      const cur: Snapshot = { nodes: get().nodes, edges: get().edges };
-      // Chỉ push vào history nếu có sự thay đổi
-      if (!isEqual(cur, { nodes: n, edges: e })) {
-        const nextHistory = [...get().history, cur].slice(-MAX_HISTORY);
-        set({ history: nextHistory, future: [], nodes: n, edges: e });
-      } else {
-        set({ nodes: n, edges: e });
-      }
-    } else {
-      set({ nodes: n, edges: e });
-    }
+  setGraph: (n, e) => {
+    set({ nodes: n, edges: e });
   },
 
   push: (n, e) => {
-    const cur: Snapshot = { nodes: get().nodes, edges: get().edges };
-     // Chỉ push vào history nếu có sự thay đổi
-    if (!isEqual(cur, { nodes: n, edges: e })) {
-      const nextHistory = [...get().history, cur].slice(-MAX_HISTORY);
-      set({ history: nextHistory, future: [], nodes: n, edges: e });
+    const currentState: Snapshot = { nodes: n, edges: e };
+    const lastHistoryState = get().history.at(-1);
+
+    // FIX: Only push to history if the state has actually changed
+    if (!lastHistoryState || !isEqual(lastHistoryState, currentState)) {
+      const nextHistory = [...get().history, currentState].slice(-MAX_HISTORY);
+      set({ history: nextHistory, future: [] });
     }
   },
 
   undo: () => {
     const h = get().history.slice();
-    if (!h.length) return null;
-    const prev = h.pop()!;
-    const cur: Snapshot = { nodes: get().nodes, edges: get().edges };
-    set({ history: h, future: [cur, ...get().future], nodes: prev.nodes, edges: prev.edges });
+    if (h.length <= 1) return null; // Keep the initial state
+
+    const current = h.pop()!;
+    const prev = h.at(-1)!;
+
+    set({ 
+        history: h, 
+        future: [current, ...get().future], 
+        nodes: prev.nodes, 
+        edges: prev.edges 
+    });
     return prev;
   },
 
   redo: () => {
     const f = get().future.slice();
     if (!f.length) return null;
+
     const next = f.shift()!;
-    const cur: Snapshot = { nodes: get().nodes, edges: get().edges };
-    set({ history: [...get().history, cur], future: f, nodes: next.nodes, edges: next.edges });
+    set({ 
+        history: [...get().history, next], 
+        future: f, 
+        nodes: next.nodes, 
+        edges: next.edges 
+    });
     return next;
   },
 
@@ -982,271 +986,271 @@ export default function DisplaySwitcher({ onPick }: { onPick: (mode: "tree"|"lr"
 }
 
 ==== ./components/editor/Canvas.tsx ====
-import { Stage, Layer, Group, Rect, Text, Line } from "react-konva";
-import { useEffect, useMemo, useRef, useState } from "react";
-import api from "../../services/api";
-import { useEditorStore } from "../../app/store/useEditorStore";
+// import { Stage, Layer, Group, Rect, Text, Line } from "react-konva";
+// import { useEffect, useMemo, useRef, useState } from "react";
+// import api from "../../services/api";
+// import { useEditorStore } from "../../app/store/useEditorStore";
 
-type NodeData = { id: string; text: string; x: number; y: number; parentId?: string; color?: string };
-type Content = { nodes: Record<string, NodeData>; edges: { id: string; from: string; to: string }[] };
+// type NodeData = { id: string; text: string; x: number; y: number; parentId?: string; color?: string };
+// type Content = { nodes: Record<string, NodeData>; edges: { id: string; from: string; to: string }[] };
 
-const LOCAL_KEY = "mm_guest";
+// const LOCAL_KEY = "mm_guest";
 
-function loadGuest(id: string): Content | null {
-  try {
-    const all = JSON.parse(localStorage.getItem(LOCAL_KEY) || "{}");
-    return all[id] || null;
-  } catch { return null; }
-}
-function saveGuest(id: string, data: Content) {
-  const all = JSON.parse(localStorage.getItem(LOCAL_KEY) || "{}");
-  all[id] = data; localStorage.setItem(LOCAL_KEY, JSON.stringify(all));
-}
+// function loadGuest(id: string): Content | null {
+//   try {
+//     const all = JSON.parse(localStorage.getItem(LOCAL_KEY) || "{}");
+//     return all[id] || null;
+//   } catch { return null; }
+// }
+// function saveGuest(id: string, data: Content) {
+//   const all = JSON.parse(localStorage.getItem(LOCAL_KEY) || "{}");
+//   all[id] = data; localStorage.setItem(LOCAL_KEY, JSON.stringify(all));
+// }
 
-export default function Canvas({ mindmapId, onNodeSelect, onContentChange }: {
-  mindmapId: string | null;
-  onNodeSelect: (id: string) => void;
-  onContentChange: (content: Content) => void;
-}) {
-  const isGuest = !mindmapId || mindmapId.startsWith("guest-");
-  const guestId = mindmapId || `guest-${Date.now()}`;
-  const [content, setContent] = useState<Content>({ nodes: {}, edges: [] });
-  const [selected, setSelected] = useState<string>("root");
-  const [scale, setScale] = useState(1);
-  const [pos, setPos] = useState({ x: window.innerWidth / 2, y: window.innerHeight / 2 });
-  const [editing, setEditing] = useState<{ id: string; left: number; top: number } | null>(null);
-  const stageRef = useRef<any>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
-  const [spacePan, setSpacePan] = useState(false);
-  const { setGraph } = useEditorStore();
+// export default function Canvas({ mindmapId, onNodeSelect, onContentChange }: {
+//   mindmapId: string | null;
+//   onNodeSelect: (id: string) => void;
+//   onContentChange: (content: Content) => void;
+// }) {
+//   const isGuest = !mindmapId || mindmapId.startsWith("guest-");
+//   const guestId = mindmapId || `guest-${Date.now()}`;
+//   const [content, setContent] = useState<Content>({ nodes: {}, edges: [] });
+//   const [selected, setSelected] = useState<string>("root");
+//   const [scale, setScale] = useState(1);
+//   const [pos, setPos] = useState({ x: window.innerWidth / 2, y: window.innerHeight / 2 });
+//   const [editing, setEditing] = useState<{ id: string; left: number; top: number } | null>(null);
+//   const stageRef = useRef<any>(null);
+//   const inputRef = useRef<HTMLInputElement>(null);
+//   const [spacePan, setSpacePan] = useState(false);
+//   const { setGraph } = useEditorStore();
 
-  const ensureRoot = (c: Content) => {
-    if (!c.nodes["root"]) {
-      c.nodes["root"] = { id: "root", text: "Root", x: 0, y: 0 };
-    }
-  };
+//   const ensureRoot = (c: Content) => {
+//     if (!c.nodes["root"]) {
+//       c.nodes["root"] = { id: "root", text: "Root", x: 0, y: 0 };
+//     }
+//   };
 
-  useEffect(() => {
-    (async () => {
-      let data: Content;
-      if (isGuest) {
-        data = loadGuest(guestId) || { nodes: { root: { id: "root", text: "Root", x: 0, y: 0 } }, edges: [] };
-      } else {
-        const { data: serverData } = await api.get(`/mindmaps/${mindmapId}`);
-        data = (serverData.content ?? { nodes: { root: { id: "root", text: "Root", x: 0, y: 0 } }, edges: [] }) as Content;
-      }
-      ensureRoot(data);
-      setContent(data);
-      setGraph(Object.values(data.nodes), data.edges); // Đồng bộ store
-      setSelected("root");
-      focusEdit("root");
-    })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mindmapId]);
+//   useEffect(() => {
+//     (async () => {
+//       let data: Content;
+//       if (isGuest) {
+//         data = loadGuest(guestId) || { nodes: { root: { id: "root", text: "Root", x: 0, y: 0 } }, edges: [] };
+//       } else {
+//         const { data: serverData } = await api.get(`/mindmaps/${mindmapId}`);
+//         data = (serverData.content ?? { nodes: { root: { id: "root", text: "Root", x: 0, y: 0 } }, edges: [] }) as Content;
+//       }
+//       ensureRoot(data);
+//       setContent(data);
+//       setGraph(Object.values(data.nodes), data.edges); // Đồng bộ store
+//       setSelected("root");
+//       focusEdit("root");
+//     })();
+//     // eslint-disable-next-line react-hooks/exhaustive-deps
+//   }, [mindmapId]);
 
-  useEffect(() => {
-    if (!editing) return;
-    if (!stageRef.current) return;
-    const { id } = editing;
-    const n = content.nodes[id];
-    const { x, y } = toScreen(n.x, n.y);
-    setEditing({ id, left: x - 60, top: y - 20 });
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pos, scale]);
+//   useEffect(() => {
+//     if (!editing) return;
+//     if (!stageRef.current) return;
+//     const { id } = editing;
+//     const n = content.nodes[id];
+//     const { x, y } = toScreen(n.x, n.y);
+//     setEditing({ id, left: x - 60, top: y - 20 });
+//   // eslint-disable-next-line react-hooks/exhaustive-deps
+//   }, [pos, scale]);
 
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (!selected) return;
-      if (e.key === " ") { setSpacePan(true); }
-      if (e.key === "Tab") {
-        e.preventDefault();
-        addChild(selected);
-      } else if (e.key === "Enter") {
-        e.preventDefault();
-        if (selected === "root") addChild(selected);
-        else addSibling(selected);
-      } else if (e.key === "Delete") {
-        e.preventDefault();
-        deleteNode(selected);
-      } else if (e.key.length === 1 && !editing) {
-        focusEdit(selected);
-        setTimeout(() => {
-          if (inputRef.current) {
-            inputRef.current.value = content.nodes[selected]?.text || "";
-            inputRef.current.focus();
-            inputRef.current.setSelectionRange(inputRef.current.value.length, inputRef.current.value.length);
-          }
-        }, 0);
-      }
-    };
-    const onKeyUp = (e: KeyboardEvent) => { if (e.key === " ") setSpacePan(false); };
-    window.addEventListener("keydown", onKey);
-    window.addEventListener("keyup", onKeyUp);
-    return () => { window.removeEventListener("keydown", onKey); window.removeEventListener("keyup", onKeyUp); };
-  }, [selected, editing, content]);
+//   useEffect(() => {
+//     const onKey = (e: KeyboardEvent) => {
+//       if (!selected) return;
+//       if (e.key === " ") { setSpacePan(true); }
+//       if (e.key === "Tab") {
+//         e.preventDefault();
+//         addChild(selected);
+//       } else if (e.key === "Enter") {
+//         e.preventDefault();
+//         if (selected === "root") addChild(selected);
+//         else addSibling(selected);
+//       } else if (e.key === "Delete") {
+//         e.preventDefault();
+//         deleteNode(selected);
+//       } else if (e.key.length === 1 && !editing) {
+//         focusEdit(selected);
+//         setTimeout(() => {
+//           if (inputRef.current) {
+//             inputRef.current.value = content.nodes[selected]?.text || "";
+//             inputRef.current.focus();
+//             inputRef.current.setSelectionRange(inputRef.current.value.length, inputRef.current.value.length);
+//           }
+//         }, 0);
+//       }
+//     };
+//     const onKeyUp = (e: KeyboardEvent) => { if (e.key === " ") setSpacePan(false); };
+//     window.addEventListener("keydown", onKey);
+//     window.addEventListener("keyup", onKeyUp);
+//     return () => { window.removeEventListener("keydown", onKey); window.removeEventListener("keyup", onKeyUp); };
+//   }, [selected, editing, content]);
 
-  function toScreen(nx: number, ny: number) {
-    return { x: pos.x + nx * scale, y: pos.y + ny * scale };
-  }
-  function fromScreen(sx: number, sy: number) {
-    return { x: (sx - pos.x) / scale, y: (sy - pos.y) / scale };
-  }
+//   function toScreen(nx: number, ny: number) {
+//     return { x: pos.x + nx * scale, y: pos.y + ny * scale };
+//   }
+//   function fromScreen(sx: number, sy: number) {
+//     return { x: (sx - pos.x) / scale, y: (sy - pos.y) / scale };
+//   }
 
-  function persist(next: Content) {
-    setContent(next);
-    setGraph(Object.values(next.nodes), next.edges); // Đồng bộ store
-    onContentChange(next);
-    if (isGuest) saveGuest(guestId, next);
-    else api.put(`/mindmaps/${mindmapId}`, { content: next }).catch(() => {});
-  }
+//   function persist(next: Content) {
+//     setContent(next);
+//     setGraph(Object.values(next.nodes), next.edges); // Đồng bộ store
+//     onContentChange(next);
+//     if (isGuest) saveGuest(guestId, next);
+//     else api.put(`/mindmaps/${mindmapId}`, { content: next }).catch(() => {});
+//   }
 
-  function addChild(parentId: string) {
-    const id = "n" + Math.random().toString(36).slice(2, 8);
-    const p = content.nodes[parentId];
-    const node: NodeData = { id, text: "", x: p.x + 160, y: p.y, parentId };
-    const edges = [...content.edges, { id: "e" + id, from: parentId, to: id }];
-    const next: Content = { nodes: { ...content.nodes, [id]: node }, edges };
-    layoutChildren(parentId, next);
-    persist(next);
-    setSelected(id);
-    onNodeSelect(id);
-    focusEdit(id);
-  }
+//   function addChild(parentId: string) {
+//     const id = "n" + Math.random().toString(36).slice(2, 8);
+//     const p = content.nodes[parentId];
+//     const node: NodeData = { id, text: "", x: p.x + 160, y: p.y, parentId };
+//     const edges = [...content.edges, { id: "e" + id, from: parentId, to: id }];
+//     const next: Content = { nodes: { ...content.nodes, [id]: node }, edges };
+//     layoutChildren(parentId, next);
+//     persist(next);
+//     setSelected(id);
+//     onNodeSelect(id);
+//     focusEdit(id);
+//   }
 
-  function addSibling(nodeId: string) {
-    const n = content.nodes[nodeId];
-    const parentId = n.parentId || "root";
-    addChild(parentId);
-  }
+//   function addSibling(nodeId: string) {
+//     const n = content.nodes[nodeId];
+//     const parentId = n.parentId || "root";
+//     addChild(parentId);
+//   }
 
-  function deleteNode(nodeId: string) {
-    if (nodeId === "root") return;
-    const next: Content = { nodes: { ...content.nodes }, edges: content.edges.filter(e => e.from !== nodeId && e.to !== nodeId) };
-    const toDel = new Set<string>();
-    (function dfs(id: string) {
-      toDel.add(id);
-      Object.values(next.nodes).forEach(x => { if (x.parentId === id) dfs(x.id); });
-    })(nodeId);
-    toDel.forEach(k => delete next.nodes[k]);
-    const parent = content.nodes[nodeId].parentId || "root";
-    layoutChildren(parent, next);
-    persist(next);
-    setSelected(parent);
-    onNodeSelect(parent);
-  }
+//   function deleteNode(nodeId: string) {
+//     if (nodeId === "root") return;
+//     const next: Content = { nodes: { ...content.nodes }, edges: content.edges.filter(e => e.from !== nodeId && e.to !== nodeId) };
+//     const toDel = new Set<string>();
+//     (function dfs(id: string) {
+//       toDel.add(id);
+//       Object.values(next.nodes).forEach(x => { if (x.parentId === id) dfs(x.id); });
+//     })(nodeId);
+//     toDel.forEach(k => delete next.nodes[k]);
+//     const parent = content.nodes[nodeId].parentId || "root";
+//     layoutChildren(parent, next);
+//     persist(next);
+//     setSelected(parent);
+//     onNodeSelect(parent);
+//   }
 
-  function layoutChildren(parentId: string, data: Content = content) {
-    const p = data.nodes[parentId];
-    const kids = Object.values(data.nodes).filter(n => n.parentId === parentId).sort((a, b) => a.y - b.y);
-    const h = 80;
-    const total = kids.length;
-    kids.forEach((k, i) => {
-      const top = p.y - ((total - 1) * h) / 2 + i * h;
-      k.x = p.x + 160;
-      k.y = top;
-    });
-  }
+//   function layoutChildren(parentId: string, data: Content = content) {
+//     const p = data.nodes[parentId];
+//     const kids = Object.values(data.nodes).filter(n => n.parentId === parentId).sort((a, b) => a.y - b.y);
+//     const h = 80;
+//     const total = kids.length;
+//     kids.forEach((k, i) => {
+//       const top = p.y - ((total - 1) * h) / 2 + i * h;
+//       k.x = p.x + 160;
+//       k.y = top;
+//     });
+//   }
 
-  function onDragNode(id: string, x: number, y: number) {
-    const n = content.nodes[id];
-    const next: Content = { ...content, nodes: { ...content.nodes, [id]: { ...n, x, y } } };
-    setContent(next);
-  }
+//   function onDragNode(id: string, x: number, y: number) {
+//     const n = content.nodes[id];
+//     const next: Content = { ...content, nodes: { ...content.nodes, [id]: { ...n, x, y } } };
+//     setContent(next);
+//   }
 
-  function onDragNodeEnd(id: string, x: number, y: number) {
-    const n = content.nodes[id];
-    const next: Content = { ...content, nodes: { ...content.nodes, [id]: { ...n, x, y } } };
-    layoutChildren(id, next);
-    persist(next);
-  }
+//   function onDragNodeEnd(id: string, x: number, y: number) {
+//     const n = content.nodes[id];
+//     const next: Content = { ...content, nodes: { ...content.nodes, [id]: { ...n, x, y } } };
+//     layoutChildren(id, next);
+//     persist(next);
+//   }
 
-  function focusEdit(id: string) {
-    const n = content.nodes[id]; if (!n) return;
-    const { x, y } = toScreen(n.x, n.y);
-    setEditing({ id, left: x - 60, top: y - 20 });
-    setTimeout(() => inputRef.current?.focus(), 0);
-  }
+//   function focusEdit(id: string) {
+//     const n = content.nodes[id]; if (!n) return;
+//     const { x, y } = toScreen(n.x, n.y);
+//     setEditing({ id, left: x - 60, top: y - 20 });
+//     setTimeout(() => inputRef.current?.focus(), 0);
+//   }
 
-  function commitEdit() {
-    if (!editing || !inputRef.current) return setEditing(null);
-    const text = inputRef.current.value;
-    const id = editing.id;
-    const n = content.nodes[id];
-    const next: Content = { ...content, nodes: { ...content.nodes, [id]: { ...n, text } } };
-    persist(next);
-    setEditing(null);
-  }
+//   function commitEdit() {
+//     if (!editing || !inputRef.current) return setEditing(null);
+//     const text = inputRef.current.value;
+//     const id = editing.id;
+//     const n = content.nodes[id];
+//     const next: Content = { ...content, nodes: { ...content.nodes, [id]: { ...n, text } } };
+//     persist(next);
+//     setEditing(null);
+//   }
 
-  const edges = useMemo(() => {
-    return content.edges.map(e => {
-      const a = content.nodes[e.from], b = content.nodes[e.to];
-      if (!a || !b) return null;
-      return { id: e.id, from: a, to: b };
-    }).filter(Boolean) as { id: string; from: NodeData; to: NodeData }[];
-  }, [content]);
+//   const edges = useMemo(() => {
+//     return content.edges.map(e => {
+//       const a = content.nodes[e.from], b = content.nodes[e.to];
+//       if (!a || !b) return null;
+//       return { id: e.id, from: a, to: b };
+//     }).filter(Boolean) as { id: string; from: NodeData; to: NodeData }[];
+//   }, [content]);
 
-  const onWheel = (e: any) => {
-    e.evt.preventDefault();
-    const scaleBy = 1.04;
-    const old = scale;
-    const mousePointTo = { x: (e.evt.x - pos.x) / old, y: (e.evt.y - pos.y) / old };
-    const newScale = e.evt.deltaY > 0 ? old / scaleBy : old * scaleBy;
-    const newPos = { x: e.evt.x - mousePointTo.x * newScale, y: e.evt.y - mousePointTo.y * newScale };
-    setScale(newScale); setPos(newPos);
-  };
+//   const onWheel = (e: any) => {
+//     e.evt.preventDefault();
+//     const scaleBy = 1.04;
+//     const old = scale;
+//     const mousePointTo = { x: (e.evt.x - pos.x) / old, y: (e.evt.y - pos.y) / old };
+//     const newScale = e.evt.deltaY > 0 ? old / scaleBy : old * scaleBy;
+//     const newPos = { x: e.evt.x - mousePointTo.x * newScale, y: e.evt.y - mousePointTo.y * newScale };
+//     setScale(newScale); setPos(newPos);
+//   };
 
-  const onDragBg = (e: any) => { if (spacePan) setPos({ x: pos.x + e.evt.movementX, y: pos.y + e.evt.movementY }); };
+//   const onDragBg = (e: any) => { if (spacePan) setPos({ x: pos.x + e.evt.movementX, y: pos.y + e.evt.movementY }); };
 
-  return (
-    <div className="relative w-full h-full select-none">
-      {editing && (
-        <input
-          ref={inputRef}
-          defaultValue={content.nodes[editing.id]?.text || ""}
-          onBlur={commitEdit}
-          onKeyDown={(e) => e.key === "Enter" ? (e.preventDefault(), commitEdit()) : null}
-          className="absolute z-50 px-2 py-1 rounded-md bg-white text-black outline-none"
-          style={{ left: editing.left, top: editing.top, width: 120 }}
-        />
-      )}
-      <Stage
-        ref={stageRef}
-        width={window.innerWidth}
-        height={window.innerHeight}
-        x={pos.x}
-        y={pos.y}
-        scaleX={scale}
-        scaleY={scale}
-        onWheel={onWheel}
-        onMouseMove={onDragBg}
-        onMouseDown={(e: any) => { if (e.evt.button === 1) setSpacePan(true); }}
-        onMouseUp={() => setSpacePan(false)}
-      >
-        <Layer>
-          {edges.map(e => {
-            const pts = [e.from.x + 120, e.from.y + 20, (e.from.x + e.to.x) / 2 + 80, (e.from.y + e.to.y) / 2, e.to.x, e.to.y + 20];
-            return <Line key={e.id} points={pts} stroke="#888" tension={0.5} bezier={false} />;
-          })}
-          {Object.values(content.nodes).map(n => (
-            <Group
-              key={n.id}
-              x={n.x}
-              y={n.y}
-              draggable
-              onDragMove={(e: any) => onDragNode(n.id, e.target.x(), e.target.y())}
-              onDragEnd={(e: any) => onDragNodeEnd(n.id, e.target.x(), e.target.y())}
-              onClick={() => { setSelected(n.id); onNodeSelect(n.id); }}
-              onDblClick={() => focusEdit(n.id)}
-            >
-              <Rect width={120} height={40} cornerRadius={10} fill="#1f2937" stroke={n.id === selected ? "#60a5fa" : "#6b7280"} strokeWidth={2} />
-              <Text text={(n.text || "").length ? n.text : "(nhập...)" } width={120} height={40} align="center" verticalAlign="middle" fill="#fff" />
-            </Group>
-          ))}
-        </Layer>
-      </Stage>
-    </div>
-  );
-}
+//   return (
+//     <div className="relative w-full h-full select-none">
+//       {editing && (
+//         <input
+//           ref={inputRef}
+//           defaultValue={content.nodes[editing.id]?.text || ""}
+//           onBlur={commitEdit}
+//           onKeyDown={(e) => e.key === "Enter" ? (e.preventDefault(), commitEdit()) : null}
+//           className="absolute z-50 px-2 py-1 rounded-md bg-white text-black outline-none"
+//           style={{ left: editing.left, top: editing.top, width: 120 }}
+//         />
+//       )}
+//       <Stage
+//         ref={stageRef}
+//         width={window.innerWidth}
+//         height={window.innerHeight}
+//         x={pos.x}
+//         y={pos.y}
+//         scaleX={scale}
+//         scaleY={scale}
+//         onWheel={onWheel}
+//         onMouseMove={onDragBg}
+//         onMouseDown={(e: any) => { if (e.evt.button === 1) setSpacePan(true); }}
+//         onMouseUp={() => setSpacePan(false)}
+//       >
+//         <Layer>
+//           {edges.map(e => {
+//             const pts = [e.from.x + 120, e.from.y + 20, (e.from.x + e.to.x) / 2 + 80, (e.from.y + e.to.y) / 2, e.to.x, e.to.y + 20];
+//             return <Line key={e.id} points={pts} stroke="#888" tension={0.5} bezier={false} />;
+//           })}
+//           {Object.values(content.nodes).map(n => (
+//             <Group
+//               key={n.id}
+//               x={n.x}
+//               y={n.y}
+//               draggable
+//               onDragMove={(e: any) => onDragNode(n.id, e.target.x(), e.target.y())}
+//               onDragEnd={(e: any) => onDragNodeEnd(n.id, e.target.x(), e.target.y())}
+//               onClick={() => { setSelected(n.id); onNodeSelect(n.id); }}
+//               onDblClick={() => focusEdit(n.id)}
+//             >
+//               <Rect width={120} height={40} cornerRadius={10} fill="#1f2937" stroke={n.id === selected ? "#60a5fa" : "#6b7280"} strokeWidth={2} />
+//               <Text text={(n.text || "").length ? n.text : "(nhập...)" } width={120} height={40} align="center" verticalAlign="middle" fill="#fff" />
+//             </Group>
+//           ))}
+//         </Layer>
+//       </Stage>
+//     </div>
+//   );
+// }
 ==== ./vite-env.d.ts ====
 
 /// <reference types="vite/client" />
@@ -1630,7 +1634,7 @@ export default function Dashboard() {
 // src/pages/Editor.tsx
 import { useEffect, useRef, useState, useCallback, useMemo } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { Stage, Layer, Group, Rect, Text, Line, Circle } from "react-konva";
+import { Stage, Layer, Group, Rect, Text, Line } from "react-konva";
 import { useDebouncedCallback } from 'use-debounce';
 
 import EditorToolbar from "../components/editor/EditorToolbar";
@@ -1646,12 +1650,7 @@ import Spinner from "../components/common/Spinner";
 type Content = { nodes: Record<string, NodeData>; edges: EdgeData[] };
 type MindmapDoc = { id?: string; name: string; content: Content };
 
-// Constants for node styling
-const PADDING_X = 24;
-const PADDING_Y = 12;
-const MIN_W = 140;
-const MIN_H = 44;
-
+const PADDING_X = 24, PADDING_Y = 12, MIN_W = 140, MIN_H = 44;
 const GUEST_BUCKET = "mm_guest_docs";
 
 // Helper functions for guest data
@@ -1659,9 +1658,7 @@ function loadGuestDoc(id: string): MindmapDoc | null {
   try {
     const raw = localStorage.getItem(GUEST_BUCKET);
     return raw ? JSON.parse(raw)[id] || null : null;
-  } catch {
-    return null;
-  }
+  } catch { return null; }
 }
 function saveGuestDoc(id: string, doc: MindmapDoc) {
   const all = JSON.parse(localStorage.getItem(GUEST_BUCKET) || "{}");
@@ -1669,7 +1666,6 @@ function saveGuestDoc(id: string, doc: MindmapDoc) {
   localStorage.setItem(GUEST_BUCKET, JSON.stringify(all));
 }
 
-// --- Component ---
 export default function Editor() {
   const { id } = useParams<{ id?: string }>();
   const navigate = useNavigate();
@@ -1682,86 +1678,75 @@ export default function Editor() {
   const [name, setName] = useState("Loading...");
   const [selectedNodeId, setSelectedNodeId] = useState<string>("root");
   
-  // Canvas state
   const stageRef = useRef<any>(null);
   const [scale, setScale] = useState(1);
   const [pos, setPos] = useState({ x: window.innerWidth / 2, y: window.innerHeight / 2 });
   const [isPanning, setIsPanning] = useState(false);
 
-  // Inline editing state
   const [editingNodeId, setEditingNodeId] = useState<string | null>(null);
   const editingInputRef = useRef<HTMLTextAreaElement>(null);
 
-  // Zustand store for undo/redo
   const { push: pushHistory, undo, redo, setGraph, clear: clearHistory } = useEditorStore();
 
-  // --- Data Loading and Initialization ---
+  // --- Data Loading Logic ---
+  useEffect(() => {
+    let isMounted = true; // Flag to prevent state updates on unmounted component
 
-// Bọc logic tải dữ liệu bằng useCallback
-const loadData = useCallback(async () => {
-  if (!id) {
-    // Không có ID → tạo mindmap guest mới
-    if (isAuthenticated()) {
-      // Nếu đã đăng nhập thì quay lại dashboard thay vì tạo mindmap guest
-      navigate("/dashboard", { replace: true });
-      return;
-    }
+    const loadData = async () => {
+      // **FIX: Logic for creating a new guest mindmap**
+      if (!id) {
+        if (isAuthenticated()) {
+          navigate("/dashboard", { replace: true });
+          return;
+        }
+        const newId = "guest-" + Date.now();
+        const newDoc: MindmapDoc = {
+          name: "Mindmap nháp",
+          content: { nodes: { root: { id: "root", text: "Chủ đề chính", x: 0, y: 0 } }, edges: [] },
+        };
+        saveGuestDoc(newId, newDoc);
+        navigate(`/editor/${newId}`, { replace: true });
+        return; // Exit after navigation
+      }
 
-    const newId = "guest-" + Date.now();
-    const newDoc: MindmapDoc = {
-      name: "Mindmap nháp",
-      content: {
-        nodes: { root: { id: "root", text: "Chủ đề chính", x: 0, y: 0 } },
-        edges: [],
-      },
+      // **FIX: Logic for loading existing mindmap**
+      try {
+        let data: MindmapDoc | null = null;
+        if (isGuest) {
+          data = loadGuestDoc(id) || { name: "Mindmap Lỗi", content: { nodes: {}, edges: [] }};
+        } else {
+          data = await mindmapsApi.get(id);
+        }
+
+        if (!data.content?.nodes?.root) {
+          data.content = { nodes: { root: { id: "root", text: "Chủ đề chính", x: 0, y: 0 } }, edges: [] };
+        }
+
+        if (isMounted) {
+          setDoc(data);
+          setName(data.name);
+          clearHistory();
+          setGraph(Object.values(data.content.nodes), data.content.edges);
+          setSelectedNodeId("root");
+        }
+
+      } catch (error) {
+        console.error("Failed to load mindmap:", error);
+        if (isMounted) {
+            addToast("Không thể tải mindmap!", "error");
+            navigate("/dashboard", { replace: true });
+        }
+      }
     };
-    saveGuestDoc(newId, newDoc);
-    navigate(`/editor/${newId}`, { replace: true });
-    return;
-  }
 
-  let data: MindmapDoc | null = null;
+    loadData();
 
-  if (isGuest) {
-    // Nếu là guest → load từ localStorage
-    data = loadGuestDoc(id) || {
-      name: "Mindmap mới",
-      content: { nodes: {}, edges: [] },
+    return () => {
+      isMounted = false; // Cleanup function to set flag
     };
-  } else {
-    try {
-      // Nếu không phải guest → load từ API
-      data = await mindmapsApi.get(id);
-    } catch (error) {
-      console.error("Failed to load mindmap:", error);
-      addToast("Không thể tải mindmap!", "error");
-      navigate("/dashboard", { replace: true });
-      return;
-    }
-  }
+  }, [id]); // **FIX: Only re-run when the 'id' parameter changes**
 
-  // Nếu dữ liệu không có node root → khởi tạo mặc định
-  if (!data.content?.nodes?.root) {
-    data.content = {
-      nodes: { root: { id: "root", text: "Chủ đề chính", x: 0, y: 0 } },
-      edges: [],
-    };
-  }
-
-  // Cập nhật state sau khi load xong
-  setDoc(data);
-  setName(data.name);
-  clearHistory();
-  setGraph(Object.values(data.content.nodes), data.content.edges);
-  setSelectedNodeId("root");
-}, [id, isGuest, isAuthenticated, navigate, addToast, clearHistory, setGraph]);
-
-// Gọi hàm loadData trong useEffect (đảm bảo chỉ chạy khi cần)
-useEffect(() => {
-  loadData();
-}, [loadData]);
-
-  // --- Persistence Logic with Debounce ---
+  // --- Persistence Logic ---
   const debouncedSave = useDebouncedCallback((updatedDoc: MindmapDoc) => {
     if (isGuest) {
       saveGuestDoc(id!, updatedDoc);
@@ -1771,24 +1756,19 @@ useEffect(() => {
         addToast("Lưu thất bại", "error");
       });
     }
-  }, 1000); // Wait 1 second after last change to save
+  }, 1000);
 
-  const updateAndPersist = (newContent: Content, newName?: string) => {
+  const updateAndPersist = useCallback((newContent: Content, newName?: string) => {
     if (!doc) return;
     
-    // Push to history only if content has changed
-    const currentContent = JSON.stringify(doc.content);
-    const newContentStr = JSON.stringify(newContent);
-    if(currentContent !== newContentStr){
-       pushHistory(Object.values(doc.content.nodes), doc.content.edges);
-    }
+    pushHistory(Object.values(doc.content.nodes), doc.content.edges);
 
     const updatedDoc: MindmapDoc = { ...doc, name: newName ?? name, content: newContent };
     setDoc(updatedDoc);
     if(newName) setName(newName);
     
     debouncedSave(updatedDoc);
-  };
+  }, [doc, name, pushHistory, debouncedSave]);
   
   const updateNameAndPersist = (newName: string) => {
     if (!doc || newName === name) return;
@@ -1798,14 +1778,132 @@ useEffect(() => {
     debouncedSave(updatedDoc);
   }
 
-  // --- Node Sizing and Positioning ---
+  // --- Keyboard & Event Handlers ---
+  const handleUndo = useCallback(() => {
+    const prevState = undo();
+    if (prevState && doc) {
+      const newContent = { nodes: Object.fromEntries(prevState.nodes.map(n => [n.id, n])), edges: prevState.edges };
+      const updatedDoc = { ...doc, content: newContent };
+      setDoc(updatedDoc);
+      debouncedSave(updatedDoc);
+    }
+  }, [doc, undo, debouncedSave]);
+
+  const handleRedo = useCallback(() => {
+    const nextState = redo();
+    if (nextState && doc) {
+      const newContent = { nodes: Object.fromEntries(nextState.nodes.map(n => [n.id, n])), edges: nextState.edges };
+      const updatedDoc = { ...doc, content: newContent };
+      setDoc(updatedDoc);
+      debouncedSave(updatedDoc);
+    }
+  }, [doc, redo, debouncedSave]);
+
+  // All other functions (getNodeBox, editingNodePosition, startEditing, stopEditing, handleAddChild, etc.) remain largely the same.
+  // The important part is that the event handlers below are now stable and won't be broken by the render loop.
   const getNodeBox = useCallback((nodeText: string) => {
     const lines = (nodeText || "").split("\n");
-    const longest = Math.max(...lines.map((line) => line.length), 5); // min 5 chars
+    const longest = Math.max(...lines.map((line) => line.length), 5);
     const w = Math.max(MIN_W, longest * 8 + PADDING_X * 2);
     const h = Math.max(MIN_H, lines.length * 18 + PADDING_Y * 2);
     return { w, h };
   }, []);
+
+  const startEditing = useCallback((nodeId: string) => {
+    setSelectedNodeId(nodeId);
+    setEditingNodeId(nodeId);
+    setTimeout(() => editingInputRef.current?.focus(), 0);
+  }, []);
+
+  const stopEditing = useCallback((save: boolean) => {
+    if (!editingNodeId || !doc) return;
+    
+    const node = doc.content.nodes[editingNodeId];
+    const newText = editingInputRef.current?.value ?? node.text;
+    
+    setEditingNodeId(null);
+
+    if (save && newText !== node.text) {
+      const newNodes = { ...doc.content.nodes, [editingNodeId]: { ...node, text: newText } };
+      updateAndPersist({ ...doc.content, nodes: newNodes });
+    }
+  }, [doc, editingNodeId, updateAndPersist]);
+
+  const handleAddChild = useCallback((parentId: string) => {
+    if (!doc) return;
+    const parent = doc.content.nodes[parentId];
+    if (!parent) return;
+
+    const newId = "n" + Date.now();
+    const newNode: NodeData = { id: newId, text: "", x: parent.x + 200, y: parent.y, parentId };
+    const newEdge: EdgeData = { id: `e-${newId}`, from: parentId, to: newId };
+    
+    const newNodes = { ...doc.content.nodes, [newId]: newNode };
+    const newEdges = [...doc.content.edges, newEdge];
+
+    const children = Object.values(newNodes).filter(n => n.parentId === parentId);
+    children.forEach((child, index) => {
+        child.y = parent.y + (index - (children.length - 1) / 2) * 80;
+        child.x = parent.x + 200;
+    });
+
+    updateAndPersist({ nodes: newNodes, edges: newEdges });
+    startEditing(newId);
+  }, [doc, updateAndPersist, startEditing]);
+
+  const handleAddSibling = useCallback((nodeId: string) => {
+    if (nodeId === 'root' || !doc) return handleAddChild('root');
+    const parentId = doc.content.nodes[nodeId]?.parentId;
+    if (parentId) handleAddChild(parentId);
+  }, [doc, handleAddChild]);
+
+  const handleDeleteNode = useCallback((nodeId: string) => {
+    if (nodeId === 'root' || !doc) return;
+
+    const nodesToDelete = new Set<string>([nodeId]);
+    const findChildren = (id: string) => {
+      Object.values(doc.content.nodes).forEach(n => {
+        if (n.parentId === id) {
+          nodesToDelete.add(n.id);
+          findChildren(n.id);
+        }
+      });
+    };
+    findChildren(nodeId);
+
+    const newNodes = { ...doc.content.nodes };
+    nodesToDelete.forEach(id => delete newNodes[id]);
+    const newEdges = doc.content.edges.filter(e => !nodesToDelete.has(e.from) && !nodesToDelete.has(e.to));
+    
+    const parentId = doc.content.nodes[nodeId]?.parentId ?? 'root';
+    updateAndPersist({ nodes: newNodes, edges: newEdges });
+    setSelectedNodeId(parentId);
+  }, [doc, updateAndPersist]);
+
+  const handleKeyDown = useCallback((e: KeyboardEvent) => {
+    if (editingNodeId) {
+        if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); stopEditing(true); } 
+        else if (e.key === 'Escape') { stopEditing(false); }
+        return;
+    }
+
+    if (e.key === 'Tab') { e.preventDefault(); handleAddChild(selectedNodeId); } 
+    else if (e.key === 'Enter') { e.preventDefault(); handleAddSibling(selectedNodeId); } 
+    else if (e.key === 'Delete' || e.key === 'Backspace') { e.preventDefault(); handleDeleteNode(selectedNodeId); } 
+    else if (e.key === ' ' && !e.ctrlKey && !e.metaKey) { setIsPanning(true); } 
+    else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); handleUndo(); } 
+    else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y') { e.preventDefault(); handleRedo(); } 
+    else if (e.key.length === 1 && /^[a-zA-Z0-9\S]$/.test(e.key)) { e.preventDefault(); startEditing(selectedNodeId); }
+  }, [editingNodeId, selectedNodeId, stopEditing, handleAddChild, handleAddSibling, handleDeleteNode, handleUndo, handleRedo, startEditing]);
+
+  useEffect(() => {
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [handleKeyDown]);
+  
+  // The rest of the component (rendering logic, etc.) remains the same. The key is the fixed useEffect hook.
+  // ... (keep the rest of the file from your previous version, including the return statement)
+  // ... (the entire JSX render block)
 
   const editingNodePosition = useMemo(() => {
     if (!editingNodeId || !doc) return null;
@@ -1827,141 +1925,16 @@ useEffect(() => {
     };
   }, [editingNodeId, doc, scale, pos, getNodeBox]);
 
-  // --- Core Mindmap Actions (Add, Delete, Edit) ---
-  
-  const startEditing = (nodeId: string) => {
-    setSelectedNodeId(nodeId);
-    setEditingNodeId(nodeId);
-    setTimeout(() => editingInputRef.current?.focus(), 0);
-  };
-
-  const stopEditing = (save: boolean) => {
-    if (!editingNodeId || !doc) return;
-    
-    const node = doc.content.nodes[editingNodeId];
-    const newText = editingInputRef.current?.value ?? node.text;
-    
-    setEditingNodeId(null);
-
-    if (save && newText !== node.text) {
-      const newNodes = { ...doc.content.nodes, [editingNodeId]: { ...node, text: newText } };
-      updateAndPersist({ ...doc.content, nodes: newNodes });
-    }
-  };
-
-  const handleAddChild = (parentId: string) => {
-    if (!doc) return;
-    const parent = doc.content.nodes[parentId];
-    if (!parent) return;
-
-    const newId = "n" + Date.now();
-    const newNode: NodeData = {
-      id: newId, text: "",
-      x: parent.x + 200, y: parent.y, parentId,
-    };
-    const newEdge: EdgeData = { id: `e-${newId}`, from: parentId, to: newId };
-    
-    const newNodes = { ...doc.content.nodes, [newId]: newNode };
-    const newEdges = [...doc.content.edges, newEdge];
-
-    // Simple layout logic (can be improved)
-    const children = Object.values(newNodes).filter(n => n.parentId === parentId);
-    children.forEach((child, index) => {
-        child.y = parent.y + (index - (children.length - 1) / 2) * 80;
-        child.x = parent.x + 200;
-    });
-
-    updateAndPersist({ nodes: newNodes, edges: newEdges });
-    startEditing(newId);
-  };
-
-  const handleAddSibling = (nodeId: string) => {
-    if (nodeId === 'root' || !doc) return handleAddChild('root');
-    const parentId = doc.content.nodes[nodeId]?.parentId;
-    if (parentId) handleAddChild(parentId);
-  };
-
-  const handleDeleteNode = (nodeId: string) => {
-    if (nodeId === 'root' || !doc) return;
-
-    const nodesToDelete = new Set<string>([nodeId]);
-    const findChildren = (id: string) => {
-      Object.values(doc.content.nodes).forEach(n => {
-        if (n.parentId === id) {
-          nodesToDelete.add(n.id);
-          findChildren(n.id);
-        }
-      });
-    };
-    findChildren(nodeId);
-
-    const newNodes = { ...doc.content.nodes };
-    nodesToDelete.forEach(id => delete newNodes[id]);
-    const newEdges = doc.content.edges.filter(e => !nodesToDelete.has(e.from) && !nodesToDelete.has(e.to));
-    
-    const parentId = doc.content.nodes[nodeId]?.parentId ?? 'root';
-    updateAndPersist({ nodes: newNodes, edges: newEdges });
-    setSelectedNodeId(parentId);
-  };
-  
-  // --- Keyboard & Mouse Handlers ---
-  const handleKeyDown = useCallback((e: KeyboardEvent) => {
-    if (editingNodeId) { // Input handles its own events
-        if (e.key === 'Enter' && !e.shiftKey) {
-            e.preventDefault();
-            stopEditing(true);
-        } else if (e.key === 'Escape') {
-            stopEditing(false);
-        }
-        return;
-    }
-
-    if (e.key === 'Tab') {
-        e.preventDefault();
-        handleAddChild(selectedNodeId);
-    } else if (e.key === 'Enter') {
-        e.preventDefault();
-        handleAddSibling(selectedNodeId);
-    } else if (e.key === 'Delete' || e.key === 'Backspace') {
-        e.preventDefault();
-        handleDeleteNode(selectedNodeId);
-    } else if (e.key === ' ' && !e.ctrlKey && !e.metaKey) {
-        setIsPanning(true);
-    } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
-        e.preventDefault();
-        const prevState = undo();
-        if(prevState && doc){
-            const newContent = { nodes: Object.fromEntries(prevState.nodes.map(n=>[n.id, n])), edges: prevState.edges };
-            setDoc({...doc, content: newContent});
-            debouncedSave({...doc, content: newContent});
-        }
-    } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y') {
-        e.preventDefault();
-        const nextState = redo();
-        if(nextState && doc){
-            const newContent = { nodes: Object.fromEntries(nextState.nodes.map(n=>[n.id, n])), edges: nextState.edges };
-            setDoc({...doc, content: newContent});
-            debouncedSave({...doc, content: newContent});
-        }
-    } else if (e.key.length === 1) { // Any character key starts editing
-        e.preventDefault();
-        startEditing(selectedNodeId);
-    }
-
-  }, [editingNodeId, selectedNodeId, doc]);
-  
   const handleKeyUp = (e: KeyboardEvent) => {
     if (e.key === ' ') setIsPanning(false);
   };
   
   useEffect(() => {
-    window.addEventListener('keydown', handleKeyDown);
     window.addEventListener('keyup', handleKeyUp);
     return () => {
-        window.removeEventListener('keydown', handleKeyDown);
         window.removeEventListener('keyup', handleKeyUp);
     };
-  }, [handleKeyDown]);
+  }, []);
 
   const handleWheel = (e: any) => {
     e.evt.preventDefault();
@@ -1980,11 +1953,10 @@ useEffect(() => {
     });
   };
 
-  // --- Render ---
   if (!doc) {
     return <div className="w-screen h-screen bg-gray-950 flex items-center justify-center text-white"><Spinner />Loading...</div>;
   }
-  
+ 
   return (
     <div className="w-screen h-screen bg-gray-900 dark:bg-gray-950 overflow-hidden">
         <EditorToolbar
@@ -1992,8 +1964,8 @@ useEffect(() => {
             onNameChange={setName}
             onCommitName={() => updateNameAndPersist(name)}
             onDashboard={() => navigate("/dashboard")}
-            onUndo={()=>{/* Implemented via keyboard */}}
-            onRedo={()=>{/* Implemented via keyboard */}}
+            onUndo={handleUndo}
+            onRedo={handleRedo}
             onShare={() => {
               navigator.clipboard.writeText(window.location.href);
               addToast("Đã sao chép link chia sẻ!", "success");
@@ -2004,7 +1976,6 @@ useEffect(() => {
         />
         <Sidebar />
         
-        {/* FIXED: Inline editing text area, managed by React state */}
         {editingNodeId && editingNodePosition && (
             <textarea
                 ref={editingInputRef}
@@ -2022,16 +1993,17 @@ useEffect(() => {
             <Stage
                 ref={stageRef}
                 width={window.innerWidth}
-                height={window.innerHeight - 56} // 56px is toolbar height
+                height={window.innerHeight - 56}
                 scaleX={scale}
                 scaleY={scale}
                 x={pos.x}
                 y={pos.y}
                 onWheel={handleWheel}
                 onMouseDown={(e) => {
-                    if (e.evt.button === 1 || isPanning) { setIsPanning(true); } // Middle mouse or space
-                    if (e.target === e.target.getStage()) { // Click on empty space
+                    if (e.evt.button === 1 || isPanning) { setIsPanning(true); }
+                    if (e.target === e.target.getStage()) {
                         setSelectedNodeId("");
+                        if(editingNodeId) stopEditing(true);
                     }
                 }}
                 onMouseUp={() => setIsPanning(false)}
@@ -2043,16 +2015,14 @@ useEffect(() => {
                 style={{ cursor: isPanning ? 'grabbing' : 'default' }}
             >
                 <Layer>
-                    {/* Edges */}
                     {Object.values(doc.content.edges).map((edge) => {
                         const from = doc.content.nodes[edge.from];
                         const to = doc.content.nodes[edge.to];
                         if (!from || !to) return null;
-                        const points = [from.x, from.y, to.x, to.y];
+                        const points = [from.x, from.y, (from.x + to.x) / 2, from.y, (from.x + to.x) / 2, to.y, to.x, to.y];
                         return <Line key={edge.id} points={points} stroke="#4f4f4f" strokeWidth={2} bezier/>;
                     })}
 
-                    {/* Nodes */}
                     {Object.values(doc.content.nodes).map((node) => {
                         const { w, h } = getNodeBox(node.text);
                         const isSelected = node.id === selectedNodeId;
@@ -2065,8 +2035,14 @@ useEffect(() => {
                                   const newNodes = {...doc.content.nodes, [node.id]: {...node, x: e.target.x(), y: e.target.y()}}
                                   updateAndPersist({...doc.content, nodes: newNodes})
                                 }}
-                                onClick={() => setSelectedNodeId(node.id)}
-                                onDblClick={() => startEditing(node.id)}
+                                onClick={(e) => {
+                                    e.cancelBubble = true;
+                                    setSelectedNodeId(node.id);
+                                }}
+                                onDblClick={(e) => {
+                                    e.cancelBubble = true;
+                                    startEditing(node.id);
+                                }}
                             >
                                 <Rect
                                     width={w} height={h}
@@ -2086,6 +2062,7 @@ useEffect(() => {
                                     align="center" verticalAlign="middle"
                                     fill="#d1d5db"
                                     padding={PADDING_Y}
+                                    listening={false}
                                 />
                             </Group>
                         );

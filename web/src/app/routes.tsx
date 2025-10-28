@@ -12,3 +12,5 @@ export const router = createBrowserRouter([
   { path: "/callback", element: <Callback /> },
   { path: "/logout", element: <Logout /> },
 ]);
+
+
