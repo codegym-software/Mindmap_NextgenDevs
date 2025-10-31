@@ -1,0 +1,42 @@
+{
+    "dashboard": {
+        "title": "Mindmap Của Tôi",
+        "new_button": "Tạo Mindmap Mới",
+        "search_placeholder": "Tìm kiếm mindmap...",
+        "loading": "Đang tải...",
+        "empty": "Chưa có mindmap nào. Hãy tạo một cái mới!",
+        "empty_search": "Không tìm thấy mindmap nào khớp."
+    },
+    "editor": {
+        "toolbar": {
+            "save": "Lưu",
+            "share": "Chia sẻ",
+            "export": "Xuất file",
+            "undo": "Hoàn tác (Ctrl+Z)",
+            "redo": "Làm lại (Ctrl+Y)",
+            "toggle_panel": "Bảng định dạng (Ctrl+M)",
+            "theme_light": "Chế độ Sáng",
+            "theme_dark": "Chế độ Tối"
+        },
+        "style_panel": {
+            "title": "Định dạng Node",
+            "select_node": "Chọn một node để định dạng.",
+            "bg_color": "Màu nền",
+            "font_style": "Kiểu chữ",
+            "font_size": "Cỡ chữ",
+            "shape": "Hình dạng",
+            "reset": "Reset về mặc định"
+        }
+    },
+    "auth": {
+        "login": "Đăng nhập",
+        "register": "Đăng ký",
+        "logout": "Đăng xuất"
+    },
+    "general": {
+        "delete": "Xóa",
+        "cancel": "Hủy",
+        "confirm": "Xác nhận",
+        "error": "Lỗi"
+    }
+}

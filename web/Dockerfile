@@ -1,27 +1,33 @@
-# Build stage
+# ============================
+# 1️⃣ BUILD STAGE
+# ============================
 FROM node:20 AS build
 WORKDIR /app
 
-# 1️⃣ Copy và cài đặt đầy đủ dependencies (bao gồm dev)
-COPY package.json package-lock.json* ./
-RUN npm install --include=dev
-RUN npm install tailwindcss postcss autoprefixer
+# Copy file cấu hình
+COPY package*.json ./
 
-# hoặc nếu muốn chắc chắn:
-# RUN npm install && npm install tailwindcss postcss autoprefixer -D
+# Cài tất cả dependencies (bao gồm dev)
+RUN npm install --force
 
-# 2️⃣ Copy source code
+# Ép cài lại TypeScript và Vite global để tránh lỗi bin
+RUN npm install -g typescript vite
+
+# Copy source code
 COPY . .
 
-# 3️⃣ Build project
-RUN npm run build
+# Debug check các binary có tồn tại không
+RUN echo "=== Kiểm tra binary ===" && which tsc && which vite && ls -la /usr/local/bin/
 
-# -------------------------------
+# Build project
+RUN tsc --noEmit && vite build
 
-# Serve stage (nginx)
+# ============================
+# 2️⃣ NGINX STAGE
+# ============================
 FROM nginx:1.27-alpine
 COPY --from=build /app/dist /usr/share/nginx/html
-COPY nginx/default.conf /etc/nginx/conf.d/default.conf 
+COPY nginx/default.conf /etc/nginx/conf.d/default.conf
 
 EXPOSE 80
 CMD ["nginx", "-g", "daemon off;"]
