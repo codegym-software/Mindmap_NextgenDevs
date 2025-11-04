@@ -4,12 +4,13 @@ package com.example.mindmap.features.collaboration;
 import com.example.mindmap.core.auth.AuthUtils;
 import com.example.mindmap.core.exception.AccessDeniedException;
 import com.example.mindmap.core.exception.ResourceNotFoundException;
-import com.example.mindmap.features.collaboration.dto.CollaboratorResponse;
-import com.example.mindmap.features.collaboration.dto.InviteRequest;
+import com.example.mindmap.features.collaboration.dto.*; // Import all
 import com.example.mindmap.features.mindmap.Mindmap;
+import com.example.mindmap.features.mindmap.MindmapRepository; // Thêm MindmapRepository
 import com.example.mindmap.features.mindmap.MindmapService;
 import com.example.mindmap.features.user.User;
 import com.example.mindmap.features.user.UserRepository;
+import org.springframework.beans.factory.annotation.Value; // Thêm Value
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import java.util.List;
@@ -22,15 +23,92 @@ public class CollaborationService {
 
     private final CollaborationRepository collaborationRepository;
     private final MindmapService mindmapService;
+    private final MindmapRepository mindmapRepository; // Thêm
     private final UserRepository userRepository;
     private final AuthUtils authUtils;
+    
+    @Value("${app.frontend-base-url:http://localhost:3000}") // Thêm base URL
+    private String frontendBaseUrl;
 
-    public CollaborationService(CollaborationRepository collaborationRepository, MindmapService mindmapService, UserRepository userRepository, AuthUtils authUtils) {
+
+    public CollaborationService(CollaborationRepository collaborationRepository,
+                                MindmapService mindmapService,
+                                MindmapRepository mindmapRepository, // Thêm
+                                UserRepository userRepository,
+                                AuthUtils authUtils) {
         this.collaborationRepository = collaborationRepository;
         this.mindmapService = mindmapService;
+        this.mindmapRepository = mindmapRepository; // Thêm
         this.userRepository = userRepository;
         this.authUtils = authUtils;
     }
+    
+    // --- Logic cho Endpoint mới (Giai đoạn 1) ---
+
+    @Transactional
+    public ShareSettingsResponse updatePublicShareSettings(String mindmapId, ShareSettingsRequest request) {
+        String currentUserId = authUtils.getRequiredCurrentUserId();
+        Mindmap mindmap = mindmapService.findMindmapById(mindmapId);
+
+        // Chỉ chủ sở hữu mới được thay đổi cài đặt chia sẻ
+        if (!mindmap.getOwnerId().equals(currentUserId)) {
+            throw new AccessDeniedException("Only the mindmap owner can change share settings.");
+        }
+
+        Mindmap.AccessSettings settings = mindmap.getAccessSettings();
+        settings.setPublic(request.isPublic());
+        
+        // Nếu tắt public, luôn set là DISABLED
+        if (!request.isPublic()) {
+            settings.setPublicAccessLevel(Mindmap.PublicAccessLevel.DISABLED);
+        } else {
+            // Nếu bật public, dùng quyền từ request (VIEW)
+            if(request.publicAccessLevel() == Mindmap.PublicAccessLevel.DISABLED) {
+                 // Không cho phép set (isPublic=true, level=DISABLED)
+                 throw new IllegalArgumentException("Cannot set public access to DISABLED when isPublic is true.");
+            }
+            settings.setPublicAccessLevel(request.publicAccessLevel());
+        }
+
+        mindmap.setAccessSettings(settings);
+        Mindmap savedMindmap = mindmapRepository.save(mindmap);
+        
+        return ShareSettingsResponse.fromMindmap(savedMindmap, frontendBaseUrl);
+    }
+    
+    @Transactional
+    public CollaboratorResponse updateCollaboratorPermission(String mindmapId, String collaboratorId, PermissionUpdateRequest request) {
+        String currentUserId = authUtils.getRequiredCurrentUserId();
+        Mindmap mindmap = mindmapService.findMindmapById(mindmapId);
+        
+        // Chỉ chủ sở hữu mới được thay đổi quyền
+        if (!mindmap.getOwnerId().equals(currentUserId)) {
+            throw new AccessDeniedException("Only the mindmap owner can change permissions.");
+        }
+        
+        // Không cho phép gán quyền OWNER
+        if (request.permission() == Permission.OWNER) {
+            throw new IllegalArgumentException("Cannot assign OWNER permission.");
+        }
+        
+        // Không cho phép tự thay đổi quyền của mình
+        if (collaboratorId.equals(currentUserId)) {
+            throw new IllegalArgumentException("Owner cannot change their own permissions.");
+        }
+        
+        Collaboration collaboration = collaborationRepository.findByMindmapIdAndUserId(mindmapId, collaboratorId)
+                .orElseThrow(() -> new ResourceNotFoundException("Collaboration", "user_id", collaboratorId));
+        
+        collaboration.setPermission(request.permission());
+        collaborationRepository.save(collaboration);
+        
+        User user = userRepository.findById(collaboratorId)
+                .orElseThrow(() -> new ResourceNotFoundException("User", "id", collaboratorId));
+                
+        return new CollaboratorResponse(user.getId(), user.getDisplayName(), user.getAvatarUrl(), collaboration.getPermission());
+    }
+
+    // --- Logic đã có ---
 
     @Transactional
     public CollaboratorResponse addCollaborator(String mindmapId, InviteRequest request) {
@@ -87,7 +165,7 @@ public class CollaborationService {
     public List<CollaboratorResponse> getCollaborators(String mindmapId) {
         String currentUserId = authUtils.getRequiredCurrentUserId();
         Mindmap mindmap = mindmapService.findMindmapById(mindmapId);
-        mindmapService.checkViewPermission(currentUserId, mindmap);
+        mindmapService.checkViewPermission(currentUserId, mindmap); // Đảm bảo user có quyền xem list này
 
         List<Collaboration> collaborations = collaborationRepository.findByMindmapId(mindmapId);
         List<String> userIds = collaborations.stream().map(Collaboration::getUserId).collect(Collectors.toList());

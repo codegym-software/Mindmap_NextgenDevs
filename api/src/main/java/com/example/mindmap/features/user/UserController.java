@@ -1,10 +1,11 @@
 package com.example.mindmap.features.user;
 
+import com.example.mindmap.features.user.dto.PasswordChangeRequest; // Mới
 import com.example.mindmap.features.user.dto.UserProfileDto;
 import com.example.mindmap.features.user.dto.UserSettingsDto;
 import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
-import org.springframework.security.access.prepost.PreAuthorize; // For method security
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
@@ -19,9 +20,8 @@ public class UserController {
 
     // Get current logged-in user's profile
     @GetMapping("/me")
-    @PreAuthorize("isAuthenticated()") // Ensure user is logged in
+    @PreAuthorize("isAuthenticated()")
     public ResponseEntity<UserProfileDto> getMyProfile() {
-        // UserService handles syncing from JWT if needed
         return ResponseEntity.ok(userService.getCurrentUserProfile());
     }
 
@@ -29,29 +29,38 @@ public class UserController {
     @PutMapping("/me")
     @PreAuthorize("isAuthenticated()")
     public ResponseEntity<UserProfileDto> updateMyProfile(@Valid @RequestBody UserProfileDto profileUpdate) {
-         // Only allow updating specific fields, UserService handles logic
-         // Ensure the ID in the body isn't used to update someone else
-        return ResponseEntity.ok(userService.updateCurrentUserProfile(profileUpdate));
+       return ResponseEntity.ok(userService.updateCurrentUserProfile(profileUpdate));
+    }
+    
+    // --- Endpoint mới (Giai đoạn 2) ---
+
+    /**
+     * Endpoint #15: Thay đổi mật khẩu của user hiện tại.
+     * Chỉ áp dụng cho user Cognito, không áp dụng cho GUEST.
+     */
+    @PutMapping("/me/password")
+    @PreAuthorize("isAuthenticated() and !hasAuthority('SCOPE_GUEST')") // Guest không thể đổi mk
+    public ResponseEntity<Void> changeMyPassword(@Valid @RequestBody PasswordChangeRequest request) {
+        userService.changeCurrentUserPassword(request);
+        return ResponseEntity.ok().build(); // Trả về 200 OK nếu thành công
     }
 
-    // Get current user's settings
+    // --- Endpoints cài đặt (đã có) ---
+
     @GetMapping("/me/settings")
     @PreAuthorize("isAuthenticated()")
     public ResponseEntity<UserSettingsDto> getMySettings() {
-        // Logic to get settings is typically part of getting the full user profile
-        // but can be a separate endpoint if settings are large or frequently accessed
-        UserProfileDto profile = userService.getCurrentUserProfile(); // Reuses sync logic
-        User user = userService.findUserById(profile.id()); // Get full user object
+        UserProfileDto profile = userService.getCurrentUserProfile();
+        User user = userService.findUserById(profile.id());
         return ResponseEntity.ok(new UserSettingsDto(
             user.getSettings().getDefaultEditorThemeId(),
             user.getSettings().getLanguage()
         ));
     }
 
-     // Update current user's settings
-     @PutMapping("/me/settings")
-     @PreAuthorize("isAuthenticated()")
-     public ResponseEntity<UserSettingsDto> updateMySettings(@Valid @RequestBody UserSettingsDto settingsUpdate) {
-         return ResponseEntity.ok(userService.updateUserSettings(settingsUpdate));
-     }
+    @PutMapping("/me/settings")
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<UserSettingsDto> updateMySettings(@Valid @RequestBody UserSettingsDto settingsUpdate) {
+       return ResponseEntity.ok(userService.updateUserSettings(settingsUpdate));
+    }
 }

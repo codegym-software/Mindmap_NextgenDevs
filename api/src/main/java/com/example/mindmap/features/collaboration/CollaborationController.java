@@ -10,17 +10,21 @@ import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping; // Thêm PutMapping
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.example.mindmap.features.collaboration.dto.CollaboratorResponse;
 import com.example.mindmap.features.collaboration.dto.InviteRequest;
+import com.example.mindmap.features.collaboration.dto.PermissionUpdateRequest; // DTO mới
+import com.example.mindmap.features.collaboration.dto.ShareSettingsRequest; // DTO mới
+import com.example.mindmap.features.collaboration.dto.ShareSettingsResponse; // DTO mới
 
 import jakarta.validation.Valid;
 
 @RestController
-@RequestMapping("/api/mindmaps/{mindmapId}/collaborators")
+@RequestMapping("/api/mindmaps/{mindmapId}") // Chuyển mindmapId lên base
 public class CollaborationController {
 
     private final CollaborationService collaborationService;
@@ -28,22 +32,44 @@ public class CollaborationController {
     public CollaborationController(CollaborationService collaborationService) {
         this.collaborationService = collaborationService;
     }
+    
+    // --- Quản lý Public Sharing ---
 
-    @GetMapping
+    @PutMapping("/share-settings")
+    @PreAuthorize("isAuthenticated()") // Logic quyền (phải là owner) sẽ ở service
+    public ResponseEntity<ShareSettingsResponse> updatePublicShareSettings(
+            @PathVariable String mindmapId,
+            @Valid @RequestBody ShareSettingsRequest request) {
+        return ResponseEntity.ok(collaborationService.updatePublicShareSettings(mindmapId, request));
+    }
+    
+    // --- Quản lý Collaborator ---
+
+    @GetMapping("/collaborators")
     @PreAuthorize("isAuthenticated()")
     public ResponseEntity<List<CollaboratorResponse>> getCollaborators(@PathVariable String mindmapId) {
         return ResponseEntity.ok(collaborationService.getCollaborators(mindmapId));
     }
 
-    @PostMapping
+    @PostMapping("/collaborators")
     @PreAuthorize("isAuthenticated()")
     public ResponseEntity<CollaboratorResponse> addCollaborator(
             @PathVariable String mindmapId,
             @Valid @RequestBody InviteRequest request) {
         return new ResponseEntity<>(collaborationService.addCollaborator(mindmapId, request), HttpStatus.CREATED);
     }
+    
+    @PutMapping("/collaborators/{userId}")
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<CollaboratorResponse> updateCollaboratorPermission(
+            @PathVariable String mindmapId,
+            @PathVariable String userId,
+            @Valid @RequestBody PermissionUpdateRequest request) {
+        // Đây là Endpoint #11
+        return ResponseEntity.ok(collaborationService.updateCollaboratorPermission(mindmapId, userId, request));
+    }
 
-    @DeleteMapping("/{userId}")
+    @DeleteMapping("/collaborators/{userId}")
     @PreAuthorize("isAuthenticated()")
     public ResponseEntity<Void> removeCollaborator(
             @PathVariable String mindmapId,
@@ -51,6 +77,4 @@ public class CollaborationController {
         collaborationService.removeCollaborator(mindmapId, userId);
         return ResponseEntity.noContent().build();
     }
-    
-    // You can add a PUT/PATCH endpoint to update permissions later
 }

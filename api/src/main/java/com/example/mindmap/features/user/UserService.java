@@ -2,13 +2,18 @@ package com.example.mindmap.features.user;
 
 import com.example.mindmap.core.auth.AuthUtils;
 import com.example.mindmap.core.exception.ResourceNotFoundException;
+import com.example.mindmap.features.user.dto.PasswordChangeRequest; // Mới
 import com.example.mindmap.features.user.dto.UserProfileDto;
 import com.example.mindmap.features.user.dto.UserSettingsDto;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional; // Use transactional if needed
+import org.springframework.transaction.annotation.Transactional;
+import software.amazon.awssdk.services.cognitoidentityprovider.CognitoIdentityProviderClient; // Mới
+import software.amazon.awssdk.services.cognitoidentityprovider.model.ChangePasswordRequest; // Mới
+import software.amazon.awssdk.services.cognitoidentityprovider.model.CognitoIdentityProviderException; // Mới
+import org.springframework.security.access.AccessDeniedException;
 
 import java.time.Instant;
 import java.util.Optional;
@@ -18,30 +23,68 @@ public class UserService {
 
     private static final Logger log = LoggerFactory.getLogger(UserService.class);
     private final UserRepository userRepository;
-    private final AuthUtils authUtils; // Inject AuthUtils
+    private final AuthUtils authUtils;
+    private final CognitoIdentityProviderClient cognitoClient; // Mới
 
-    public UserService(UserRepository userRepository, AuthUtils authUtils) {
+    public UserService(UserRepository userRepository, AuthUtils authUtils, CognitoIdentityProviderClient cognitoClient) { // Mới
         this.userRepository = userRepository;
         this.authUtils = authUtils;
+        this.cognitoClient = cognitoClient; // Mới
+    }
+    
+    // --- Logic mới (Giai đoạn 2) ---
+
+    /**
+     * Thay đổi mật khẩu của user hiện tại trên Cognito.
+     * Ném CognitoIdentityProviderException nếu thất bại (sẽ được GlobalExceptionHandler xử lý).
+     */
+    public void changeCurrentUserPassword(PasswordChangeRequest request) {
+        // 1. Lấy access token từ context
+        String accessToken = authUtils.getCurrentJwt()
+                .map(Jwt::getTokenValue)
+                .orElseThrow(() -> new IllegalStateException("Access token not found in SecurityContext"));
+                
+        // 2. Tạo yêu cầu đổi mật khẩu
+        ChangePasswordRequest cognitoRequest = ChangePasswordRequest.builder()
+                .accessToken(accessToken)
+                .previousPassword(request.oldPassword())
+                .proposedPassword(request.newPassword())
+                .build();
+
+        try {
+            // 3. Gọi Cognito
+            cognitoClient.changePassword(cognitoRequest);
+            log.info("Successfully changed password for user");
+        } catch (CognitoIdentityProviderException e) {
+            log.warn("Failed to change password: {}", e.awsErrorDetails().errorMessage());
+            throw e; // Ném lại để GlobalExceptionHandler bắt
+        }
     }
 
+    // --- Logic đã có ---
+    
     /**
      * Gets the current user's profile from the database, syncing from JWT if not found or outdated.
      */
     public UserProfileDto getCurrentUserProfile() {
         Jwt jwt = authUtils.getCurrentJwt().orElseThrow(() -> new IllegalStateException("JWT token not found for user profile sync"));
-        User user = syncUserFromJwt(jwt);
+        User user = syncUserFromJwt(jwt); // Đã hỗ trợ Guest (vì 'sub' là userId)
         return mapToProfileDto(user);
     }
 
     /**
      * Updates the current user's profile (displayName, avatarUrl).
      */
-    @Transactional // Ensure atomicity
+    @Transactional
     public UserProfileDto updateCurrentUserProfile(UserProfileDto profileUpdate) {
         String userId = authUtils.getRequiredCurrentUserId();
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new ResourceNotFoundException("User", "id", userId));
+
+        // Guest không được đổi email
+        if (user.getStatus() == User.UserStatus.GUEST && profileUpdate.email() != null) {
+            throw new AccessDeniedException("Guest users cannot change their email.");
+        }
 
         boolean updated = false;
         if (profileUpdate.displayName() != null && !profileUpdate.displayName().equals(user.getDisplayName())) {
@@ -49,7 +92,6 @@ public class UserService {
             updated = true;
         }
         if (profileUpdate.avatarUrl() != null && !profileUpdate.avatarUrl().equals(user.getAvatarUrl())) {
-            // Add validation for URL format if necessary
             user.setAvatarUrl(profileUpdate.avatarUrl());
             updated = true;
         }
@@ -63,8 +105,8 @@ public class UserService {
     }
 
      /**
-      * Updates the current user's settings.
-      */
+     * Updates the current user's settings.
+     */
      @Transactional
      public UserSettingsDto updateUserSettings(UserSettingsDto settingsUpdate) {
          String userId = authUtils.getRequiredCurrentUserId();
@@ -75,14 +117,12 @@ public class UserService {
          User.UserSettings currentSettings = user.getSettings() != null ? user.getSettings() : new User.UserSettings();
 
          if (settingsUpdate.defaultEditorThemeId() != null && !settingsUpdate.defaultEditorThemeId().equals(currentSettings.getDefaultEditorThemeId())) {
-             // Optional: Validate theme ID exists in editor_themes collection here
              currentSettings.setDefaultEditorThemeId(settingsUpdate.defaultEditorThemeId());
              updated = true;
          }
          if (settingsUpdate.language() != null && !settingsUpdate.language().equals(currentSettings.getLanguage())) {
-            // Optional: Validate language code
-            currentSettings.setLanguage(settingsUpdate.language());
-            updated = true;
+             currentSettings.setLanguage(settingsUpdate.language());
+             updated = true;
          }
 
          if (updated) {
@@ -94,7 +134,6 @@ public class UserService {
          return mapToSettingsDto(user.getSettings());
      }
 
-
     /**
      * Finds a user by ID or throws ResourceNotFoundException.
      * Internal helper.
@@ -104,12 +143,10 @@ public class UserService {
                 .orElseThrow(() -> new ResourceNotFoundException("User", "id", userId));
     }
 
-
     // --- Internal Helpers ---
 
     /**
-     * Synchronizes user data from JWT into the local database.
-     * Creates the user if they don't exist. Updates if claims have changed.
+     * Đồng bộ user từ JWT (Cognito hoặc Guest) vào DB.
      */
     private User syncUserFromJwt(Jwt jwt) {
         String userId = jwt.getSubject();
@@ -119,26 +156,26 @@ public class UserService {
 
         Optional<User> existingUserOpt = userRepository.findById(userId);
 
+        // Nếu là user GUEST và đã tồn tại, chỉ cần trả về
+        if (existingUserOpt.isPresent() && existingUserOpt.get().getStatus() == User.UserStatus.GUEST) {
+            return existingUserOpt.get();
+        }
+
         String email = jwt.getClaimAsString("email");
-        // Try to get name/display name, fall back to username or email part
         String displayName = Optional.ofNullable(jwt.getClaimAsString("name"))
                 .or(() -> Optional.ofNullable(jwt.getClaimAsString("preferred_username")))
                 .or(() -> Optional.ofNullable(email).map(e -> e.split("@")[0]))
-                .orElse("User " + userId.substring(0, 6)); // Fallback
+                .orElse("User " + userId.substring(0, 6));
 
-        // TODO: Get avatar from Cognito claims if available (e.g., 'picture' claim)
-        String avatarUrl = jwt.getClaimAsString("picture"); // Common OIDC claim
+        String avatarUrl = jwt.getClaimAsString("picture");
 
         if (existingUserOpt.isPresent()) {
-            // User exists, check for updates
             User existingUser = existingUserOpt.get();
             boolean needsUpdate = false;
             if (email != null && !email.equals(existingUser.getEmail())) {
                 existingUser.setEmail(email);
                 needsUpdate = true;
             }
-            // Only update displayName if it hasn't been explicitly set by the user?
-            // Or always sync from Cognito? Let's sync for now.
              if (!displayName.equals(existingUser.getDisplayName())) {
                  existingUser.setDisplayName(displayName);
                  needsUpdate = true;
@@ -156,23 +193,21 @@ public class UserService {
                 return existingUser;
             }
         } else {
-            // User does not exist, create new
+            // User Cognito mới, chưa có trong DB
             log.info("Creating new user {} from JWT sync", userId);
             User newUser = new User();
             newUser.setId(userId);
             newUser.setEmail(email);
             newUser.setDisplayName(displayName);
-            newUser.setAvatarUrl(avatarUrl); // Set avatar on creation
-            newUser.setCognitoUsername(jwt.getClaimAsString("username")); // Or preferred_username
-            newUser.setStatus(User.UserStatus.ACTIVE);
+            newUser.setAvatarUrl(avatarUrl);
+            newUser.setCognitoUsername(jwt.getClaimAsString("username"));
+            newUser.setStatus(User.UserStatus.ACTIVE); // User Cognito luôn là ACTIVE
             newUser.setCreatedAt(Instant.now());
             newUser.setUpdatedAt(Instant.now());
-            // Initialize settings with defaults
             newUser.setSettings(new User.UserSettings());
             return userRepository.save(newUser);
         }
     }
-
 
     private UserProfileDto mapToProfileDto(User user) {
         return new UserProfileDto(

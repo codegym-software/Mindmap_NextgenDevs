@@ -1,36 +1,23 @@
-// src/main.tsx
+/**
+ * Entry point chính của ứng dụng.
+ * Tái cấu trúc từ `main.tsx` cũ.
+ * SỬA: `main.tsx` chỉ render `RouterProvider`. Logic Provider đã được chuyển vào `App.tsx`.
+ */
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { RouterProvider } from 'react-router-dom';
-import { router } from './router'; // Import router mới
-import { AuthProvider } from './features/auth/providers/AuthProvider';
-import { ThemeProvider } from './core/providers/ThemeProvider';
-import { NotificationProvider } from './core/providers/NotificationProvider';
-
-// Import CSS chính (Tailwind)
-// (Giả sử bạn có file /src/index.css hoặc /src/styles/globals.css)
-// import './styles/globals.css'; 
+import { router } from './router'; // Import router MỚI
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
-  <React.StrictMode>
-    {/* (User Story #14) */}
-    <ThemeProvider>
-      {/* (User Story #44) */}
-      <NotificationProvider>
-        {/* (User Story #24-30) */}
-        <AuthProvider>
-          {/* (Router #1-12) */}
-          <RouterProvider
-            router={router}
-            fallbackElement={
-              <div className="w-screen h-screen bg-gray-900 flex items-center justify-center text-white">
-                {/* <Spinner size="lg" /> */}
-                Đang tải...
-              </div>
-            }
-          />
-        </AuthProvider>
-      </NotificationProvider>
-    </ThemeProvider>
-  </React.StrictMode>
+    // Không cần StrictMode ở đây nữa, vì nó đã ở trong App.tsx
+    <RouterProvider
+        router={router}
+        // Fallback này chỉ dùng nếu router chưa load kịp
+        fallbackElement={
+            <div className="w-screen h-screen bg-gray-900 flex items-center justify-center text-white">
+                 Đang khởi động...
+            </div>
+        }
+    />
 );
+

@@ -1,148 +1,138 @@
 /**
  * Định nghĩa Router chính của ứng dụng.
  * Tái cấu trúc từ `app/routes.tsx` cũ và tuân thủ 12 routes đã định nghĩa.
+ * Sử dụng `App.tsx` làm root layout (chứa providers).
  */
 import React, { Suspense, lazy } from 'react';
 import { createBrowserRouter, Navigate } from 'react-router-dom';
+import App from '../App'; // Root layout (providers)
 import Spinner from '../core/components/Spinner/Spinner';
-import App from '../App'; // Import Root Layout
 
 // --- Layouts ---
-// MainLayout và AuthLayout sẽ được render *bên trong* App.tsx qua <Outlet>
-import MainLayout from '../core/layouts/MainLayout';
 import AuthLayout from '../core/layouts/AuthLayout';
+import MainLayout from '../core/layouts/MainLayout';
 import ProtectedRoute from './ProtectedRoute';
+import LandingPage from '../features/dashboard/pages/LoadingPage';
 
 // --- Page Components (Lazy Loaded) ---
-// Dùng lazy loading để tăng tốc độ tải ban đầu
-
-// Loading Fallback
+// (Fallback chung cho lazy loading)
 const PageLoader: React.FC = () => (
-    <div className="w-full h-[calc(100vh-56px)] flex items-center justify-center text-gray-400">
-        <Spinner size="lg" className="mr-3" /> Đang tải trang...
+    <div className="w-screen h-screen bg-gray-900 flex items-center justify-center">
+        <Spinner size="lg" />
     </div>
 );
 
-// --- Auth Pages (Router #1, 2, 3, 4, 5) ---
-// Trang Landing Page (dùng AuthLayout)
-// const LandingPage = lazy(() => import('../core/layouts/AuthLayout')); // AuthLayout là trang Landing
+// Auth Pages (Router #2, 3, 4, 5)
 const LoginPage = lazy(() => import('../features/auth/pages/LoginPage'));
 const RegisterPage = lazy(() => import('../features/auth/pages/RegisterPage'));
-const ForgotPasswordPage = lazy(() => import('../features/auth/pages/LoginPage')); // Tạm thời trỏ về Login
+// const ForgotPasswordPage = lazy(() => import('../features/auth/pages/ForgotPasswordPage')); // (Sẽ tạo nếu cần)
 const CallbackPage = lazy(() => import('../features/auth/pages/CallbackPage'));
 const LogoutHandler = lazy(() => import('../features/auth/pages/LogoutHandler'));
 
-// --- App Pages (Router #6, 7, 8, 10, 11) ---
-const DashboardPage = lazy(() => import('../features/dashboard/pages/DashboardPage'));
-const EditorPage = lazy(() => import('../features/editor/pages/EditorPage'));
-// Trang Settings (Router #11) - Placeholder
-const SettingsPage = () => <div className="p-8 pt-10 text-white">Trang Cài đặt (Đang phát triển)</div>;
-// Trang Guest (Router #10) - Redirect
-const GuestRedirect = () => <Navigate to="/editor" replace />; // /editor (không ID) sẽ tự tạo guest map
+// Main Pages (Router #1, 6, 7, 8, 9, 10, 11, 12)
+const DashboardPage = lazy(() => import('../features/dashboard/pages/DashboardPage')); // Router #6
+const EditorPage = lazy(() => import('../features/editor/pages/EditorPage')); // Router #7, #8, #10
+// const SharePage = lazy(() => import('../features/collaboration/pages/SharePage')); // Router #9 (Sẽ tạo)
+// const SettingsPage = lazy(() => import('../features/settings/pages/SettingsPage')); // Router #11 (Sẽ tạo)
+// const EmbedPage = lazy(() => import('../features/editor/pages/EmbedPage')); // Router #12 (Sẽ tạo)
 
-// --- Public Pages (Router #9, #12) ---
-// Trang Share (Router #9) - Placeholder
-const SharePage = () => <div className="p-8 pt-10 text-white">Trang Chia sẻ Công khai (Đang phát triển)</div>;
-// Trang Embed (Router #12) - Placeholder
-const EmbedPage = () => <div className="p-8 pt-10 text-white">Trang Nhúng (Đang phát triển)</div>;
-
-
-// --- Định nghĩa 12 Routes ---
 export const router = createBrowserRouter([
     {
         path: '/',
-        element: <App />, // Render Root Layout (với Providers)
+        element: <App />, // Root layout chứa Providers
         children: [
-            // === Public Routes (Auth, Landing) ===
+            // === Public Routes (AuthLayout) ===
+            // (AuthLayout chứa Header và Outlet)
             {
-                element: <AuthLayout />, // Layout cho trang Landing
+                element: <AuthLayout />,
                 children: [
+                    // Router #1: Landing Page
                     {
-                        index: true, // Router #1: Landing Page
-                        // AuthLayout tự nó là landing page, không cần component con
-                        element: <></> 
+                        index: true,
+                        element: <LandingPage />,
                     },
-                ]
-            },
-            {
-                path: '/login', // Router #2
-                element: <Suspense fallback={<PageLoader />}><LoginPage /></Suspense>,
-            },
-            {
-                path: '/register', // Router #3
-                element: <Suspense fallback={<PageLoader />}><RegisterPage /></Suspense>,
-            },
-            {
-                path: '/forgot-password', // Router #4
-                element: <Suspense fallback={<PageLoader />}><ForgotPasswordPage /></Suspense>, // Tạm
-            },
-            {
-                path: '/auth/callback', // Router #5
-                element: <Suspense fallback={<PageLoader />}><CallbackPage /></Suspense>,
-            },
-            {
-                path: '/logout', // (Route tiện ích)
-                element: <Suspense fallback={<PageLoader />}><LogoutHandler /></Suspense>,
-            },
-            {
-                path: '/share/:token', // Router #9
-                element: <Suspense fallback={<PageLoader />}><SharePage /></Suspense>,
-            },
-            {
-                path: '/embed/:id', // Router #12
-                element: <Suspense fallback={<PageLoader />}><EmbedPage /></Suspense>,
-            },
-            {
-                path: '/guest', // Router #10
-                element: <GuestRedirect />,
-            },
-
-            // === Protected Routes (Main App) ===
-            // Các routes này dùng MainLayout và được bảo vệ
-            {
-                element: <MainLayout />, // Layout chung (Header,...)
-                children: [
+                    // Router #2, #3, #4: Các trang này chỉ trigger modal trên Landing/Dashboard
+                    // Chúng ta tạo ra các "redirects" ảo
                     {
-                        path: '/dashboard', // Router #6
-                        element: (
-                            <ProtectedRoute>
-                                <Suspense fallback={<PageLoader />}><DashboardPage /></Suspense>
-                            </ProtectedRoute>
-                        ),
+                        path: 'login',
+                        element: <LoginPage />,
                     },
                     {
-                        path: '/editor', // Router #7 (Tạo mới)
-                        element: (
-                            <ProtectedRoute allowGuests={true}> {/* Cho phép Guest Mode */}
-                                <Suspense fallback={<PageLoader />}><EditorPage /></Suspense>
-                            </ProtectedRoute>
-                        ),
+                        path: 'register',
+                        element: <RegisterPage />,
                     },
                     {
-                        path: '/editor/:id', // Router #8 (Chỉnh sửa)
-                        element: (
-                            <ProtectedRoute allowGuests={true}> {/* Cho phép Guest Mode */}
-                                <Suspense fallback={<PageLoader />}><EditorPage /></Suspense>
-                            </ProtectedRoute>
-                        ),
+                        path: 'forgot-password',
+                        // (Trang này cũng sẽ redirect và trigger modal 'forgot')
+                        element: <Navigate to="/" state={{ forgot: true }} replace />,
                     },
+                    // Router #9: Trang Share (Public)
                     {
-                        path: '/settings', // Router #11
-                        element: (
-                            <ProtectedRoute>
-                                <Suspense fallback={<PageLoader />}><SettingsPage /></Suspense>
-                            </ProtectedRoute>
-                        ),
+                        path: 'share/:token',
+                        // element: <SharePage />, // (Chưa tạo)
+                        element: <div>Trang Share (Chưa tạo)</div>,
+                    },
+                    // Router #12: Trang Embed (Public)
+                    {
+                        path: 'embed/:id',
+                        // element: <EmbedPage />, // (Chưa tạo)
+                        element: <div>Trang Embed (Chưa tạo)</div>,
                     },
                 ],
             },
 
-             // --- Fallback Route ---
+            // === Private Routes (MainLayout & ProtectedRoute) ===
+            // (ProtectedRoute kiểm tra auth, MainLayout chứa Header/Sidebar)
+            {
+                element: <ProtectedRoute allowGuests={true} />, // Cho phép guest vào /editor/:id
+                children: [
+                    {
+                        element: <MainLayout />, // Layout chung cho app (Header, Sidebar)
+                        children: [
+                            // Router #6: Dashboard
+                            {
+                                path: 'dashboard',
+                                element: <DashboardPage />,
+                            },
+                            // Router #7: Tạo mới (Editor)
+                            {
+                                path: 'editor',
+                                element: <EditorPage />, // EditorPage sẽ xử lý logic tạo mới
+                            },
+                            // Router #8 & #10: Chỉnh sửa (Editor) / Guest Mode
+                            {
+                                path: 'editor/:id',
+                                element: <EditorPage />,
+                            },
+                            // Router #11: Cài đặt
+                            {
+                                path: 'settings',
+                                // element: <SettingsPage />, // (Chưa tạo)
+                                element: <div>Trang Settings (Chưa tạo)</div>,
+                            },
+                        ],
+                    },
+                ],
+            },
+            
+            // === Auth Handling Routes (Không cần Layout) ===
+            // Router #5: Callback
+            {
+                path: 'auth/callback',
+                element: <CallbackPage />,
+            },
+            // Logout
+            {
+                path: 'logout',
+                element: <LogoutHandler />,
+            },
+            
+            // Fallback (Nếu không khớp route nào)
             {
                 path: '*',
                 element: <Navigate to="/" replace />,
-            },
-        ]
+            }
+        ],
     },
-   
 ]);
+

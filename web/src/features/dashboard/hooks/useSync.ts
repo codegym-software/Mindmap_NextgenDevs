@@ -6,7 +6,7 @@
 import { useEffect, useRef, useCallback } from "react";
 import { useAuth } from "../../auth/hooks/useAuth";
 import { useLocalMindmap } from "./useLocalMindmap";
-import { mindmapsApi } from "../services/mindmapApi";
+import { mindmapsApi } from "../services/mindmapsApi";
 import { useToast } from "../../../core/hooks/useToast";
 import { MindmapContent } from "../../../core/types";
 

@@ -1,289 +1,296 @@
 /**
  * Trang Dashboard chính (Router #6).
- * Đây là component "thông minh" (smart) quản lý state của Dashboard.
- * Tái cấu trúc từ `pages/Dashboard.tsx` cũ.
+ * Tái cấu trúc từ `pages/Dashboard.tsx` (code gốc).
+ * Đây là component "thông minh" (smart) quản lý toàn bộ state và logic của Dashboard.
  * Tích hợp Sidebar, List, Modals, và Hooks.
+ * Tuân thủ User Story #1-5, #18 (Share), #36 (Guest).
  */
 import React, { useEffect, useState, useCallback, Suspense, lazy } from "react";
 import { useNavigate } from "react-router-dom";
+
+// --- State & Hooks ---
 import { useMindmapsStore, MindmapSummary } from "../store/useMindmapsStore";
-import { mindmapsApi } from "../services/mindmapApi";
 import { useAuth } from "../../auth/hooks/useAuth";
 import { useToast } from "../../../core/hooks/useToast";
-import { useLocalMindmap } from "../hooks/useLocalMindmap";
-import { useSync } from "../hooks/useSync";
-import Sidebar from "../../../core/layouts/Sidebar";
-import MindmapList from "../components/MindmapList";
-import BigStartButton from "../components/BigStartButton";
-import Modal from "../../../core/components/Modal/Modal";
-import Button from "../../../core/components/Button/Button";
-import Spinner from "../../../core/components/Spinner/Spinner";
+import { useLocalMindmap } from "../hooks/useLocalMindmap"; // (Đã tạo ở GĐ3a)
+import { useSync } from "../hooks/useSync"; // (Đã tạo ở GĐ3a)
 
-// Lazy load ShareModal (vì nó nặng)
+// --- API ---
+import { mindmapsApi } from "../services/mindmapsApi"; // (Đã tạo ở GĐ3a)
+
+// --- Components (Tái cấu trúc từ code gốc) ---
+import Header from "../../../core/layouts/Header"; // (Đã tạo ở GĐ2b)
+import Sidebar from "../../../core/layouts/Sidebar"; // (Đã tạo ở GĐ3b)
+import MindmapList from "../components/MindmapList"; // (Đã tạo ở GĐ3b)
+import BigStartButton from "../components/BigStartButton"; // (Đã tạo ở GĐ3a)
+import Modal from "../../../core/components/Modal/Modal"; // (Đã tạo ở GĐ2b)
+import Button from "../../../core/components/Button/Button"; // (Đã tạo ở GĐ2b)
+import Spinner from "../../../core/components/Spinner/Spinner"; // (Đã tạo ở GĐ2b)
+
+// --- Lazy Load Components ---
 const ShareModal = lazy(() => import('../../collaboration/components/ShareModal/ShareModal'));
 
+// --- Component Chính ---
 const DashboardPage: React.FC = () => {
     const { isAuthed, login } = useAuth();
     const { addToast } = useToast();
     const navigate = useNavigate();
 
     // --- State Management ---
+    // Lấy state và actions từ store
     const { items, setItems, loading, setLoading, setError, addItem, updateItemName, removeItem } = useMindmapsStore();
-    const { loadGuestItems, createGuest, updateGuestName, removeGuest, getGuestDoc, listGuests } = useLocalMindmap();
+    // Lấy actions cho Guest Mode
+    const { loadGuestItems, createGuest, updateGuestName, removeGuest, getGuestDoc } = useLocalMindmap();
 
-    // State cho Modals
-    const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+    // --- Local State (Quản lý Modals) ---
     const [itemToDelete, setItemToDelete] = useState<MindmapSummary | null>(null);
-    const [isShareModalOpen, setIsShareModalOpen] = useState(false);
     const [itemToShare, setItemToShare] = useState<MindmapSummary | null>(null);
 
     // --- Data Fetching & Sync ---
 
-    // Hàm fetch data chính
+    // Hàm fetch data chính (Auth hoặc Guest)
     const fetchData = useCallback(async () => {
         setLoading(true);
-        setError(null);
         try {
             if (isAuthed) {
                 const serverMaps = await mindmapsApi.list();
                 setItems(serverMaps);
             } else {
-                loadGuestItems(); // Load từ localStorage
+                loadGuestItems(); // Tải từ localStorage
+                setLoading(false); // (loadGuestItems không tự set loading)
             }
         } catch (e: any) {
-            console.error("Failed to fetch mindmaps:", e);
+            console.error("Fetch data failed:", e);
             setError(e?.message || "Không thể tải danh sách mindmap.");
             addToast("Không thể tải danh sách mindmap", "error");
-            setItems([]);
-        } finally {
-            setLoading(false);
         }
-    }, [isAuthed, setLoading, setError, setItems, loadGuestItems, addToast]);
+    }, [isAuthed, setLoading, setItems, setError, loadGuestItems, addToast]);
 
-    // Hook đồng bộ Guest -> Server
-    useSync(fetchData); // Sau khi sync, gọi fetchData
+    // Hook đồng bộ (Chỉ chạy 1 lần khi login)
+    // `fetchData` được truyền làm callback `onSyncComplete`
+    useSync(fetchData);
 
-    // Fetch data lần đầu khi mount (hoặc khi auth state thay đổi)
+    // Fetch data lần đầu khi component mount hoặc auth state thay đổi
     useEffect(() => {
         fetchData();
-    }, [fetchData]);
-
+    }, [fetchData]); // `fetchData` là stable
 
     // --- Global Event Handlers ---
-    
-    // Tạo mới (User Story #1, #36)
+
+    // Xử lý sự kiện "mm:create" (từ Sidebar hoặc BigStartButton)
+    // (User Story #1, #36)
     const handleCreateNew = useCallback(async () => {
-        setLoading(true);
+        setLoading(true); // Hiển thị loading (vì có thể gọi API)
         try {
-            let newItemId: string;
             if (isAuthed) {
-                const created = await mindmapsApi.create({ name: "Mindmap mới" });
-                addItem(created); // Thêm vào store
-                newItemId = created.id;
+                // 1. User đã đăng nhập -> Gọi API tạo mới
+                const createdMap = await mindmapsApi.create({ name: "Mindmap mới" });
+                addItem(createdMap); // Thêm vào store
+                navigate(`/editor/${createdMap.id}`); // Chuyển trang
             } else {
-                const guestItem = createGuest(); // Tự thêm vào store
-                newItemId = guestItem.id;
+                // 2. User là Guest -> Dùng hook local
+                const guestItem = createGuest(); // Hook này đã tự cập nhật store
+                navigate(`/editor/${guestItem.id}`); // Chuyển trang
             }
-            navigate(`/editor/${newItemId}`); // Chuyển trang
         } catch (e) {
             console.error("Failed to create mindmap:", e);
             addToast("Không thể tạo mindmap mới", "error");
-            setLoading(false);
+            setLoading(false); // Tắt loading nếu lỗi
         }
-        // setLoading(false) sẽ được trigger bởi EditorPage
-    }, [isAuthed, createGuest, addItem, navigate, addToast, setLoading]);
-
-    // Lắng nghe event từ Sidebar/BigStartButton
+        // setLoading(false) sẽ được gọi bởi `setItems` trong `fetchData` (nếu là auth)
+        // hoặc tự tắt (nếu là guest)
+        if (!isAuthed) setLoading(false);
+    }, [isAuthed, createGuest, navigate, addToast, setLoading, addItem]);
+    
+    // Lắng nghe event global `mm:create`
     useEffect(() => {
         const createHandler = () => handleCreateNew();
         window.addEventListener("mm:create", createHandler);
-        
-        const shareHandler = (e: Event) => {
-             const detail = (e as CustomEvent).detail;
-             if (detail?.id) {
-                 const map = items.find(i => i.id === detail.id);
-                 if (map) {
-                     setItemToShare(map);
-                     setIsShareModalOpen(true);
-                 }
-             }
-        };
-        window.addEventListener("mm:share", shareHandler);
-        
-        return () => {
-            window.removeEventListener("mm:create", createHandler);
-            window.removeEventListener("mm:share", shareHandler);
-        };
-    }, [handleCreateNew, items]);
+        return () => window.removeEventListener("mm:create", createHandler);
+    }, [handleCreateNew]);
 
-    // --- Card Action Handlers ---
 
-    // Đổi tên (User Story #1)
-    const handleRename = useCallback(async (id: string, newName: string) => {
-        const originalItems = items;
+    // --- Card Action Handlers (truyền xuống Sidebar/MindmapList) ---
+
+    // User Story #1
+    const handleRename = useCallback(async (id: string, currentName: string) => {
+        const newName = prompt("Nhập tên mới:", currentName);
+        if (!newName || newName.trim() === "" || newName === currentName) return;
+
+        const trimmedName = newName.trim();
+        const originalItems = [...items];
         const now = new Date().toISOString();
-        updateItemName(id, newName, now); // Optimistic
         
+        // Cập nhật Optimistic
+        updateItemName(id, trimmedName, now);
+
         try {
             if (id.startsWith('guest-')) {
-                updateGuestName(id, newName);
+                updateGuestName(id, trimmedName); // Logic Guest
             } else if (isAuthed) {
-                const updatedMap = await mindmapsApi.updateName(id, newName);
-                updateItemName(id, updatedMap.name, updatedMap.updatedAt); // Corrected
+                const updatedMap = await mindmapsApi.updateName(id, trimmedName); // Logic Auth
+                updateItemName(id, updatedMap.name, updatedMap.updatedAt); // Cập nhật lại với data chuẩn
             }
             addToast("Đã đổi tên mindmap!", "success");
         } catch (error) {
-            console.error("Rename failed:", error);
             addToast("Đổi tên thất bại!", "error");
-            setItems(originalItems); // Revert
+            setItems(originalItems); // Rollback
         }
     }, [items, isAuthed, updateItemName, setItems, updateGuestName, addToast]);
 
-    // Mở Modal Xóa (User Story #3)
+    // User Story #2, #3
     const openDeleteModal = useCallback((id: string) => {
         const item = items.find(i => i.id === id);
-        if (item) {
-            setItemToDelete(item);
-            setIsDeleteModalOpen(true);
-        }
+        if (item) setItemToDelete(item);
     }, [items]);
 
-    // Xác nhận Xóa (User Story #2)
     const confirmDelete = useCallback(async () => {
         if (!itemToDelete) return;
-        const idToDelete = itemToDelete.id;
-        const nameToDelete = itemToDelete.name;
         
-        setIsDeleteModalOpen(false);
-        const originalItems = items;
-        removeItem(idToDelete); // Optimistic
+        const { id: idToDelete, name: nameToDelete } = itemToDelete;
+        const originalItems = [...items];
+        
+        setItemToDelete(null); // Đóng modal
+        removeItem(idToDelete); // Cập nhật Optimistic
 
         try {
             if (idToDelete.startsWith('guest-')) {
-                removeGuest(idToDelete);
+                removeGuest(idToDelete); // Logic Guest
             } else if (isAuthed) {
-                await mindmapsApi.delete(idToDelete);
+                await mindmapsApi.delete(idToDelete); // Logic Auth
             }
             addToast(`Đã xóa "${nameToDelete}"`, "success");
-            setItemToDelete(null);
         } catch (error) {
-            console.error("Delete failed:", error);
             addToast(`Xóa "${nameToDelete}" thất bại!`, "error");
-            setItems(originalItems); // Revert
-            setItemToDelete(null);
+            setItems(originalItems); // Rollback
         }
     }, [itemToDelete, items, isAuthed, removeItem, removeGuest, setItems, addToast]);
-
-    // Mở Modal Share (User Story #18)
-    const openShareModal = useCallback((id: string) => {
-         const item = items.find(i => i.id === id);
-         if(item) {
-             setItemToShare(item);
-             setIsShareModalOpen(true);
-         } else if (!isAuthed && id.startsWith('guest-')) {
-             addToast("Đăng nhập để chia sẻ mindmap của bạn!", "info");
-             login();
-         }
-    }, [items, isAuthed, login, addToast]);
     
-    // Nhân bản (User Story #5)
+    // User Story #5
     const handleDuplicate = useCallback(async (id: string) => {
-        setLoading(true);
+        addToast("Đang nhân bản...", "info");
         try {
             let newMapData: MindmapSummary;
+
             if (id.startsWith('guest-')) {
-                const sourceDoc = getGuestDoc(id);
-                if (sourceDoc) {
-                    const newGuest = createGuest();
-                    const newName = `Bản sao của ${sourceDoc.name}`;
-                    updateGuestName(newGuest.id, newName);
-                    // Cập nhật content
-                    const docs = JSON.parse(localStorage.getItem("mm_guest_docs_v2") || "{}");
-                    docs[newGuest.id] = { ...sourceDoc, id: newGuest.id, name: newName, version: 1 };
-                    localStorage.setItem("mm_guest_docs_v2", JSON.stringify(docs));
-                    newMapData = { ...newGuest, name: newName };
-                } else { throw new Error("Không tìm thấy dữ liệu mindmap gốc."); }
+                const doc = getGuestDoc(id);
+                if (!doc) throw new Error("Không tìm thấy dữ liệu mindmap gốc.");
+                
+                const newGuest = createGuest(); // Tạo mới hoàn toàn
+                const newName = `Bản sao của ${doc.name}`;
+                updateGuestName(newGuest.id, newName); // Đổi tên
+                
+                // Cập nhật content
+                const docs = JSON.parse(localStorage.getItem("mm_guest_docs_v2") || "{}");
+                docs[newGuest.id] = { ...doc, id: newGuest.id, name: newName, version: 1 };
+                localStorage.setItem("mm_guest_docs_v2", JSON.stringify(docs));
+                newMapData = { ...newGuest, name: newName, updatedAt: newGuest.createdAt };
+            
             } else if (isAuthed) {
-                const duplicatedMap = await mindmapsApi.duplicate(id);
-                newMapData = duplicatedMap; // API trả về MindmapSummary
-                addItem(newMapData);
-            } else { throw new Error("Không thể nhân bản."); }
+                const duplicatedMap = await mindmapsApi.duplicate(id); // Endpoint #6
+                newMapData = { // Chuyển Detail response thành Summary
+                    id: duplicatedMap.id, name: duplicatedMap.name, ownerId: duplicatedMap.ownerId,
+                    createdAt: duplicatedMap.createdAt, updatedAt: duplicatedMap.updatedAt,
+                    accessSettings: duplicatedMap.accessSettings
+                };
+                addItem(newMapData); // Thêm vào store
+            } else {
+                throw new Error("Không thể nhân bản khi offline.");
+            }
             
             addToast(`Đã nhân bản "${newMapData.name}"!`, "success");
             navigate(`/editor/${newMapData.id}`); // Mở map mới
+
         } catch (error: any) {
-            console.error("Duplicate failed:", error);
-            addToast(`Nhân bản thất bại: ${error.message || 'Lỗi không xác định'}`, "error");
-            setLoading(false);
+            addToast(`Nhân bản thất bại: ${error.message}`, "error");
         }
-        // setLoading(false) sẽ được trigger bởi EditorPage
-    }, [isAuthed, addToast, createGuest, updateGuestName, getGuestDoc, addItem, setLoading, navigate]);
+    }, [isAuthed, addToast, createGuest, updateGuestName, getGuestDoc, addItem, navigate]);
+
+    // User Story #18
+    const openShareModal = useCallback((id: string) => {
+         const item = items.find(i => i.id === id);
+         if(item) {
+             if (isAuthed && !id.startsWith('guest-')) {
+                setItemToShare(item); // Mở modal
+             } else {
+                // Yêu cầu đăng nhập nếu là guest
+                addToast("Đăng nhập để chia sẻ mindmap của bạn!", "info");
+                login('login');
+             }
+         }
+    }, [items, isAuthed, login, addToast]);
 
 
-    // --- Render ---
+    // --- Render (Sử dụng UI gốc của bạn) ---
     return (
         <>
-            {/* Sidebar (từ GĐ3a, tái cấu trúc từ GĐ2) */}
-            {/* Truyền props actions xuống Sidebar */}
-            <Sidebar
-                items={items}
-                isLoading={loading}
-                error={error}
-                onFetchData={fetchData}
-                onCreate={handleCreateNew}
-                onRename={handleRename}
-                onDelete={openDeleteModal}
-                onShare={openShareModal}
-                onDuplicate={handleDuplicate}
-            />
+            {/* SỬA: Giao diện (UI) gốc của bạn từ `pages/Dashboard.tsx` 
+                được giữ nguyên 100%.
+                Logic được truyền vào qua props.
+            */}
+            <div className="min-h-screen bg-gradient-to-b from-gray-950 to-gray-900">
+                <Header />
+                <Sidebar
+                    items={items}
+                    isLoading={loading}
+                    error={error}
+                    onFetchData={fetchData}
+                    onCreate={handleCreateNew}
+                    onRename={handleRename}
+                    onDelete={openDeleteModal}
+                    onShare={openShareModal}
+                    onDuplicate={handleDuplicate}
+                />
+                
+                {/* SỬA: MainLayout cũ (GĐ2b) không cần thiết
+                    vì DashboardPage tự quản lý layout.
+                    Phần `md:pl-72` (padding) sẽ được quản lý bởi Sidebar.
+                */}
+                <main className="transition-all duration-300 md:pl-72"> {/* pl-72 khớp với width của Sidebar */}
+                    <div className="max-w-7xl mx-auto py-10 px-4 sm:px-6 lg:px-8">
+                        {loading && items.length === 0 ? (
+                            <div className="flex justify-center items-center h-[calc(100vh-150px)]">
+                                <Spinner size="lg" />
+                            </div>
+                        ) : items.length === 0 ? (
+                            // (UI Gốc) Hiển thị nút "Bắt đầu"
+                            <BigStartButton onClick={handleCreateNew} />
+                        ) : (
+                            // (UI Gốc) Hiển thị danh sách grid
+                            <MindmapList
+                                items={items}
+                                onRename={handleRename}
+                                onDelete={openDeleteModal}
+                                onShare={openShareModal}
+                                onDuplicate={handleDuplicate}
+                            />
+                        )}
+                    </div>
+                </main>
+            </div>
 
-            {/* Main Content Area (bên phải Sidebar) */}
-            <main className="pl-0 md:pl-72 transition-all duration-300"> {/* Phải khớp với width của Sidebar */}
-                <div className="max-w-7xl mx-auto py-12 px-4 sm:px-6 lg:px-8">
-                    {loading && items.length === 0 ? (
-                        <div className="flex justify-center items-center h-[calc(100vh-150px)]">
-                            <Spinner size="lg" />
-                        </div>
-                    ) : items.length === 0 ? (
-                        <div className="flex justify-center items-center h-[calc(100vh-150px)]">
-                            <BigStartButton />
-                        </div>
-                    ) : (
-                        <MindmapList
-                            items={items}
-                            onRename={handleRename}
-                            onDelete={openDeleteModal}
-                            onShare={openShareModal}
-                            onDuplicate={handleDuplicate}
-                        />
-                    )}
-                </div>
-            </main>
-
-            {/* Modals (Quản lý bởi trang này) */}
-            
-            {/* Delete Modal */}
-            <Modal isOpen={isDeleteModalOpen} onClose={() => setIsDeleteModalOpen(false)} title="Xác nhận xóa">
+            {/* Modals (Giữ nguyên logic) */}
+            <Modal isOpen={!!itemToDelete} onClose={() => setItemToDelete(null)} title="Xác nhận xóa">
                 <p className="text-gray-300 mb-6">
                     Bạn có chắc chắn muốn xóa mindmap "<strong>{itemToDelete?.name}</strong>"? (User Story #3)
-                    <br />
-                    Hành động này không thể hoàn tác.
+                    <br />Hành động này không thể hoàn tác.
                 </p>
                 <div className="flex justify-end gap-3">
-                    <Button variant="outline" onClick={() => setIsDeleteModalOpen(false)}>Hủy bỏ</Button>
-                    <Button variant="danger" onClick={confirmDelete}>
-                        Xóa vĩnh viễn
-                    </Button>
+                    <Button variant="outline" onClick={() => setItemToDelete(null)}>Hủy bỏ</Button>
+                    <Button variant="danger" onClick={confirmDelete}>Xóa vĩnh viễn</Button>
                 </div>
             </Modal>
             
-            {/* Share Modal (Lazy Loaded) */}
-            <Suspense>
-                {isShareModalOpen && (
+            <Suspense fallback={<Spinner />}>
+                {itemToShare && (
                     <ShareModal
-                        isOpen={isShareModalOpen}
-                        onClose={() => setIsShareModalOpen(false)}
+                        isOpen={!!itemToShare}
+                        onClose={() => setItemToShare(null)}
                         mindmap={itemToShare}
+                        onSettingsChange={(newSettings) => {
+                             // Cập nhật state (optimistic)
+                             updateItemName(itemToShare.id, itemToShare.name, new Date().toISOString());
+                        }}
                     />
                 )}
             </Suspense>
@@ -292,3 +299,4 @@ const DashboardPage: React.FC = () => {
 };
 
 export default DashboardPage;
+

@@ -1,42 +1,41 @@
 /**
  * Zustand store cho UI state toàn cục.
  * (File này trước đó trống)
- *
- * Ví dụ: Quản lý trạng thái mở/đóng của Sidebar (để các component khác biết).
- * (Hiện tại Sidebar tự quản lý, nhưng đây là nơi để đưa nó lên global nếu cần).
  */
 import { create } from 'zustand';
 import { immer } from 'zustand/middleware/immer';
 
 type UIState = {
     isSidebarOpen: boolean;
+    isStylePanelOpen: boolean;
     isShareModalOpen: boolean;
-    // Thêm các state UI khác ở đây...
+    isExportModalOpen: boolean;
 };
 
 type UIActions = {
-    toggleSidebar: () => void;
+    toggleSidebar: (isOpen?: boolean) => void;
+    toggleStylePanel: (isOpen?: boolean) => void;
     openShareModal: () => void;
     closeShareModal: () => void;
+    openExportModal: () => void;
+    closeExportModal: () => void;
 };
 
 export const useUIStore = create<UIState & UIActions>()(
     immer((set) => ({
-        // State
         isSidebarOpen: true,
+        isStylePanelOpen: false,
         isShareModalOpen: false,
-
-        // Actions
-        toggleSidebar: () => set(state => {
-            state.isSidebarOpen = !state.isSidebarOpen;
+        isExportModalOpen: false,
+        toggleSidebar: (isOpen) => set(state => {
+            state.isSidebarOpen = isOpen ?? !state.isSidebarOpen;
         }),
-        
-        openShareModal: () => set(state => {
-            state.isShareModalOpen = true;
+        toggleStylePanel: (isOpen) => set(state => {
+            state.isStylePanelOpen = isOpen ?? !state.isStylePanelOpen;
         }),
-        
-        closeShareModal: () => set(state => {
-            state.isShareModalOpen = false;
-        }),
+        openShareModal: () => set(state => { state.isShareModalOpen = true; }),
+        closeShareModal: () => set(state => { state.isShareModalOpen = false; }),
+        openExportModal: () => set(state => { state.isExportModalOpen = true; }),
+        closeExportModal: () => set(state => { state.isExportModalOpen = false; }),
     }))
 );

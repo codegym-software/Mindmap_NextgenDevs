@@ -1,30 +1,30 @@
 /**
- * Hiển thị một nhóm các avatar xếp chồng lên nhau.
- * Dùng trong Header của Editor (User Story #22).
+ * Hiển thị nhóm avatar xếp chồng (User Story #22).
+ * Dùng trong Header Editor.
  */
 import React from 'react';
 import UserAvatar from '../../shared/components/UserAvatar';
-import { UserProfile } from '../../../core/types';
+import { Collaborator } from '../../../core/types';
 
 interface AvatarGroupProps {
-    users: Partial<UserProfile>[];
+    collaborators: Collaborator[];
     max?: number;
 }
 
-const AvatarGroup: React.FC<AvatarGroupProps> = ({ users = [], max = 4 }) => {
-    const visibleUsers = users.slice(0, max);
-    const hiddenCount = Math.max(0, users.length - max);
+const AvatarGroup: React.FC<AvatarGroupProps> = ({ collaborators = [], max = 4 }) => {
+    const visibleUsers = collaborators.slice(0, max);
+    const hiddenCount = Math.max(0, collaborators.length - max);
 
     return (
-        <div className="flex items-center -space-x-2 pr-1">
+        <div className="flex items-center -space-x-2">
             {visibleUsers.map((user, index) => (
                 <UserAvatar
-                    key={user.id || user.email || index}
-                    src={user.picture}
-                    name={user.name || user.email}
+                    key={user.userId || index}
+                    src={user.avatarUrl}
+                    name={user.displayName}
                     size="md"
                     className="ring-2 ring-gray-900"
-                    title={user.name || user.email}
+                    title={user.displayName || user.email}
                 />
             ))}
             {hiddenCount > 0 && (

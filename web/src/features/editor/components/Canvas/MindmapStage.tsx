@@ -7,6 +7,7 @@ import Node from './Node';
 import Edge from './Edge';
 import InlineTextEditor from './InlineTextEditor';
 import { v4 as uuidv4 } from 'uuid';
+import { Loader2 } from 'lucide-react';
 
 const DEFAULT_WIDTH = window.innerWidth;
 const DEFAULT_HEIGHT = window.innerHeight - 56; // 56px toolbar
@@ -146,14 +147,18 @@ const MindmapStage: React.FC = () => {
         const isBackground = e.target === stageRef.current;
 
         if (isMiddleButton || (isBackground && !isTouchEvent) || isSpaceDrag) {
-             setIsPanning(true);
-             stageRef.current?.container().style.cursor = 'grabbing';
-         } else if (isBackground && isTouchEvent && e.evt.touches.length === 1) {
-             isTouchPanning.current = true;
-             const touch = e.evt.touches[0];
-             stageRef.current?.setAttr('lastClientX', touch.clientX);
-             stageRef.current?.setAttr('lastClientY', touch.clientY);
-         }
+    setIsPanning(true);
+    if (stageRef.current) {
+            stageRef.current.container().style.cursor = 'grabbing';
+        }
+    } else if (isBackground && isTouchEvent && (e.evt as TouchEvent).touches.length === 1) {
+        isTouchPanning.current = true;
+        const touch = (e.evt as TouchEvent).touches[0];
+        stageRef.current?.setAttr('lastClientX', touch.clientX);
+        stageRef.current?.setAttr('lastClientY', touch.clientY);
+    }
+
+
     }, [editingNodeId, setSelectedNodeId]);
 
     const handleStageMouseMove = useCallback((e: Konva.KonvaEventObject<MouseEvent>) => {
@@ -164,12 +169,15 @@ const MindmapStage: React.FC = () => {
         }));
     }, [isPanning]);
 
-     const handleStageMouseUpOrLeave = useCallback(() => {
-         if (isPanning) {
-             setIsPanning(false);
-             stageRef.current?.container().style.cursor = 'grab';
-         }
-     }, [isPanning]);
+        const handleStageMouseUpOrLeave = useCallback(() => {
+            if (isPanning) {
+                setIsPanning(false);
+                if (stageRef.current) {
+                    stageRef.current.container().style.cursor = 'grab';
+                }
+            }
+        }, [isPanning]);
+
 
     const handleTouchMove = useCallback((e: Konva.KonvaEventObject<TouchEvent>) => {
         const touch1 = e.evt.touches[0];

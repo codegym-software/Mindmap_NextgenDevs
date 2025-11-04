@@ -10,11 +10,15 @@
     "editor": {
         "toolbar": {
             "save": "Lưu",
+            "saving": "Đang lưu...",
+            "saved": "Đã lưu!",
             "share": "Chia sẻ",
             "export": "Xuất file",
             "undo": "Hoàn tác (Ctrl+Z)",
             "redo": "Làm lại (Ctrl+Y)",
-            "toggle_panel": "Bảng định dạng (Ctrl+M)",
+            "style_panel": "Bảng định dạng (Ctrl+M)",
+            "layout": "Sắp xếp tự động (Ctrl+L)",
+            "go_home": "Về Dashboard",
             "theme_light": "Chế độ Sáng",
             "theme_dark": "Chế độ Tối"
         },
@@ -26,12 +30,35 @@
             "font_size": "Cỡ chữ",
             "shape": "Hình dạng",
             "reset": "Reset về mặc định"
+        },
+        "export_modal": {
+            "title": "Xuất Mindmap",
+            "preview_text": "Xem trước (Dạng Text)",
+            "download_txt": "Tải về file .txt"
         }
+    },
+    "collaboration": {
+        "title": "Chia sẻ \"{mindmapName}\"",
+        "invite_placeholder": "Nhập email để mời...",
+        "invite_button": "Mời",
+        "public_access": "Chia sẻ công khai",
+        "access_disabled": "Vô hiệu hóa",
+        "access_viewer": "Bất kỳ ai (Chỉ xem)",
+        "copy_link": "Sao chép Link",
+        "link_copied": "Đã sao chép link!",
+        "people_with_access": "Những người có quyền truy cập",
+        "owner": "Chủ sở hữu",
+        "editor": "Có thể chỉnh sửa",
+        "viewer": "Chỉ xem",
+        "you": "(Bạn)",
+        "remove_access": "Xóa quyền truy cập",
+        "done": "Xong"
     },
     "auth": {
         "login": "Đăng nhập",
         "register": "Đăng ký",
-        "logout": "Đăng xuất"
+        "logout": "Đăng xuất",
+        "google_login": "Đăng nhập với Google"
     },
     "general": {
         "delete": "Xóa",

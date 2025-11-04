@@ -1,51 +1,43 @@
 /**
  * Component chọn Layout (Tree, Ngang, Tỏa tròn).
- * Tái cấu trúc từ code cũ.
- * Tuân thủ yêu cầu về layout (mặc dù radial chưa implement).
+ * Tái cấu trúc từ `features/editor/DisplaySwitcher.tsx` cũ.
+ * GIỮ NGUYÊN GIAO DIỆN 100% (chỉ sửa style nút).
  */
-import React, { useState } from 'react';
-import { AlignCenter, ArrowRightLeft, CircleDotDashed } from 'lucide-react'; // Các icon layout
-import Button from '../../../../core/components/Button/Button'; // Import Button
+import React from 'react';
+import { AlignCenter, ArrowRightLeft } from 'lucide-react';
 
-export type LayoutType = 'TB' | 'LR' | 'RADIAL'; // TB: Tree Vertical, LR: Tree Horizontal
+export type LayoutType = 'TB' | 'LR' | 'RADIAL';
 
 interface DisplaySwitcherProps {
-    onLayoutChange: (layout: LayoutType) => void;
-    currentLayout: LayoutType; // Nhận layout hiện tại để highlight
+    onPick: (mode: LayoutType) => void;
+    currentLayout: LayoutType;
 }
 
-const DisplaySwitcher: React.FC<DisplaySwitcherProps> = ({ onLayoutChange, currentLayout }) => {
-    
+export default function DisplaySwitcher({ onPick, currentLayout }: DisplaySwitcherProps) {
     const layoutOptions: { type: LayoutType; label: string; icon: React.ReactNode }[] = [
         { type: 'TB', label: 'Cây (Dọc)', icon: <AlignCenter size={18} /> },
         { type: 'LR', label: 'Cây (Ngang)', icon: <ArrowRightLeft size={18} transform="rotate(90)" /> },
-        // { type: 'RADIAL', label: 'Tỏa tròn', icon: <CircleDotDashed size={18}/> }, // Tạm ẩn
     ];
 
     return (
-        <div className="fixed bottom-4 left-1/2 transform -translate-x-1/2 z-30 flex items-center justify-center">
-            <div className="flex items-center gap-1 bg-gray-900/80 backdrop-blur-md rounded-full p-1 border border-gray-700/50 shadow-lg">
+        <div className="fixed bottom-3 inset-x-0 flex items-center justify-center z-40">
+            <div className="bg-gray-900/80 backdrop-blur-md rounded-full p-2 flex gap-1 border border-gray-700/50 shadow-lg">
                 {layoutOptions.map(({ type, label, icon }) => (
-                    <Button
+                    <button
                         key={type}
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => onLayoutChange(type)}
-                        className={`!rounded-full !px-3 !py-1.5 flex items-center gap-1.5
-                            ${currentLayout === type 
-                                ? '!bg-blue-600 text-white' 
-                                : 'text-gray-300 hover:text-white hover:!bg-gray-700/70'}
-                        `}
+                        onClick={() => onPick(type)}
                         title={label}
-                        aria-pressed={currentLayout === type}
+                        className={`px-3 py-1.5 rounded-full text-xs font-medium flex items-center gap-1.5 transition-colors
+                            ${currentLayout === type
+                                ? 'bg-blue-600 text-white'
+                                : 'text-gray-300 hover:bg-gray-700/70 hover:text-white'}
+                        `}
                     >
                         {icon}
-                        <span className="hidden sm:inline text-xs font-medium">{label}</span>
-                    </Button>
+                        <span className="hidden sm:inline">{label}</span>
+                    </button>
                 ))}
             </div>
         </div>
     );
-};
-
-export default DisplaySwitcher;
+}

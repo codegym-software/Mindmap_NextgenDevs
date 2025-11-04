@@ -1,109 +1,94 @@
 /**
- * Hook quản lý state và logic cho ShareModal.
+ * Hook quản lý toàn bộ logic ShareModal.
  */
 import { useState, useEffect, useCallback } from 'react';
-import { Collaborator } from '../../../core/types';
+import { MindmapSummary, MindmapDetailResponse } from '../../../core/types';
 import { collaborationApi } from '../api/collaborationApi';
 import { useToast } from '../../../core/hooks/useToast';
 
-export function useCollaboration(mindmapId: string | null) {
+type Collaborator = NonNullable<MindmapDetailResponse['collaborators']>[0];
+
+export function useCollaboration(mindmap: MindmapSummary | null) {
     const [collaborators, setCollaborators] = useState<Collaborator[]>([]);
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const { addToast } = useToast();
 
-    // Fetch danh sách (Endpoint #9)
     const fetchCollaborators = useCallback(async () => {
-        if (!mindmapId) return;
+        if (!mindmap) return;
         setIsLoading(true);
         setError(null);
         try {
-            const data = await collaborationApi.list(mindmapId);
+            const data = await collaborationApi.list(mindmap.id);
             setCollaborators(data);
         } catch (e: any) {
-            console.error("Failed to fetch collaborators:", e);
             setError("Không thể tải danh sách cộng tác viên.");
             addToast("Không thể tải danh sách cộng tác viên", "error");
         } finally {
             setIsLoading(false);
         }
-    }, [mindmapId, addToast]);
+    }, [mindmap, addToast]);
 
-    // Mời (Endpoint #10)
     const inviteCollaborator = useCallback(async (email: string, permission: 'EDITOR' | 'VIEWER') => {
-        if (!mindmapId) return;
-        setIsLoading(true);
+        if (!mindmap) return false;
         try {
-            const newCollaborator = await collaborationApi.invite(mindmapId, { email, permission });
+            const newCollaborator = await collaborationApi.invite(mindmap.id, { email, permission });
             setCollaborators(prev => [...prev, newCollaborator]);
             addToast(`Đã mời ${email} thành công!`, "success");
+            return true;
         } catch (e: any) {
-            console.error("Failed to invite collaborator:", e);
-            const errorMsg = e.response?.data?.message || "Lời mời thất bại.";
+            const errorMsg = e.response?.data?.detail || "Lời mời thất bại.";
             addToast(errorMsg, "error");
-        } finally {
-            setIsLoading(false);
+            return false;
         }
-    }, [mindmapId, addToast]);
+    }, [mindmap, addToast]);
 
-    // Cập nhật quyền (Endpoint #11)
     const updateCollaboratorPermission = useCallback(async (userId: string, permission: 'EDITOR' | 'VIEWER') => {
-        if (!mindmapId) return;
+        if (!mindmap) return;
         try {
-            const updatedCollaborator = await collaborationApi.updatePermission(mindmapId, userId, permission);
-            setCollaborators(prev => prev.map(c => c.userId === userId ? updatedCollaborator : c));
+            const updated = await collaborationApi.updatePermission(mindmap.id, userId, permission);
+            setCollaborators(prev => prev.map(c => c.userId === userId ? updated : c));
             addToast("Cập nhật quyền thành công!", "success");
-        } catch (e: any) {
-            console.error("Failed to update permission:", e);
+        } catch {
             addToast("Cập nhật quyền thất bại.", "error");
         }
-    }, [mindmapId, addToast]);
+    }, [mindmap, addToast]);
 
-    // Xóa (Endpoint #12)
     const removeCollaborator = useCallback(async (userId: string) => {
-        if (!mindmapId) return;
+        if (!mindmap) return;
         try {
-            await collaborationApi.remove(mindmapId, userId);
+            await collaborationApi.remove(mindmap.id, userId);
             setCollaborators(prev => prev.filter(c => c.userId !== userId));
             addToast("Đã xóa cộng tác viên!", "success");
-        } catch (e: any) {
-            console.error("Failed to remove collaborator:", e);
+        } catch {
             addToast("Xóa thất bại.", "error");
         }
-    }, [mindmapId, addToast]);
+    }, [mindmap, addToast]);
 
-    // Cập nhật cài đặt public (Endpoint #8)
     const updatePublicAccess = useCallback(async (settings: MindmapSummary['accessSettings']) => {
-        if (!mindmapId) return;
+        if (!mindmap) return false;
         try {
-            await collaborationApi.updateShareSettings(mindmapId, settings);
+            await collaborationApi.updateShareSettings(mindmap.id, settings);
             addToast("Cập nhật chia sẻ công khai thành công!", "success");
-            return true; // Báo thành công
-        } catch (e: any) {
-            console.error("Failed to update public access:", e);
+            return true;
+        } catch {
             addToast("Cập nhật thất bại.", "error");
-            return false; // Báo thất bại
+            return false;
         }
-    }, [mindmapId, addToast]);
+    }, [mindmap, addToast]);
 
-
-    // Tải data khi mindmapId thay đổi
     useEffect(() => {
-        if (mindmapId) {
-            fetchCollaborators();
-        } else {
-            // Clear state nếu không có mindmapId
+        if (mindmap?.id) fetchCollaborators();
+        else {
             setCollaborators([]);
             setError(null);
-            setIsLoading(false);
         }
-    }, [mindmapId, fetchCollaborators]);
+    }, [mindmap?.id, fetchCollaborators]);
 
     return {
         collaborators,
         isLoading,
         error,
-        fetchCollaborators,
         inviteCollaborator,
         updateCollaboratorPermission,
         removeCollaborator,

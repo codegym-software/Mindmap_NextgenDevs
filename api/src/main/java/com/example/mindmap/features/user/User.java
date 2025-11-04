@@ -15,33 +15,35 @@ import lombok.NoArgsConstructor;
 public class User {
 
     @Id
-    private String id; // Cognito sub
+    private String id; // Cognito sub HOẶC Guest ID
 
-    @Indexed(unique = true)
+    @Indexed(unique = true, sparse = true) // sparse = true vì Guest có thể có email trùng (hoặc giả)
     private String email;
 
     @Indexed
     private String displayName;
 
-    private String avatarUrl; // Essential
+    private String avatarUrl;
 
     private String cognitoUsername;
 
     private UserStatus status = UserStatus.ACTIVE;
 
-    private UserSettings settings = new UserSettings(); // Initialize with defaults
+    private UserSettings settings = new UserSettings();
 
     private Instant createdAt = Instant.now();
     private Instant updatedAt = Instant.now();
 
-    // Inner class for settings
     @Data
     public static class UserSettings {
-        private String defaultEditorThemeId; // Reference to EditorTheme
-        private String language = "en"; // Default language
+        private String defaultEditorThemeId;
+        private String language = "en";
     }
 
     public enum UserStatus {
-        ACTIVE, INACTIVE, PENDING_VERIFICATION
+        ACTIVE,
+        INACTIVE,
+        PENDING_VERIFICATION,
+        GUEST // Mới: Thêm trạng thái Guest
     }
 }

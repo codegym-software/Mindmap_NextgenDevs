@@ -1,30 +1,29 @@
-// src/features/auth/pages/LogoutHandler.tsx
 /**
  * Trang xử lý logic Đăng xuất.
- * Tái cấu trúc từ `pages/Logout.tsx` cũ.
+ * Tái cấu trúc từ `pages/Logout.tsx` cũ (giữ nguyên logic).
  * Tuân thủ User Story #30.
  */
 import React, { useEffect } from "react";
-import { clearTokens } from "../services/authStorage";
-import { getLogoutUrl } from "../services/cognito";
-import Spinner from "../../../core/components/Spinner/Spinner";
+import { clearTokens } from "../services/authStorage"; // Sửa đường dẫn
+import { getLogoutUrl } from "../services/cognito"; // Sửa đường dẫn
+import Spinner from "../../../core/components/Spinner/Spinner"; // Sửa đường dẫn
 
 const LogoutHandler: React.FC = () => {
     useEffect(() => {
-        // 1. Xóa tokens khỏi localStorage
+        // Xóa token local
         clearTokens();
-        
-        // 2. Chuyển hướng đến Cognito để đăng xuất global
-        // Cognito sẽ tự động redirect về `LogoutRedirectUri` (đã config là /dashboard)
+        // Chuyển hướng đến Cognito để logout toàn cục
         window.location.href = getLogoutUrl();
     }, []);
-    
+
+    // Giữ nguyên UI loading từ code gốc
     return (
-        <div className="w-screen h-screen bg-gray-900 text-white flex flex-col items-center justify-center gap-4">
-            <Spinner size="lg" />
-            <span className="text-lg text-gray-300">Đang đăng xuất...</span>
+        <div className="min-h-screen bg-gray-950 text-white flex flex-col items-center justify-center gap-4">
+            <Spinner className="w-8 h-8" />
+            <span>Đang đăng xuất...</span>
         </div>
     );
-};
+}
 
 export default LogoutHandler;
+

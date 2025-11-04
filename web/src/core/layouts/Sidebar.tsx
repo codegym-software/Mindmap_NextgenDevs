@@ -11,7 +11,7 @@ import { useAuth } from "../../features/auth/hooks/useAuth";
 import { useMindmapsStore, MindmapSummary } from "../../features/dashboard/store/useMindmapsStore";
 import { Plus, Search, Edit, Trash2, Share2, MoreVertical, Pin, PinOff, LogOut, Settings, HelpCircle, Loader2, Copy } from 'lucide-react'; // Thêm Copy
 import { useToast } from "../hooks/useToast";
-import { mindmapsApi } from "../../features/dashboard/services/mindmapApi";
+import { mindmapsApi } from "../../features/dashboard/services/mindmapsApi";
 import { useLocalMindmap } from "../../features/dashboard/hooks/useLocalMindmap";
 import Modal from "../components/Modal/Modal";
 import Button from "../components/Button/Button";

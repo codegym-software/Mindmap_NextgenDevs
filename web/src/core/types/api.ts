@@ -1,36 +1,50 @@
 /**
- * Định nghĩa các kiểu dữ liệu API chung (không đặc thù cho feature nào).
+ * Định nghĩa các kiểu dữ liệu (types) liên quan đến API.
  * (File này trước đó trống)
  */
+import { MindmapSummary, MindmapContent } from ".";
 
-/**
- * Định dạng lỗi chung trả về từ Backend (Spring Boot GlobalExceptionHandler)
- */
+// --- API Error ---
 export interface ApiErrorResponse {
-    type: string;       // e.g., "/errors/validation-error"
-    title: string;      // e.g., "Validation Error"
-    status: number;     // e.g., 400
-    detail: string;     // e.g., "Invalid request parameters"
-    instance?: string;  // e.g., "/api/mindmaps"
-    timestamp: string;  // ISO 8601
-    
-    // Dành riêng cho lỗi Validation (400)
-    details?: Record<string, string>; // e.g., { "name": "must not be blank" }
+    type: string;
+    title: string;
+    status: number;
+    detail: string;
+    instance?: string;
+    timestamp: string;
+    details?: Record<string, string>;
 }
 
-/**
- * Kiểu dữ liệu cho một User Profile (từ BE /api/users/me)
- * Tuân thủ User Story #13
- */
-export interface UserProfile {
-    id: string; // Cognito sub
+// --- API Payloads ---
+export type MindmapCreatePayload = {
+    name: string;
+    content?: MindmapContent;
+};
+
+export type MindmapUpdatePayload = {
+    name?: string;
+    content?: MindmapContent;
+    version?: number;
+};
+
+export type CollaborationInvitePayload = {
     email: string;
-    displayName: string;
-    avatarUrl?: string;
-    status: 'ACTIVE' | 'INACTIVE' | 'PENDING_VERIFICATION';
-    createdAt: string; // ISO String
-    settings: {
-        defaultEditorThemeId?: string;
-        language: string;
-    };
-}
+    permission: 'EDITOR' | 'VIEWER';
+};
+
+export type CollaborationUpdatePayload = {
+    permission: 'EDITOR' | 'VIEWER';
+};
+
+export type ShareSettingsPayload = MindmapSummary['accessSettings'];
+
+export type GuestSyncPayload = {
+    name: string;
+    content: MindmapContent;
+    createdAt: string;
+};
+
+// --- API Responses ---
+export type GuestSyncResponse = {
+    createdMaps: MindmapSummary[];
+};

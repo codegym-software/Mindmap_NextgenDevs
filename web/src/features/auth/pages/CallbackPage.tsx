@@ -1,75 +1,81 @@
-// src/features/auth/pages/CallbackPage.tsx
 /**
  * Trang Callback xử lý redirect từ Cognito (Google Login).
- * Tái cấu trúc từ `pages/Callback.tsx` cũ.
+ * Tái cấu trúc từ `pages/Callback.tsx` cũ (giữ nguyên logic).
  * Tuân thủ Router #5.
  */
-import React, { useEffect, useContext } from "react";
+import React, { useEffect } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { exchangeCodeForTokens } from "../services/cognito";
-import { AuthContext } from "../providers/AuthProvider";
-import Spinner from "../../../core/components/Spinner/Spinner";
+import { useAuth } from "../hooks/useAuth"; // Sửa đường dẫn
+import Spinner from "../../../core/components/Spinner/Spinner"; // Sửa đường dẫn
 import { useToast } from "../../../core/hooks/useToast";
+import { Tokens } from "../../../core/types"; // Sửa đường dẫn
 
 const CallbackPage: React.FC = () => {
     const navigate = useNavigate();
+    const { setAuthTokens } = useAuth(); // Dùng hook
     const [searchParams] = useSearchParams();
-    const { setAuthTokens } = useAuth();
     const { addToast } = useToast();
 
     useEffect(() => {
-        const handleCallback = async () => {
+        const run = async () => {
             const code = searchParams.get("code");
             const error = searchParams.get("error");
-            const errorDescription = searchParams.get("error_description");
 
+            // Xử lý lỗi OAuth
             if (error) {
-                console.error("OAuth error:", error, errorDescription);
-                addToast(`Lỗi đăng nhập: ${errorDescription}`, "error");
-                navigate("/dashboard", { replace: true });
+                console.error("OAuth error:", error, searchParams.get("error_description"));
+                addToast(`Lỗi xác thực: ${searchParams.get("error_description") || error}`, "error");
+                navigate("/", { replace: true }); // Về trang chủ
                 return;
             }
 
+            // Kiểm tra code
             if (!code) {
                 console.warn("Callback skipped: No authorization code found.");
-                navigate("/dashboard", { replace: true });
+                navigate("/", { replace: true });
                 return;
             }
 
             try {
-                // Đổi code lấy tokens
-                const tokens = await exchangeCodeForTokens(code);
+                // Gọi cognito.ts (đã tái cấu trúc)
+                const res = await exchangeCodeForTokens(code);
                 
-                // Lưu tokens vào context/storage
+                const tokens: Tokens = {
+                    access_token: res.access_token,
+                    id_token: res.id_token,
+                    refresh_token: res.refresh_token,
+                    expires_at: Math.floor(Date.now() / 1000) + (res.expires_in ?? 3600),
+                };
+
+                // Lưu tokens vào Context (Provider sẽ lo localStorage)
                 setAuthTokens(tokens);
 
-                // Trigger storage event cho các tab khác
-                window.dispatchEvent(new StorageEvent("storage", { key: "mindmap_tokens_v1" }));
-                
                 addToast("Đăng nhập thành công!", "success");
                 
-                // Chuyển hướng về dashboard
+                // Chuyển hướng đến Dashboard
                 navigate("/dashboard", { replace: true });
 
             } catch (e: any) {
                 console.error("Token exchange error:", e);
-                addToast(`Lỗi xác thực: ${e.message || 'Không rõ'}`, "error");
-                navigate("/dashboard", { replace: true });
-            } finally {
-                // Xóa code khỏi URL
-                // window.history.replaceState({}, document.title, "/dashboard");
+                addToast(`Lỗi khi đổi token: ${e.message || 'Lỗi không xác định'}`, "error");
+                navigate("/", { replace: true });
             }
         };
 
-        handleCallback();
-    }, [navigate, searchParams, setAuthTokens, addToast]);
+        run();
+    // Bỏ `addToast`, `Maps`, `setAuthTokens` khỏi dependency array (chúng là stable)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [searchParams]);
 
+    // Giữ nguyên UI loading từ code gốc
     return (
-        <div className="w-screen h-screen bg-gray-900 text-white flex flex-col items-center justify-center gap-4">
-            <Spinner size="lg" />
-            <span className="text-lg text-gray-300">Đang xử lý đăng nhập...</span>
+        <div className="min-h-screen bg-gray-950 text-white flex flex-col items-center justify-center gap-4">
+            <Spinner className="w-8 h-8" />
+            <span>Đang xử lý đăng nhập...</span>
         </div>
     );
-};
+}
 
 export default CallbackPage;
+

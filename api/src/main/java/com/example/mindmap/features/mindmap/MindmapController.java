@@ -4,6 +4,7 @@ package com.example.mindmap.features.mindmap;
 import java.util.List;
 
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType; // Thêm MediaType
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -37,7 +38,7 @@ public class MindmapController {
     public ResponseEntity<List<MindmapSummaryResponse>> listMindmapsForCurrentUser() {
         return ResponseEntity.ok(mindmapService.listForCurrentUser());
     }
-    
+
     @PostMapping
     @PreAuthorize("isAuthenticated()")
     public ResponseEntity<MindmapDetailResponse> createMindmap(@Valid @RequestBody MindmapCreateRequest request) {
@@ -62,4 +63,29 @@ public class MindmapController {
         mindmapService.deleteMindmap(id);
         return ResponseEntity.noContent().build();
     }
+    
+    // --- Các Endpoint mới (Giai đoạn 1) ---
+
+    /**
+     * Endpoint #6: Nhân bản mindmap.
+     */
+    @PostMapping("/{id}/duplicate")
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<MindmapDetailResponse> duplicateMindmap(@PathVariable String id) {
+        // Quyền: Phải xem được (VIEW) mindmap gốc
+        // Owner của bản sao sẽ là user hiện tại
+        return new ResponseEntity<>(mindmapService.duplicateMindmap(id), HttpStatus.CREATED);
+    }
+
+    /**
+     * Endpoint #19: Xuất mindmap dưới dạng text.
+     */
+    @GetMapping(value = "/{id}/export/text", produces = MediaType.TEXT_PLAIN_VALUE)
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<String> exportMindmapAsText(@PathVariable String id) {
+        // Quyền: Phải xem được (VIEW) mindmap
+        return ResponseEntity.ok(mindmapService.exportMindmapAsText(id));
+    }
+    
+    // Endpoint #20 (Embed) và #21, #22 (SaaS) sẽ ở Giai đoạn 3
 }

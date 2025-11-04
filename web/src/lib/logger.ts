@@ -4,24 +4,31 @@
  */
 const isDevelopment = import.meta.env.DEV;
 
+const COLORS = {
+    log: '\x1b[34m',
+    warn: '\x1b[33m',
+    error: '\x1b[31m',
+    info: '\x1b[35m',
+    reset: '\x1b[0m'
+};
+
 export const logger = {
     log: (...args: any[]) => {
         if (isDevelopment) {
-            console.log('%c[LOG]', 'color: #0ea5e9;', ...args); // Bright Blue
+            console.log(`${COLORS.log}[LOG]${COLORS.reset}`, ...args);
         }
     },
     warn: (...args: any[]) => {
         if (isDevelopment) {
-            console.warn('%c[WARN]', 'color: #f59e0b;', ...args); // Amber
+            console.warn(`${COLORS.warn}[WARN]${COLORS.reset}`, ...args);
         }
     },
     error: (...args: any[]) => {
-        // Luôn log lỗi
-        console.error('%c[ERROR]', 'color: #ef4444;', ...args); // Red
+        console.error(`${COLORS.error}[ERROR]${COLORS.reset}`, ...args);
     },
     info: (...args: any[]) => {
          if (isDevelopment) {
-            console.info('%c[INFO]', 'color: #8b5cf6;', ...args); // Violet
+            console.info(`${COLORS.info}[INFO]${COLORS.reset}`, ...args);
         }
     }
 };

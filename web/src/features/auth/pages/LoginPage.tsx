@@ -1,28 +1,25 @@
-// src/features/auth/pages/LoginPage.tsx
 /**
  * Trang /login (Router #2).
- * Theo UX Flow, trang này chỉ trigger AuthModal trên trang Dashboard.
+ * Theo UX Flow, trang này chỉ trigger AuthModal trên trang Dashboard/Landing.
+ * (File này trước đó trống)
  */
 import React, { useEffect } from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 
 const LoginPage: React.FC = () => {
-    const { login, isAuthed } = useAuth();
+    const { login } = useAuth();
     const location = useLocation();
+    const from = location.state?.from?.pathname || "/"; // Lấy trang trước đó
 
     useEffect(() => {
-        // Nếu chưa đăng nhập, trigger modal
-        if (!isAuthed) {
-            login('login');
-        }
-    }, [isAuthed, login]);
+        // Trigger modal đăng nhập
+        login('login');
+    }, [login]);
 
-    // Luôn chuyển hướng về trang dashboard (nơi modal sẽ xuất hiện)
-    // Hoặc về trang 'from' nếu có (ví dụ: từ ProtectedRoute)
-    const from = location.state?.from || '/dashboard';
-    
+    // Ngay lập tức điều hướng trở lại trang 'from'
     return <Navigate to={from} replace />;
 };
 
 export default LoginPage;
+

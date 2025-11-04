@@ -1,18 +1,23 @@
+/**
+ * Component Konva Node.
+ * Tái cấu trúc từ logic code gốc (Editor.tsx) của bạn.
+ * Tuân thủ Hybrid: Vẽ node, tính level, áp style, xử lý drag, dblclick.
+ */
 import React, { useRef, useEffect, useMemo, useCallback, useState } from 'react';
 import { Group, Rect, Text, Circle, Path, Ellipse } from 'react-konva';
 import Konva from 'konva';
 import { useEditorStore } from '../../store/useEditorStore';
-import { NodeData } from '../../../../core/types'; // Import từ core
-import { getNodeStyle, calculateLevel, calculateNodeDimensions } from '../../../../core/utils/helpers'; // Import helpers
+import { NodeData } from '../../../../core/types';
+import { getNodeStyle, calculateLevel, calculateNodeDimensions } from '../../../../core/utils/helpers';
 
-// --- Node Component Props ---
+// --- Props Interface ---
 interface NodeProps {
     nodeId: string;
     isSelected: boolean;
+    isEditing: boolean;
     isDropTarget: boolean;
     hasChildren: boolean;
     descendantCount: number;
-    isEditing: boolean;
     onSelect: (nodeId: string) => void;
     onStartEditing: (nodeId: string) => void;
     onDragStart: () => void;
@@ -23,7 +28,7 @@ interface NodeProps {
 
 // --- Node Component ---
 const Node: React.FC<NodeProps> = React.memo(({
-    nodeId, isSelected, isDropTarget, hasChildren, descendantCount, isEditing,
+    nodeId, isSelected, isEditing, isDropTarget, hasChildren, descendantCount,
     onSelect, onStartEditing, onDragStart, onDragMove, onDragEnd, onToggleCollapse
 }) => {
     const groupRef = useRef<Konva.Group>(null);
@@ -34,7 +39,7 @@ const Node: React.FC<NodeProps> = React.memo(({
         useCallback(
             (state) => ({
                 node: state.nodes.find(n => n.id === nodeId),
-                allNodes: state.nodes, // Cần allNodes để tính level
+                allNodes: state.nodes,
                 updateNodeDimensions: state.updateNodeDimensions
             }),
             [nodeId]
@@ -44,16 +49,16 @@ const Node: React.FC<NodeProps> = React.memo(({
     // --- Tính toán Style và Kích thước ---
     const nodeMap = useMemo(() => new Map(allNodes.map(n => [n.id, n])), [allNodes]);
     const level = useMemo(() => node ? calculateLevel(node.id, nodeMap) : 0, [node, nodeMap]);
-    
+   
     // Style ghi đè (từ User Story #14) + Style theo level
     const baseStyle = useMemo(() => getNodeStyle(level), [level]);
     const finalStyle = useMemo(() => ({
         ...baseStyle,
-        ...(node?.style || {}) // Ghi đè style từ store (nếu có)
+        ...(node?.style || {})
     }), [baseStyle, node?.style]);
 
     // Tính toán kích thước (tuân thủ User Story #34)
-    const { width, height, textToRender } = useMemo(
+    const { width, height, textToRender, finalFontSize } = useMemo(
         () => calculateNodeDimensions(node?.text ?? '', finalStyle),
         [node?.text, finalStyle]
     );
@@ -82,7 +87,7 @@ const Node: React.FC<NodeProps> = React.memo(({
 
     const handleDblClick = useCallback((e: Konva.KonvaEventObject<MouseEvent | TouchEvent>) => {
         e.cancelBubble = true;
-        onStartEditing(nodeId); // User Story #8
+        onStartEditing(nodeId);
     }, [nodeId, onStartEditing]);
 
     const handleClick = useCallback((e: Konva.KonvaEventObject<MouseEvent | TouchEvent>) => {
@@ -90,24 +95,23 @@ const Node: React.FC<NodeProps> = React.memo(({
         onSelect(nodeId);
     }, [nodeId, onSelect]);
 
-    // (Các hàm drag/toggle chỉ đơn giản là gọi prop)
     const handleDragStartInternal = useCallback(() => onDragStart(), [onDragStart]);
     const handleDragMoveInternal = useCallback((e: Konva.KonvaEventObject<DragEvent>) => onDragMove(e, nodeId), [nodeId, onDragMove]);
     const handleDragEndInternal = useCallback((e: Konva.KonvaEventObject<DragEvent>) => onDragEnd(e, nodeId), [nodeId, onDragEnd]);
     const handleToggleInternal = useCallback((e: Konva.KonvaEventObject<MouseEvent | TouchEvent>) => {
-        e.cancelBubble = true; // Ngăn không cho click/select node
-        onToggleCollapse(e, nodeId); // User Story #16
+        e.cancelBubble = true;
+        onToggleCollapse(e, nodeId);
     }, [nodeId, onToggleCollapse]);
 
     // --- Render Logic ---
     if (!node) return null;
-
     const isCollapsed = node.collapsed ?? false;
     const showCollapseButton = hasChildren && (isHovered || isSelected);
     const NodeShape = finalStyle.shape === 'ellipse' ? Ellipse : Rect;
+   
     const shapeProps = finalStyle.shape === 'ellipse'
         ? { radiusX: width / 2, radiusY: height / 2 }
-        : { width: width, height: height, cornerRadius: 8 }; // Bo góc
+        : { width: width, height: height, cornerRadius: 10 };
 
     return (
         <Group
@@ -115,7 +119,7 @@ const Node: React.FC<NodeProps> = React.memo(({
             id={nodeId}
             x={node.x}
             y={node.y}
-            draggable // User Story #10
+            draggable
             onDragStart={handleDragStartInternal}
             onDragMove={handleDragMoveInternal}
             onDragEnd={handleDragEndInternal}
@@ -125,7 +129,7 @@ const Node: React.FC<NodeProps> = React.memo(({
             onDblTap={handleDblClick}
             onMouseEnter={handleMouseEnter}
             onMouseLeave={handleMouseLeave}
-            offsetX={width / 2} // Đặt tâm group vào (0,0) của nó
+            offsetX={width / 2}
             offsetY={height / 2}
             perfectDrawEnabled={false}
             transformsEnabled="position"
@@ -133,9 +137,9 @@ const Node: React.FC<NodeProps> = React.memo(({
             {/* Main Node Shape */}
             <NodeShape
                 {...shapeProps}
-                fill={finalStyle.bg}
-                stroke={isDropTarget ? "#10B981" : (isSelected ? "#60a5fa" : finalStyle.border)}
-                strokeWidth={isDropTarget ? 3.5 : (isSelected ? 3 : finalStyle.width)}
+                fill={finalStyle.backgroundColor}
+                stroke={isDropTarget ? "#10B981" : (isSelected ? "#60a5fa" : finalStyle.borderColor)}
+                strokeWidth={isDropTarget ? 3.5 : (isSelected ? 3 : finalStyle.borderWidth)}
                 shadowColor="rgba(0,0,0,0.3)"
                 shadowBlur={isSelected || isHovered ? 10 : 5}
                 shadowOpacity={0.5}
@@ -144,40 +148,39 @@ const Node: React.FC<NodeProps> = React.memo(({
                 perfectDrawEnabled={false}
             />
             {/* Node Text (Ẩn khi đang chỉnh sửa) */}
-             <Text
-                visible={!isEditing} // Ẩn khi component cha báo đang editing
+            <Text
+                visible={!isEditing}
                 text={textToRender || '(Trống)'}
                 width={width}
                 height={height}
                 align="center"
                 verticalAlign="middle"
                 fill={finalStyle.textColor}
-                fontSize={finalStyle.fontSize}
+                fontSize={finalFontSize}
                 fontStyle={finalStyle.fontWeight}
                 fontFamily='"Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif'
-                lineHeight={LINE_HEIGHT_MULTIPLIER}
-                paddingX={PADDING_X}
-                paddingY={PADDING_Y}
-                listening={false} // Text không nhận sự kiện
+                lineHeight={1.3}
+                paddingX={20}
+                paddingY={12}
+                listening={false}
                 perfectDrawEnabled={false}
             />
-
             {/* Collapse/Expand Button (User Story #16) */}
             {hasChildren && (
-                 <Group
-                    x={width / 2 + 3} // Đặt ở cạnh phải, hơi lệch ra ngoài
-                    y={0} // Căn giữa theo chiều dọc
+                <Group
+                    x={width / 2 + 3}
+                    y={0}
                     visible={showCollapseButton}
                     onClick={handleToggleInternal}
                     onTap={handleToggleInternal}
-                    onMouseEnter={handleMouseEnter} // Giữ cursor pointer
+                    onMouseEnter={handleMouseEnter}
                     onMouseLeave={handleMouseLeave}
                 >
                     <Circle
-                        radius={7.5}
+                        radius={8}
                         fill={isHovered ? "#e2e8f0" : "#f8fafc"}
                         stroke={isSelected ? "#60a5fa" : "#94a3b8"}
-                        strokeWidth={1}
+                        strokeWidth={1.5}
                         shadowColor="rgba(0,0,0,0.2)"
                         shadowBlur={3}
                         shadowOpacity={0.6}
@@ -185,12 +188,12 @@ const Node: React.FC<NodeProps> = React.memo(({
                     {isCollapsed ? (
                         <Text
                             text={`${descendantCount > 9 ? '9+' : descendantCount}`}
-                            fontSize={8}
+                            fontSize={9}
                             fill="#3b82f6"
-                            width={15}
-                            height={15}
-                            offsetX={7.5}
-                            offsetY={7.5}
+                            width={16}
+                            height={16}
+                            offsetX={8}
+                            offsetY={8}
                             align="center"
                             verticalAlign="middle"
                             fontStyle="bold"
@@ -198,9 +201,9 @@ const Node: React.FC<NodeProps> = React.memo(({
                         />
                     ) : (
                         <Path
-                            data="M -3 0 H 3" // Dấu trừ
+                            data="M -4 0 H 4"
                             stroke="#3b82f6"
-                            strokeWidth={1.5}
+                            strokeWidth={2}
                             lineCap="round"
                             listening={false}
                         />

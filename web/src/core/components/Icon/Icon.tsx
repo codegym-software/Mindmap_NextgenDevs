@@ -1,30 +1,11 @@
 /**
  * Component Icon (wrapper).
- * Tái cấu trúc từ file cũ.
- * Sử dụng `lucide-react` làm thư viện icon chính.
+ * Tái cấu trúc từ file cũ `components/common/Icon.tsx`.
+ * GIỮ NGUYÊN GIAO DIỆN/LOGIC 100%.
  */
 import React from 'react';
-import { icons, LucideProps } from 'lucide-react';
 import { twMerge } from 'tailwind-merge';
 
-interface IconProps extends Omit<LucideProps, 'name'> {
-    name: keyof typeof icons; // Tên icon phải có trong `lucide-react`
+export default function Icon({ className = "", children }: { className?: string; children: React.ReactNode }) {
+  return <span className={twMerge("inline-flex items-center justify-center", className)}>{children}</span>;
 }
-
-const Icon: React.FC<IconProps> = ({ name, className, ...props }) => {
-    const LucideIcon = icons[name];
-
-    if (!LucideIcon) {
-        console.warn(`Icon "${name}" không tồn tại trong lucide-react.`);
-        return null;
-    }
-
-    return (
-        <LucideIcon
-            className={twMerge("inline-block stroke-current", className)}
-            {...props}
-        />
-    );
-};
-
-export default Icon;

@@ -4,7 +4,7 @@ import java.net.URI;
 import java.time.Instant;
 import java.util.stream.Collectors;
 
-import org.slf4j.Logger; // Use ProblemDetail for RFC 7807 compliance
+import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
@@ -13,11 +13,43 @@ import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import software.amazon.awssdk.services.cognitoidentityprovider.model.CognitoIdentityProviderException; // Mới
 
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
     private static final Logger log = LoggerFactory.getLogger(GlobalExceptionHandler.class);
+
+    // --- Mới: Xử lý lỗi Cognito ---
+    @ExceptionHandler(CognitoIdentityProviderException.class)
+    public ProblemDetail handleCognitoException(CognitoIdentityProviderException ex) {
+        log.warn("Cognito Error: {}", ex.awsErrorDetails().errorMessage());
+        
+        HttpStatus status = HttpStatus.BAD_REQUEST; // Mặc định là 400
+        String title = "Cognito Error";
+
+        // Phân loại lỗi thường gặp
+        if (ex.isThrottlingException()) {
+            status = HttpStatus.TOO_MANY_REQUESTS;
+            title = "Rate Limit Exceeded";
+        } else if ("InvalidPasswordException".equals(ex.awsErrorDetails().errorCode())) {
+            status = HttpStatus.BAD_REQUEST;
+            title = "Invalid Password";
+        } else if ("NotAuthorizedException".equals(ex.awsErrorDetails().errorCode())) {
+            status = HttpStatus.UNAUTHORIZED; // Mật khẩu cũ sai cũng ném lỗi này
+            title = "Not Authorized";
+        } else if ("UserNotFoundException".equals(ex.awsErrorDetails().errorCode())) {
+            status = HttpStatus.NOT_FOUND;
+            title = "User Not Found";
+        }
+
+        ProblemDetail problemDetail = ProblemDetail.forStatusAndDetail(status, ex.awsErrorDetails().errorMessage());
+        problemDetail.setTitle(title);
+        problemDetail.setType(URI.create("/errors/cognito-error"));
+        problemDetail.setProperty("timestamp", Instant.now());
+        problemDetail.setProperty("cognitoErrorCode", ex.awsErrorDetails().errorCode());
+        return problemDetail;
+    }
 
     @ExceptionHandler(InvalidBearerTokenException.class)
     public ProblemDetail handleInvalidToken(InvalidBearerTokenException ex) {
@@ -29,7 +61,6 @@ public class GlobalExceptionHandler {
         return problemDetail;
     }
 
-    // Handle our custom AccessDeniedException
     @ExceptionHandler(AccessDeniedException.class)
     public ProblemDetail handleAccessDenied(AccessDeniedException ex) {
         log.warn("Access denied: {}", ex.getMessage());
@@ -40,7 +71,6 @@ public class GlobalExceptionHandler {
         return problemDetail;
     }
 
-     // Handle Spring Security's AccessDeniedException (might occur from @PreAuthorize)
      @ExceptionHandler(org.springframework.security.access.AccessDeniedException.class)
      public ProblemDetail handleSpringAccessDenied(org.springframework.security.access.AccessDeniedException ex) {
          log.warn("Access denied (Spring Security): {}", ex.getMessage());
@@ -51,11 +81,9 @@ public class GlobalExceptionHandler {
          return problemDetail;
      }
 
-
-    // Handle our custom ResourceNotFoundException
     @ExceptionHandler(ResourceNotFoundException.class)
     public ProblemDetail handleResourceNotFound(ResourceNotFoundException ex) {
-        log.info("Resource not found: {}", ex.getMessage()); // Info level might be sufficient
+        log.info("Resource not found: {}", ex.getMessage());
         ProblemDetail problemDetail = ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND, ex.getMessage());
         problemDetail.setTitle("Resource Not Found");
         problemDetail.setType(URI.create("/errors/resource-not-found"));
@@ -79,16 +107,13 @@ public class GlobalExceptionHandler {
         return problemDetail;
     }
 
-    // Catch-all for other unexpected exceptions
     @ExceptionHandler(Exception.class)
     public ProblemDetail handleGenericException(Exception ex) {
-        log.error("An unexpected error occurred: {}", ex.getMessage(), ex); // Log stack trace for generic errors
+        log.error("An unexpected error occurred: {}", ex.getMessage(), ex);
         ProblemDetail problemDetail = ProblemDetail.forStatusAndDetail(HttpStatus.INTERNAL_SERVER_ERROR, "An unexpected internal error occurred.");
         problemDetail.setTitle("Internal Server Error");
         problemDetail.setType(URI.create("/errors/internal-server-error"));
         problemDetail.setProperty("timestamp", Instant.now());
-        // Avoid leaking exception details in production
-        // problemDetail.setProperty("exception", ex.getClass().getName());
         return problemDetail;
     }
 }
