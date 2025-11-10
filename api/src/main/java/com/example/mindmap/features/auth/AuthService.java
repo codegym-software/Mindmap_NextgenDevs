@@ -8,7 +8,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import com.example.mindmap.core.auth.GuestJwtTokenProvider;
 
-
+import java.net.URLEncoder; // [NEW] Import
+import java.nio.charset.StandardCharsets; // [NEW] Import
 import java.util.UUID;
 
 @Service
@@ -35,6 +36,9 @@ public class AuthService {
         guestUser.setDisplayName("Guest User");
         guestUser.setEmail(guestId + "@guest.local"); // Email giả, unique
         
+        // [FIX] Thêm avatar default khi tạo Guest
+        guestUser.setAvatarUrl(createDefaultAvatarUrl("Guest User"));
+
         User savedUser = userRepository.save(guestUser);
 
         // 2. Tạo Guest JWT
@@ -47,5 +51,18 @@ public class AuthService {
                 savedUser.getDisplayName(),
                 savedUser.getStatus()
         );
+    }
+
+    /**
+     * [NEW] Helper tạo URL avatar default
+     */
+    private String createDefaultAvatarUrl(String displayName) {
+        try {
+            String encodedName = URLEncoder.encode(displayName, StandardCharsets.UTF_8.name());
+            return "https://ui-avatars.com/api/?name=" + encodedName;
+        } catch (Exception e) {
+            // Fallback an toàn nếu encode lỗi (rất hiếm với UTF-8)
+            return "https://ui-avatars.com/api/?name=User";
+        }
     }
 }

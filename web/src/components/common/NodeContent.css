@@ -1,0 +1,101 @@
+.node-content {
+  margin: 4px 0;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 14px;
+}
+
+.node-content.note {
+  background-color: #f5f5f5;
+}
+
+.node-content.note small {
+  display: block;
+  font-size: 12px;
+  color: #666;
+  margin-top: 4px;
+}
+
+.node-content.label {
+  background-color: #e3f2fd;
+  display: inline-block;
+}
+
+.node-content.hyperlink a {
+  color: #1976d2;
+  text-decoration: none;
+}
+
+.node-content.hyperlink a:hover {
+  text-decoration: underline;
+}
+
+.node-content.attachment a {
+  color: #2e7d32;
+  text-decoration: none;
+  display: flex;
+  align-items: center;
+}
+
+.node-content.attachment a::before {
+  content: "📎";
+  margin-right: 4px;
+}
+
+.node-content.image {
+  max-width: 200px;
+}
+
+.node-content.image img {
+  width: 100%;
+  height: auto;
+  border-radius: 4px;
+}
+
+.node-content.image caption {
+  display: block;
+  text-align: center;
+  font-size: 12px;
+  color: #666;
+  margin-top: 4px;
+}
+
+.node-content.sticker {
+  font-size: 24px;
+  text-align: center;
+}
+
+.node-content.marker {
+  height: 4px;
+  border-radius: 2px;
+}
+
+.node-content.audio {
+  width: 200px;
+}
+
+.node-content.audio audio {
+  width: 100%;
+}
+
+.node-content.latex {
+  background-color: #f8f9fa;
+  padding: 8px;
+  overflow-x: auto;
+}
+
+.node-content.task {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.node-content.task input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+}
+
+.node-content.task span {
+  text-decoration: line-through;
+  color: #666;
+}
