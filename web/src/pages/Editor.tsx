@@ -998,56 +998,115 @@ export default function Editor() {
     ]
   );
 
-  const handleAddChild = useCallback(
-    (parentId: string) => {
-      const parentVisual = nodeVisuals.get(parentId);
-      if (!parentVisual) return;
-      const parentStyle = parentVisual.style;
-      const newId = 'n' + Date.now();
-      const newNodeData: NodeData = {
-        id: newId,
-        nodeText: 'Nội dung', // UI Mới
-        x: parentStyle.x + 40,
-        y: parentStyle.y + 20,
-        parentId,
-        side: parentStyle.side,
-        branchColor: parentStyle.branchColor,
-        branchLineEnd: parentStyle.branchLineEnd,
-        branchLineStyle: parentStyle.branchLineStyle,
-        branchLineThickness: parentStyle.branchLineThickness,
-      };
-      const newEdgeData: EdgeData = {
-        id: `e-${newId}`,
-        from: parentId,
-        to: newId,
-      };
-      const newNodes = [...nodes, newNodeData];
-      const newEdges = [...edges, newEdgeData];
+  const handleAddChild = useCallback((parentId: string) => {
+    const parentNode = nodeMap.get(parentId); // Lấy dữ liệu THÔ của node cha
+    const parentVisual = nodeVisuals.get(parentId); // Lấy dữ liệu HÌNH ẢNH của node cha
+    
+    if (!parentNode || !parentVisual) return;
 
-      setGraph(newNodes, newEdges);
-      startEditing(newId);
-      setTimeout(() => handleLayout(true), 50);
-      debouncedPushHistory();
-      debouncedPersistData();
-      sendPatch('NODE_CREATE', { node: newNodeData, edge: newEdgeData }); // GĐ 9
-    },
-    [
-      nodes, edges, setGraph, nodeVisuals, startEditing, handleLayout,
-      debouncedPushHistory, debouncedPersistData, sendPatch, // GĐ 7 & 9
-    ]
-  );
+    const parentComputedStyle = parentVisual.style; // Dùng để lấy vị trí, "bên" (side)
 
-  const handleAddSibling = useCallback(
-    (nodeId: string) => {
-      if (nodeId === 'root') {
-        handleAddChild('root');
-        return;
+    const newId = "n" + Date.now();
+
+    // 1. Bắt đầu với các thuộc tính cơ bản
+    const newNodeData: NodeData = { 
+      id: newId, 
+      nodeText: "Nội dung",
+      // Lấy vị trí và "bên" (side) từ style đã tính toán của cha
+      x: parentComputedStyle.x + 40,
+      y: parentComputedStyle.y + 20,
+      parentId,
+      side: parentComputedStyle.side, 
+    };
+
+    // 2. Lấy TẤT CẢ các key style từ DEFAULT_NODE_STYLE
+    const styleKeys = Object.keys(DEFAULT_NODE_STYLE) as Array<keyof typeof DEFAULT_NODE_STYLE>;
+
+    // 3. Sao chép TẤT CẢ các giá trị style từ node cha (parentNode)
+    styleKeys.forEach(key => {
+      // Nếu node cha (dữ liệu thô) có định nghĩa một style cụ thể (không phải undefined),
+      // thì node con sẽ kế thừa nó.
+      if (parentNode[key] !== undefined) {
+        (newNodeData as any)[key] = parentNode[key];
       }
-      const parentId = nodes.find((n) => n.id === nodeId)?.parentId;
-      if (parentId) handleAddChild(parentId);
-    },
-    [nodes, handleAddChild]
-  );
+    });
+
+    // 4. Xử lý trường hợp đặc biệt: Kế thừa từ ROOT
+    if (parentId === 'root') {
+      // Không kế thừa style hình dạng của root (root to, màu khác)
+      // Đặt lại chúng về 'undefined' để chúng lấy từ theme/quickstyle
+      newNodeData.color = undefined;
+      newNodeData.textColor = undefined;
+      newNodeData.shape = undefined;
+      newNodeData.borderColor = undefined;
+      newNodeData.borderWidth = undefined;
+      newNodeData.fontSize = undefined; 
+      newNodeData.fontWeight = undefined;
+      newNodeData.textCase = undefined;
+      newNodeData.nodeLength = undefined; // Cho phép node con tự co dãn
+      
+      // Nhưng giữ lại quickStyleId (thường là 'default')
+      // newNodeData.quickStyleId = parentNode.quickStyleId || 'default'; // (Đã được copy ở bước 3)
+      
+      // Và giữ lại fontFamily (cũng đã được copy)
+      // newNodeData.fontFamily = parentNode.fontFamily; 
+    }
+
+    const newEdgeData: EdgeData = { id: `e-${newId}`, from: parentId, to: newId };
+    
+    const newNodes = [...nodes, newNodeData];
+    const newEdges = [...edges, newEdgeData];
+
+    pushHistory(nodes, edges);
+    setGraph(newNodes, newEdges);
+    startEditing(newId);
+    setTimeout(() => handleLayout(true), 50); 
+  }, [nodes, edges, pushHistory, setGraph, nodeMap, nodeVisuals, startEditing, handleLayout]); // CẬP NHẬT: Thêm nodeMap
+
+  const handleAddSibling = useCallback((nodeId: string) => {
+    if (nodeId === 'root') { 
+      handleAddChild('root'); // Trường hợp đặc biệt: thêm "anh em" cho root -> thêm con
+      return; 
+    }
+
+    const siblingNode = nodeMap.get(nodeId); 
+    const parentId = siblingNode?.parentId;
+
+    if (!parentId || !siblingNode) return; 
+
+    const parentVisual = nodeVisuals.get(parentId);
+    if (!parentVisual) return;
+
+    const newId = "n" + Date.now();
+
+    const newNodeData: NodeData = { 
+      id: newId, 
+      nodeText: "Nội dung",
+      x: parentVisual.style.x + 40, 
+      y: parentVisual.style.y + 40, 
+      parentId: parentId, 
+      side: siblingNode.side, 
+    };
+
+    const styleKeys = Object.keys(DEFAULT_NODE_STYLE) as Array<keyof typeof DEFAULT_NODE_STYLE>;
+
+    styleKeys.forEach(key => {
+      if (siblingNode[key] !== undefined) {
+        (newNodeData as any)[key] = siblingNode[key];
+      }
+    });
+
+    const newEdgeData: EdgeData = { id: `e-${newId}`, from: parentId, to: newId };
+    
+    const newNodes = [...nodes, newNodeData];
+    const newEdges = [...edges, newEdgeData];
+
+    pushHistory(nodes, edges);
+    setGraph(newNodes, newEdges);
+    startEditing(newId);
+    setTimeout(() => handleLayout(true), 50); 
+    
+  }, [nodes, edges, pushHistory, setGraph, nodeMap, nodeVisuals, startEditing, handleLayout, handleAddChild]);
 
   const handleDeleteNode = useCallback(
     (nodeId: string) => {
