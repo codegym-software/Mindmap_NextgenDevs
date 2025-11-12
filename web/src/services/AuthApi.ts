@@ -1,7 +1,7 @@
-// src/services/authApi.ts
 import { cognitoConfig } from '../auth/cognitoConfig';
 
 // Base URL for your custom authentication backend
+// [GIỮ NGUYÊN] Vì các hàm cũ (loginUser, registerUser...) đang dùng nó.
 const API_BASE = 'http://localhost:8081/api/auth';
 
 /**
@@ -17,6 +17,39 @@ export const parseResponse = async (response: Response) => {
   } catch {
     return { ok: response.ok, status: response.status, body: text || {} };
   }
+};
+
+/**
+ * [MỚI] Làm mới (refresh) Access Token bằng Refresh Token.
+ * Hàm này gọi thẳng đến endpoint /oauth2/token của Cognito
+ * (sử dụng VITE_COGNITO_DOMAIN, giải quyết lỗi xung đột tên miền).
+ */
+export const refreshToken = async (refreshToken: string) => {
+  const body = new URLSearchParams({
+    grant_type: 'refresh_token',
+    client_id: cognitoConfig.ClientId,
+    refresh_token: refreshToken,
+  });
+
+  const res = await fetch(`https://${cognitoConfig.Domain}/oauth2/token`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body,
+  });
+
+  if (!res.ok) {
+    const errorBody = await res.json();
+    console.error("Token refresh failed:", errorBody);
+    throw new Error(`token_refresh_failed: ${errorBody.error_description || res.status}`);
+  }
+
+  // Trả về token mới (Access Token và ID Token)
+  // Cognito KHÔNG trả về Refresh Token mới trong luồng này
+  return res.json() as Promise<{
+    access_token: string;
+    id_token: string;
+    expires_in?: number;
+  }>;
 };
 
 /**
@@ -126,7 +159,7 @@ export const confirmResetPassword = async (username: string, code: string, newPa
 
 /**
  * Generates the URL for Google login via Cognito Hosted UI.
- * @returns The full URL to redirect the user to for Google login.
+ * (Hàm này vẫn chính xác)
  */
 export const getGoogleLoginUrl = () => {
   const params = new URLSearchParams({

@@ -1,54 +1,50 @@
 /**
  * LỚP PHIÊN DỊCH DỮ LIỆU (DATA MAPPER)
  *
- * Tệp này là "bộ não" trung gian, chịu trách nhiệm "dịch" cấu trúc dữ liệu
- * giữa Frontend (FE) và Backend (BE) mà không làm thay đổi logic nghiệp vụ
- * hay giao diện người dùng.
- *
- * - FE (useEditorStore): Lưu trữ NodeData "phẳng" (flat structure), ví dụ: { id, nodeText, color, shape, ... }
- * - BE (API/Database):   Lưu trữ NodeData "lồng" (nested structure), ví dụ: { id, text, style: { backgroundColor, shape, ... } }
- *
- * Tệp này cũng xử lý việc chuyển đổi FE (Map) -> BE (List) theo sơ đồ Hyprid.
- *
- * [GĐ 4] Bổ sung logic Di cư (Migration) cho dữ liệu Guest cũ.
+ * [CẬP NHẬT GIAI ĐOẠN B]
+ * - Đã thêm `styleLocked` vào `BeNodeStyle`.
+ * - Cập nhật các hàm `normalizeNodeFEtoBE` và `normalizeNodeBEtoFE`
+ * để "dịch" trường `styleLocked` mới từ `useEditorStore`.
+ * - Logic Di cư (Migration) (GĐ 4) vẫn được giữ nguyên.
  */
 
 // 1. IMPORT TYPES CỦA FRONTEND
 import {
   NodeData as FeNodeData,
   EdgeData as FeEdgeData,
-} from '../app/store/useEditorStore';
+} from '../app/store/useEditorStore'; // Import từ store đã cập nhật (GĐ B)
 
 // =================================================================================
 // 2. ĐỊNH NGHĨA TYPES (INTERFACE) CỦA BACKEND
 // =================================================================================
 
 export type BeNodeStyle = {
-  // [FIX] Cập nhật: Dựa trên NodeStyle.java, các trường này
-  // không khớp với dataMapper Giai đoạn 1.
-  // Các trường đúng là: color, font, isBold, isItalic, textAlign.
-  color: string;
-  font: string;
-  isBold: boolean;
-  isItalic: boolean;
-  textAlign: 'LEFT' | 'CENTER' | 'RIGHT' | 'JUSTIFY';
+  // === Các trường BE gốc ===
+  shape: 'rectangle' | 'roundedRect' | 'diamond' | 'ellipse'; // Đảm bảo hỗ trợ đầy đủ
+  backgroundColor: string; // Tương ứng 'color' của FE
+  textColor: string;
+  borderStyle: 'solid' | 'dashed' | 'dotted';
+  fontWeight: 'normal' | 'bold';
+  fontStyle: 'normal' | 'italic';
 
-  // [FIX] Các trường FE sau đây KHÔNG HỀ TỒN TẠI trên BeNodeStyle.java
-  // Chúng phải được lồng vào NodeData.java (nếu cần) hoặc
-  // chúng ta phải sửa NodeStyle.java
-  //
-  // DỰA TRÊN CODE BE HIỆN TẠI, CÁC TRƯỜNG NÀY SẼ BỊ MẤT KHI LƯU:
-  // shape: 'rectangle' | 'roundedRect' | 'diamond' | 'ellipse';
-  // backgroundColor: string;
-  // textColor: string;
-  // borderStyle: 'solid' | 'dashed' | 'dotted';
-  // fontWeight: 'normal' | 'bold';
-  // fontStyle: 'normal' | 'italic';
-  // borderColor?: string;
-  // ... (và tất cả các trường khác)
+  // === Các trường FE được "lồng" vào đây ===
+  borderColor?: string;
+  borderWidth?: number;
+  fontFamily?: string;
+  fontSize?: number;
+  textDecoration?: 'none' | 'underline' | 'line-through';
+  textAlign?: 'left' | 'center' | 'right';
+  textCase?: 'normal' | 'uppercase' | 'lowercase';
+  nodeLength?: 'fit' | number;
+  quickStyleId?: string;
+  localStructure?: 'default' | 'logic' | 'org';
+  branchColor?: string;
+  branchLineStyle?: 'bezier' | 'sharp';
+  branchLineEnd?: 'none' | 'arrow';
+  branchLineThickness?: 'thin' | 'normal' | 'thick';
 
-  // ==> TẠM THỜI, chúng ta sẽ DỊCH NGƯỢC LẠI
-  // theo đúng `NodeStyle.java` của BE
+  // [MỚI GĐ B] Thêm trường 'styleLocked' từ feature/tt
+  styleLocked?: boolean;
 };
 
 export type BeNodeData = {
@@ -58,15 +54,11 @@ export type BeNodeData = {
   y: number;
   parentId: string | null;
   collapsed: boolean;
-  style: Partial<BeNodeStyle>; // Object style lồng nhau
+  style: Partial<BeNodeStyle>;
   side?: 'left' | 'right';
   hyperlink?: string | null;
   notes?: string | null;
   externalReference?: any | null;
-
-  // [FIX] CÁC TRƯỜNG STYLE "PHẲNG" KHÔNG CÓ TRÊN BE NodeData.java
-  // Chúng ta phải giả định rằng dataMapper Giai đoạn 1 đã sai
-  // và `NodeData.java` KHÔNG chứa các trường này.
 };
 
 export type BeEdgeData = {
@@ -78,7 +70,7 @@ export type BeEdgeData = {
 
 export type BeMindmapContent = {
   layoutMode: string;
-  theme: string; // "light" | "dark"
+  theme: string;
   nodes: BeNodeData[];
   edges: BeEdgeData[];
 };
@@ -102,46 +94,76 @@ export type BeMindmapDoc = {
 };
 
 // =================================================================================
-// 3. VIẾT HÀM PHIÊN DỊCH (NORMALIZATION)
+// 3. VIẾT HÀM PHIÊN DỊCH (NORMALIZATION) - (Cập nhật GĐ B)
 // =================================================================================
 
 /**
- * [ĐÃ CẬP NHẬT] Dịch 1 Node: Frontend (phẳng) -> Backend (lồng style)
- *
- * Dựa trên cấu trúc `NodeStyle.java` thực tế, chúng ta chỉ có thể
- * lưu 5 trường style. Các trường khác sẽ bị mất.
+ * Dịch 1 Node: Frontend (phẳng) -> Backend (lồng style)
+ * [CẬP NHẬT GĐ B]: Thêm `styleLocked`
  */
 export function normalizeNodeFEtoBE(feNode: FeNodeData): BeNodeData {
   const {
+    // 1. Thuộc tính gốc của BE
     id,
-    nodeText,
+    nodeText, // Đổi tên
     x,
     y,
     parentId,
     collapsed,
     side,
 
-    // Các trường style của FE
-    color,
+    // 2. Thuộc tính sẽ được lồng vào 'style'
+    shape,
+    color, // Đổi tên
+    borderColor,
+    borderWidth,
+    borderStyle,
     fontFamily,
+    fontSize,
     fontWeight,
     fontStyle,
+    textDecoration,
     textAlign,
-    
-    // ... các trường FE khác (shape, borderColor, ...) sẽ BỊ MẤT
-    // vì BE `NodeStyle.java` không có chỗ chứa.
+    textColor,
+    textCase,
+    nodeLength,
+    localStructure,
+    branchColor,
+    branchLineStyle,
+    branchLineEnd,
+    branchLineThickness,
+    quickStyleId,
+
+    // [MỚI GĐ B] Thêm trường 'styleLocked'
+    styleLocked,
   } = feNode;
 
-  // Tạo object 'style' lồng nhau (CHỈ CÁC TRƯỜNG BE HỖ TRỢ)
+  // Tạo object 'style' lồng nhau
   const beStyle: Partial<BeNodeStyle> = {
-    color: color,
-    font: fontFamily,
-    isBold: fontWeight === 'bold',
-    isItalic: fontStyle === 'italic',
-    // Ánh xạ giá trị enum (FE 'center' -> BE 'CENTER')
-    textAlign: (textAlign?.toUpperCase() || 'CENTER') as BeNodeStyle['textAlign'],
+    backgroundColor: color,
+    textColor: textColor,
+    shape: shape,
+    borderColor,
+    borderWidth,
+    borderStyle,
+    fontFamily,
+    fontSize,
+    fontWeight,
+    fontStyle,
+    textDecoration,
+    textAlign,
+    textCase,
+    nodeLength,
+    localStructure,
+    branchColor,
+    branchLineStyle,
+    branchLineEnd,
+    branchLineThickness,
+    quickStyleId: quickStyleId,
+    styleLocked: styleLocked, // [MỚI GĐ B]
   };
 
+  // Tạo object NodeData của BE
   const beNode: BeNodeData = {
     id,
     text: nodeText,
@@ -157,17 +179,16 @@ export function normalizeNodeFEtoBE(feNode: FeNodeData): BeNodeData {
 }
 
 /**
- * [ĐÃ CẬP NHẬT] Dịch 1 Node: Backend (lồng style) -> Frontend (phẳng)
- *
- * [FIX 4] Thêm kiểm tra 'style' null (null-safe).
+ * Dịch 1 Node: Backend (lồng style) -> Frontend (phẳng)
+ * [CẬP NHẬT GĐ B]: Thêm `styleLocked`
  */
 export function normalizeNodeBEtoFE(beNode: BeNodeData): FeNodeData {
   const { id, text, x, y, parentId, collapsed, side, style } = beNode;
 
-  // [FIX] Thêm 'safeStyle' để xử lý 'style' bị null
-  // (VD: từ dữ liệu cũ hoặc từ createDefaultContent() trước khi fix)
+  // [FIX] Thêm kiểm tra 'style' null (từ GĐ 5)
   const safeStyle = style || {};
 
+  // "Làm phẳng" (flatten) object 'style'
   const feNode: FeNodeData = {
     id,
     nodeText: text,
@@ -177,38 +198,36 @@ export function normalizeNodeBEtoFE(beNode: BeNodeData): FeNodeData {
     collapsed: collapsed || false,
     side: side,
 
-    // [FIX] "Làm phẳng" (flatten) object 'style'
-    // Dựa trên `NodeStyle.java` thực tế
-    color: safeStyle.color,
-    fontFamily: safeStyle.font,
-    fontWeight: safeStyle.isBold ? 'bold' : 'normal',
-    fontStyle: safeStyle.isItalic ? 'italic' : 'normal',
-    textAlign: (safeStyle.textAlign?.toLowerCase() || 'center') as FeNodeData['textAlign'],
-
-    // [FIX] Các trường FE này không được BE lưu,
-    // nên chúng ta gán giá trị mặc định (lấy từ useEditorStore)
-    shape: 'roundedRect',
-    borderColor: '#CBD5E0',
-    borderWidth: 2,
-    borderStyle: 'solid',
-    fontSize: 14,
-    textDecoration: 'none',
-    textColor: '#4A5568', // <-- Lỗi nghiêm trọng: BE không lưu textColor
-    textCase: 'normal',
-    nodeLength: 'fit', // 'fit' (BE không lưu)
-    localStructure: 'default',
-    branchColor: undefined,
-    branchLineStyle: 'bezier',
-    branchLineEnd: 'none',
-    branchLineThickness: 'normal',
-    quickStyleId: 'default',
+    // Trải phẳng các thuộc tính từ 'style'
+    shape: safeStyle.shape,
+    color: safeStyle.backgroundColor,
+    borderColor: safeStyle.borderColor,
+    borderWidth: safeStyle.borderWidth,
+    borderStyle: safeStyle.borderStyle,
+    fontFamily: safeStyle.fontFamily,
+    fontSize: safeStyle.fontSize,
+    fontWeight: safeStyle.fontWeight,
+    fontStyle: safeStyle.fontStyle,
+    textDecoration: safeStyle.textDecoration,
+    textAlign: safeStyle.textAlign,
+    textColor: safeStyle.textColor,
+    textCase: safeStyle.textCase,
+    nodeLength: safeStyle.nodeLength,
+    localStructure: safeStyle.localStructure,
+    branchColor: safeStyle.branchColor,
+    branchLineStyle: safeStyle.branchLineStyle,
+    branchLineEnd: safeStyle.branchLineEnd,
+    branchLineThickness: safeStyle.branchLineThickness,
+    quickStyleId: safeStyle.quickStyleId as any,
+    styleLocked: safeStyle.styleLocked, // [MỚI GĐ B]
   };
 
   return feNode;
 }
 
 // =================================================================================
-// 4. VIẾT HÀM PHIÊN DỊCH TOÀN BỘ CONTENT
+// 4. VIẾT HÀM PHIÊN DỊCH TOÀN BỘ CONTENT - (Giai đoạn 1 & 2)
+// (Không thay đổi trong GĐ B, vì các hàm con đã được cập nhật)
 // =================================================================================
 
 export function normalizeContentFEtoBE(
@@ -216,8 +235,7 @@ export function normalizeContentFEtoBE(
   feEdges: FeEdgeData[],
   globalSettings: { layoutMode?: string; theme?: string } = {}
 ): BeMindmapContent {
-  // [FIX] Sử dụng hàm normalizeNodeFEtoBE (đã cập nhật)
-  const beNodes = feNodes.map(normalizeNodeFEtoBE);
+  const beNodes = feNodes.map(normalizeNodeFEtoBE); // Hàm này đã được cập nhật
 
   return {
     layoutMode: globalSettings.layoutMode || 'mindmap',
@@ -239,8 +257,13 @@ export function normalizeContentBEtoFE(
       collapsed: false,
       parentId: null,
       side: 'right',
-      style: { // [FIX] Gửi style rỗng, để normalizeNodeBEtoFE xử lý
-        // (Vì BE NodeData.java đã tự khởi tạo 'new NodeStyle()')
+      style: {
+        shape: 'roundedRect',
+        backgroundColor: '#FFFFFF',
+        textColor: '#1E293B',
+        borderStyle: 'solid',
+        fontWeight: 'normal',
+        fontStyle: 'normal',
       },
     });
     return {
@@ -251,8 +274,7 @@ export function normalizeContentBEtoFE(
     };
   }
 
-  // [FIX] Sử dụng hàm normalizeNodeBEtoFE (đã cập nhật)
-  const feNodes = beContent.nodes.map(normalizeNodeBEtoFE);
+  const feNodes = beContent.nodes.map(normalizeNodeBEtoFE); // Hàm này đã được cập nhật
 
   return {
     nodes: feNodes,
@@ -268,8 +290,10 @@ export function normalizeContentBEtoFE(
 
 // =================================================================================
 // 5. GUEST DATA MIGRATION (Giai đoạn 4)
+// (Không thay đổi trong GĐ B, vì các hàm con đã được cập nhật)
 // =================================================================================
 
+// Định nghĩa cấu trúc (cũ) của Guest Doc trong localStorage
 type OldFeGuestMapItem = {
   id: string;
   name: string;
@@ -279,7 +303,7 @@ type OldFeGuestDoc = {
   id: string;
   name: string;
   content: {
-    nodes: { [key: string]: any };
+    nodes: { [key: string]: any }; // Dạng Map
     edges: FeEdgeData[];
   };
 };
@@ -311,7 +335,7 @@ export function migrateOldGuestDataToBE(
     const oldEdgesList: FeEdgeData[] = oldDoc.content.edges || [];
 
     const beNodes: BeNodeData[] = oldNodesList.map((oldNode) => {
-      // 1. Tạo FeNodeData (phẳng) tạm thời
+      // 1. Tạo một đối tượng FeNodeData (phẳng) tạm thời
       const tempFeNode: FeNodeData = {
         id: oldNode.id,
         nodeText: oldNode.nodeText ?? oldNode.text ?? '',
@@ -331,7 +355,7 @@ export function migrateOldGuestDataToBE(
         fontStyle: oldNode.fontStyle,
         textDecoration: oldNode.textDecoration,
         textAlign: oldNode.textAlign,
-        textColor: oldNode.textColor, // Trường này sẽ bị mất khi dịch
+        textColor: oldNode.textColor,
         textCase: oldNode.textCase,
         nodeLength: oldNode.nodeLength,
         localStructure: oldNode.localStructure,
@@ -340,12 +364,14 @@ export function migrateOldGuestDataToBE(
         branchLineEnd: oldNode.branchLineEnd,
         branchLineThickness: oldNode.branchLineThickness,
         quickStyleId: oldNode.quickStyleId,
+        styleLocked: oldNode.styleLocked, // [MỚI GĐ B] Di cư trường mới
       };
 
-      // 2. [FIX] Dịch sang BE (sử dụng logic dịch đã cập nhật)
+      // 2. Tái sử dụng hàm chuẩn hóa
       return normalizeNodeFEtoBE(tempFeNode);
     });
 
+    // 3. Tạo BeMindmapContent
     const beContent: BeMindmapContent = {
       layoutMode: 'mindmap',
       theme: 'light',
@@ -353,6 +379,7 @@ export function migrateOldGuestDataToBE(
       edges: oldEdgesList.map((e) => ({ id: e.id, from: e.from, to: e.to })),
     };
 
+    // 4. Tạo BeMindmapDoc hoàn chỉnh
     const beDoc: BeMindmapDoc = {
       id: guestItem.id,
       name: guestItem.name,
