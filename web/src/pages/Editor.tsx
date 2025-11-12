@@ -726,6 +726,8 @@ export default function Editor() {
   // [MERGE] Giữ nguyên logic 5 bước của feature/tt
   // ================================================
 
+  
+
   const handleLayout = useCallback(
     (keepCamera: boolean = false) => {
       const { globalStructure, nodes, edges } = useEditorStore.getState();
@@ -963,6 +965,53 @@ export default function Editor() {
     },
     [nodeVisuals, setGraph, edges] // [GĐ 7] Bỏ 'nodes'
   );
+
+  // [SỬA] THÊM CÁC HÀM XỬ LÝ ZOOM NÀY
+const zoomStep = 1.2; // Tốc độ zoom
+
+const handleZoomIn = useCallback(() => {
+  // Zoom vào vị trí trung tâm màn hình
+  handleSetZoom(scale * zoomStep);
+}, [scale]); // [SỬA] Thêm scale vào dependency
+
+const handleZoomOut = useCallback(() => {
+  // Zoom ra từ vị trí trung tâm màn hình
+  handleSetZoom(scale / zoomStep);
+}, [scale]); // [SỬA] Thêm scale vào dependency
+
+const handleSetZoom = useCallback((newScale: number) => {
+  const stage = stageRef.current;
+  if (!stage) {
+    setScale(newScale);
+    return;
+  }
+
+  const { width, height } = dimensions;
+  const oldScale = scale;
+
+  // Lấy vị trí trung tâm màn hình
+  const center = { x: width / 2, y: height / 2 };
+
+  // Tính toán điểm thế giới (world point) mà trung tâm màn hình đang trỏ tới
+  const mousePointTo = {
+    x: (center.x - pos.x) / oldScale,
+    y: (center.y - pos.y) / oldScale,
+  };
+
+  // Đặt scale mới
+  setScale(newScale);
+
+  // Cập nhật vị trí (pos) để giữ nguyên điểm trung tâm
+  setPos({
+    x: center.x - mousePointTo.x * newScale,
+    y: center.y - mousePointTo.y * newScale,
+  });
+}, [scale, pos.x, pos.y, dimensions.width, dimensions.height]);
+
+const handleFitToScreen = useCallback(() => {
+  // Gọi handleLayout(false) sẽ tự động căn giữa và zoom
+  handleLayout(false); 
+}, [handleLayout]); 
 
   // ================================================
   // Node Actions [CẬP NHẬT GĐ 7 + 9]
@@ -1741,6 +1790,11 @@ const handleSetGlobalBranchColor = (color: string) => {
           onToggleFormattingToolbar={() =>
             setFormattingToolbarOpen(!isFormattingToolbarOpen)
           }
+          currentScale={scale}
+          onZoomIn={handleZoomIn}
+          onZoomOut={handleZoomOut}
+          onSetZoom={handleSetZoom}
+          onFitToScreen={handleFitToScreen}
         />
         <Sidebar />
 
