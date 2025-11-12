@@ -7,10 +7,10 @@ import {
   Palette, Square, Circle, Diamond, Minus,
   ArrowRight, GitBranch, GitCommit, GitMerge, Type,
   LayoutGrid, LayoutList, Layout,
-  Binary, // Sửa: Thay thế LogicTree
-  Users, // Sửa: Thay thế Sitemap
+  Binary, // Sá»­a: Thay tháº¿ LogicTree
+  Users, // Sá»­a: Thay tháº¿ Sitemap
   Paintbrush,
-  Type as TextIcon // Sửa: Alias
+  Type as TextIcon // Sá»­a: Alias
 } from 'lucide-react';
 // SỬA: Đổi lại đường dẫn import sang tương đối
 import {
@@ -78,8 +78,19 @@ export default function FormattingToolbar({
   const activeTheme = colorThemes[activeColorThemeId];
   const isDisabled = !selectedId;
 
+  // Auto-switch tabs based on node selection
+  useEffect(() => {
+    if (!selectedId || selectedId === 'root') {
+      // No node selected or root selected → show Map tab
+      setActiveTab('map');
+    } else {
+      // Non-root node selected → show Style tab
+      setActiveTab('style');
+    }
+  }, [selectedId]);
+
   return (
-    <div className="absolute top-14 right-0 h-[calc(100vh-3.5rem)] w-72 bg-white border-l border-gray-200 shadow-sm z-30 flex flex-col text-gray-700">
+    <div className="absolute top-11 right-0 h-[calc(100vh-2.75rem)] w-72 bg-white border-l border-gray-200 shadow-sm z-30 flex flex-col text-gray-700"> {/* Changed top-14 -> top-12 AND h-[calc(100vh-3.5rem)] -> h-[calc(100vh-3rem)] */}
       {/* 1. Header (Tabs) */}
       <TabHeader activeTab={activeTab} setActiveTab={setActiveTab} isDisabled={isDisabled} />
 
@@ -169,31 +180,31 @@ function MapPanel({
   const currentFont = useEditorStore((s) => s.globalFont);
   const currentLineWidth = useEditorStore((s) => s.branchLineWidth);
   const isColored = useEditorStore((s) => s.isColoredBranch);
+  const globalBranchColor = useEditorStore((s) => s.globalBranchColor);
   const activeTheme = colorThemes[activeColorThemeId];
 
   return (
     <div className="p-4 space-y-4">
-      {/* 1. Cấu trúc */}
+      {/* 2. Cấu trúc */}
       <RowItem label="Cấu trúc">
-  <div className="flex justify-between gap-1 w-full">
-    <StructureButton
-      label={<img src="../icons/mindmap.png" alt="Mindmap" className="w-6 h-6" />}
-      isActive={globalStructure === 'mindmap'}
-      onClick={() => onApplyLayout('mindmap')}
-    />
-    <StructureButton
-      label={<img src="/icons/logic.png" alt="Logic" className="w-6 h-6" />}
-      isActive={globalStructure === 'logic'}
-      onClick={() => onApplyLayout('logic')}
-    />
-    <StructureButton
-      label={<img src="/icons/org.png" alt="Org" className="w-6 h-6" />}
-      isActive={globalStructure === 'org'}
-      onClick={() => onApplyLayout('org')}
-    />
-  </div>
-</RowItem>
-
+        <div className="flex justify-between gap-1 w-full">
+          <StructureButton
+            label={<img src="/icons/mindmap.png" alt="Mindmap" className="w-6 h-6" />}
+            isActive={globalStructure === 'mindmap'}
+            onClick={() => onApplyLayout('mindmap')}
+          />
+          <StructureButton
+            label={<img src="/icons/logic.png" alt="Logic" className="w-6 h-6" />}
+            isActive={globalStructure === 'logic'}
+            onClick={() => onApplyLayout('logic')}
+          />
+          <StructureButton
+            label={<img src="/icons/org.png" alt="Org" className="w-6 h-6" />}
+            isActive={globalStructure === 'org'}
+            onClick={() => onApplyLayout('org')}
+          />
+        </div>
+      </RowItem>
 
 
       {/* 3. Màu nền */}
@@ -221,7 +232,9 @@ function MapPanel({
       <RowItem label="Độ dày nhánh">
         <select
           value={currentLineWidth}
-          onChange={(e) => onSetBranchLineWidth(Number(e.target.value))}
+          onChange={(e) => {
+            onSetBranchLineWidth(Number(e.target.value));
+          }}
           className={`flex-1 p-1.5 ${INPUT_BG} rounded text-sm outline-none border border-transparent focus:border-blue-500 focus:ring-1 focus:ring-blue-500`}
         >
           <option value={1}>Mỏng</option>
@@ -229,13 +242,22 @@ function MapPanel({
           <option value={4}>Dày</option>
         </select>
       </RowItem>
-
-      {/* 6. Nhánh nhiều màu */}
-      {/* <ColorItem
-        label="Nhánh nhiều màu"
-        color={isColored ? '#3b82f6' : '#E5E7EB'}
-        onChange={() => onToggleColoredBranch(!isColored)}
-      /> */}
+<ColorItem
+        label="Màu nhánh"
+        color={globalBranchColor}
+        onChange={(color) => useEditorStore.setState({ globalBranchColor: color })}
+      >
+        <label className="flex items-center gap-2 cursor-pointer text-sm">
+          <input
+            type="checkbox"
+            checked={isColored}
+            onChange={(e) => onToggleColoredBranch(e.target.checked)}
+            className="rounded border-gray-300 cursor-pointer"
+          />
+          <span>Nhiều màu</span>
+        </label>
+      </ColorItem>
+  
     </div>
   );
 }
@@ -329,9 +351,6 @@ function NodeStylePanel({
           >
             <option value="roundedRect">Bo góc</option>
             <option value="rectangle">Vuông</option>
-            {/* SỬA: Bỏ hình tròn */}
-            {/* <option value="circle">Tròn</option> */}
-            <option value="diamond">Thoi</option>
           </select>
         </RowItem>
         <ColorItem
@@ -480,27 +499,10 @@ function NodeStylePanel({
         </div>
       </CollapsiblePanel>
 
-      {/* 4. Cấu trúc (con) */}
-      <CollapsiblePanel label="Cấu trúc nhánh con" defaultOpen>
-        <RowItem label="Bố cục">
-  <div className="flex justify-between gap-1 w-full">
-    <StructureButton
-      label={<img src="/icons/logic.png" alt="Logic layout" className="w-6 h-6" />}
-      isActive={style.localStructure === 'logic'}
-      onClick={() => handleUpdate({ localStructure: 'logic' })}
-    />
-    <StructureButton
-      label={<img src="/icons/org.png" alt="Org layout" className="w-6 h-6" />}
-      isActive={style.localStructure === 'org'}
-      onClick={() => handleUpdate({ localStructure: 'org' })}
-    />
-  </div>
-</RowItem>
-
-      </CollapsiblePanel>
       
+
       {/* 5. Nhánh (con) */}
-      <CollapsiblePanel label="Kiểu nhánh con" defaultOpen>
+      <CollapsiblePanel label="Kiểu nhánh" defaultOpen>
         <ColorItem
           label="Màu nhánh"
           color={style.branchColor || '#666666'}
