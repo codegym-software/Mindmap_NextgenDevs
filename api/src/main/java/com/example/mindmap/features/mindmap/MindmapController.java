@@ -20,7 +20,8 @@ import org.springframework.web.bind.annotation.RestController;
 import com.example.mindmap.features.mindmap.dto.MindmapCreateRequest;
 import com.example.mindmap.features.mindmap.dto.MindmapDetailResponse;
 import com.example.mindmap.features.mindmap.dto.MindmapSummaryResponse;
-import com.example.mindmap.features.mindmap.dto.MindmapUpdateRequest;
+import com.example.mindmap.features.mindmap.dto.MindmapSyncRequest;
+import com.example.mindmap.features.mindmap.dto.MindmapUpdateRequest; // [FIX] Import
 
 import jakarta.validation.Valid;
 
@@ -52,12 +53,13 @@ public class MindmapController {
     }
 
     /**
-     * Tạo mới một mindmap.
+     * [FIX] Tạo mới một mindmap.
+     * Đổi DTO từ MindmapCreateRequest -> MindmapUpdateRequest để nhận 'content'.
      */
     @PostMapping
     @PreAuthorize("isAuthenticated()")
     public ResponseEntity<MindmapDetailResponse> createMindmap(
-            @Valid @RequestBody MindmapCreateRequest request
+            @Valid @RequestBody MindmapUpdateRequest request // <-- FIX LỖI
     ) {
         MindmapDetailResponse createdMindmap = mindmapService.createMindmap(request);
         return new ResponseEntity<>(createdMindmap, HttpStatus.CREATED);
@@ -115,6 +117,19 @@ public class MindmapController {
     public ResponseEntity<String> exportMindmapAsText(@PathVariable String id) {
         String text = mindmapService.exportMindmapAsText(id);
         return ResponseEntity.ok(text);
+    }
+    /**
+     * [MỚI] Endpoint đồng bộ (sync) mindmap của Guest
+     * khi họ đăng nhập.
+     */
+    @PostMapping("/sync")
+    @PreAuthorize("isAuthenticated() and !hasAuthority('SCOPE_GUEST')") // Chỉ user đã đăng nhập (không phải Guest)
+    public ResponseEntity<List<MindmapSummaryResponse>> syncGuestMindmaps(
+            @Valid @RequestBody List<MindmapSyncRequest> requestList
+    ) {
+        List<MindmapSummaryResponse> syncedMindmaps = mindmapService.syncGuestMindmaps(requestList);
+        // Trả về 201 Created và danh sách tóm tắt các mindmap đã được tạo
+        return new ResponseEntity<>(syncedMindmaps, HttpStatus.CREATED);
     }
 
     // --- Các Endpoint cho Giai đoạn 3 (Embed/SaaS) sẽ được triển khai sau ---

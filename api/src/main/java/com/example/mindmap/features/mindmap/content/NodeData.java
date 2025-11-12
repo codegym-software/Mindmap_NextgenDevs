@@ -40,6 +40,8 @@ public class NodeData {
     private String parentId;
 
     /**
+     * [FIX] Khởi tạo style để không bao giờ bị null.
+     *
      * Style riêng của node, ví dụ:
      * - màu nền
      * - màu chữ
@@ -48,7 +50,7 @@ public class NodeData {
      *
      * Nếu null → FE kế thừa style theo theme của Mindmap.
      */
-    private NodeStyle style;
+    private NodeStyle style = new NodeStyle(); // <-- FIX LỖI GỐC RỄ
 
     /**
      * FLAG: Node có đang bị thu gọn branch hay không.

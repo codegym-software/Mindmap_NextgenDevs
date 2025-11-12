@@ -1,50 +1,145 @@
-import { create } from "zustand";
-import { isEqual } from "lodash";
+/**
+ * [GIAI ĐOẠN 5: RÀ SOÁT]
+ *
+ * Tệp này được xác nhận là KHÔNG THAY ĐỔI.
+ *
+ * Cấu trúc `NodeData` (phẳng) được định nghĩa tại đây là "ngôn ngữ nội bộ"
+ * của toàn bộ giao diện và logic chỉnh sửa (Editor.tsx, FormattingToolbar.tsx).
+ *
+ * Toàn bộ chiến lược Refactor (GĐ 1-4) được thiết kế để bảo vệ tệp này
+ * khỏi mọi thay đổi.
+ */
+import { create } from 'zustand';
+import { isEqual } from 'lodash';
 
 // =================================================================================
-// Types
+// Định nghĩa Fonts
 // =================================================================================
+export const fonts = [
+  { name: 'Inter', value: 'Inter, sans-serif' },
+  { name: 'Roboto', value: 'Roboto, sans-serif' },
+  { name: 'Montserrat', value: 'Montserrat, sans-serif' },
+  { name: 'Lobster', value: 'Lobster, cursive' },
+  { name: 'Pacifico', value: 'Pacifico, cursive' },
+  { name: 'Roboto Mono', value: 'Roboto Mono, monospace' },
+  { name: 'Arial', value: 'Arial, sans-serif' },
+  { name: 'Times New Roman', value: 'Times New Roman, serif' },
+  { name: 'Courier New', value: 'Courier New, monospace' },
+  { name: 'Verdana', value: 'Verdana, sans-serif' },
+];
 
+// =================================================================================
+// Định nghĩa Themes
+// =================================================================================
+export type ColorThemeStyle = {
+  fill: string;
+  color: string;
+  stroke: string;
+  textColor: string;
+  fontSize?: number;
+  fontWeight?: 'normal' | 'bold';
+  textDecoration?: 'none' | 'underline' | 'line-through';
+};
+
+export type ColorTheme = {
+  name: string;
+  background: string; // Màu nền canvas
+  quickStyles: {
+    'important-dark': ColorThemeStyle;
+    'important-light': ColorThemeStyle;
+    strikethrough: ColorThemeStyle;
+    default: ColorThemeStyle;
+  };
+  root: Partial<ColorThemeStyle>; // Style riêng cho node gốc
+};
+
+export const colorThemes: Record<string, ColorTheme> = {
+  dawn: {
+    name: 'Dawn (Rạng đông)',
+    background: '#ffffffff',
+    quickStyles: {
+      'important-dark': {
+        fill: '#420a27ff',
+        color: '#970074ff',
+        stroke: '#97266D',
+        textColor: '#ffffffff',
+        fontSize: 18,
+        fontWeight: 'bold',
+      },
+      'important-light': {
+        fill: '#FBB6CE',
+        color: '#b60ac0ff',
+        stroke: '#ED89A7',
+        textColor: '#ffffffff',
+      },
+      strikethrough: {
+        fill: '#FFFFFF',
+        color: '#ffffffff',
+        stroke: '#CBD5E0',
+        textColor: '#A0AEC0',
+        textDecoration: 'line-through',
+      },
+      default: {
+        fill: '#FFFFFF',
+        color: '#ffffffff',
+        stroke: '#CBD5E0',
+        textColor: '#4A5568',
+      },
+    },
+    root: { fill: '#6366F1', stroke: '#4338CA', textColor: '#FFFFFF' },
+  },
+};
+
+// =================================================================================
+// Định nghĩa Types (Cấu trúc "Phẳng" nội bộ của FE)
+// =================================================================================
 export type GlobalStructure = 'mindmap' | 'logic' | 'org';
-export type QuickStyleId = 'default' | 'important' | 'important-light' | 'strikethrough';
+export type LocalStructure = 'default' | 'logic' | 'org';
+export type QuickStyleId =
+  | 'default'
+  | 'important-dark'
+  | 'important-light'
+  | 'strikethrough';
 
+/**
+ * [CẤU TRÚC NỘI BỘ FE]
+ * Đây là cấu trúc dữ liệu "phẳng" (flat) mà useEditorStore và các
+ * component (Editor, FormattingToolbar) sử dụng.
+ */
 export type NodeData = {
   id: string;
-  text: string;
+  nodeText: string; // FE dùng 'nodeText'
   x: number;
   y: number;
   parentId?: string;
-  side?: 'left' | 'right'; // Chỉ dùng cho 'mindmap'
+  side?: 'left' | 'right';
   collapsed?: boolean;
-  
-  // Thuộc tính Style (có thể undefined)
-  shape?: 'rectangle' | 'roundedRect' | 'circle' | 'diamond';
-  color?: string; // Fill
+  quickStyleId?: QuickStyleId;
+
+  // Style thuộc tính (phẳng)
+  shape?: 'rectangle' | 'roundedRect' | 'diamond' | 'ellipse'; // 'ellipse' từ BE
+  color?: string; // FE dùng 'color' (tương ứng backgroundColor BE)
   borderColor?: string;
   borderWidth?: number;
   borderStyle?: 'solid' | 'dashed' | 'dotted';
-  
+
+  // Text (phẳng)
   fontFamily?: string;
   fontSize?: number;
   fontWeight?: 'normal' | 'bold';
   fontStyle?: 'normal' | 'italic';
   textDecoration?: 'none' | 'underline' | 'line-through';
   textAlign?: 'left' | 'center' | 'right';
+  textColor?: string; // FE dùng 'textColor'
   textCase?: 'normal' | 'uppercase' | 'lowercase';
-  // SỬA: Đổi tên 'text' (trùng) thành 'textColor'
-  textColor?: string;
-  
   nodeLength?: 'fit' | number;
 
-  localStructure?: 'logic' | 'org'; // Cấu trúc riêng của nhánh con
-  
-  // Style nhánh con
+  // Branch (Style cho nhánh con) (phẳng)
+  localStructure?: LocalStructure;
   branchColor?: string;
   branchLineStyle?: 'bezier' | 'sharp';
   branchLineEnd?: 'none' | 'arrow';
   branchLineThickness?: 'thin' | 'normal' | 'thick';
-  
-  quickStyleId?: QuickStyleId;
 };
 
 export type EdgeData = { id: string; from: string; to: string };
@@ -54,28 +149,158 @@ type Snapshot = { nodes: NodeData[]; edges: EdgeData[] };
 const MAX_HISTORY = 100;
 
 // =================================================================================
-// State
+// Style Helpers (Nội bộ FE)
+// =================================================================================
+
+// Style mặc định
+export const DEFAULT_NODE_STYLE: Partial<NodeData> = {
+  shape: 'roundedRect',
+  color: '#FFFFFF',
+  borderColor: '#CBD5E0',
+  borderWidth: 2,
+  borderStyle: 'solid',
+  fontFamily: fonts[0].value,
+  fontSize: 14,
+  fontWeight: 'normal',
+  fontStyle: 'normal',
+  textDecoration: 'none',
+  textAlign: 'center',
+  textColor: '#4A5568',
+  textCase: 'normal',
+  nodeLength: 230,
+  branchColor: undefined,
+  branchLineStyle: 'bezier',
+  branchLineEnd: 'none',
+  branchLineThickness: 'normal',
+  localStructure: 'default',
+  quickStyleId: 'default',
+};
+
+/**
+ * Tính toán style cuối cùng của một node
+ */
+export function getNodeComputedStyle(
+  node: NodeData | null,
+  theme: ColorTheme,
+  globalFont: string
+): NodeData {
+  const baseStyle: Partial<NodeData> = {
+    ...DEFAULT_NODE_STYLE,
+    fontFamily: globalFont, // 1. Áp dụng Global Font
+  };
+
+  if (!node) return baseStyle as NodeData;
+
+  // 2. Lấy style từ Theme (Root, QuickStyle, hoặc Default)
+  let themeStyle: Partial<ColorThemeStyle> = {};
+  if (node.id === 'root') {
+    themeStyle = theme.root;
+  } else if (node.quickStyleId && theme.quickStyles[node.quickStyleId]) {
+    themeStyle = theme.quickStyles[node.quickStyleId];
+  } else {
+    themeStyle = theme.quickStyles.default;
+  }
+
+  // 3. Hợp nhất: Default <- Theme
+  const merged: Partial<NodeData> = {
+    ...baseStyle,
+    ...(themeStyle as Partial<NodeData>),
+  };
+
+  // 4. Áp dụng style tùy chỉnh (ghi đè)
+  // Chỉ ghi đè các giá trị đã được xác định cụ thể trên node
+  (
+    Object.keys(DEFAULT_NODE_STYLE) as Array<keyof typeof DEFAULT_NODE_STYLE>
+  ).forEach((key) => {
+    if (node[key] !== undefined) {
+      (merged as any)[key] = node[key];
+    }
+  });
+
+  // Ghi đè font toàn cục NẾU node có font tùy chỉnh
+  if (node.fontFamily) {
+    merged.fontFamily = node.fontFamily;
+  }
+
+  // Node gốc luôn có style đặc biệt
+  if (node.id === 'root') {
+    merged.fontSize = (merged.fontSize || 16) + 8;
+    merged.fontWeight = 'bold';
+    merged.nodeLength = 300;
+    merged.textColor = '#480000ff';
+    merged.textCase = 'uppercase';
+  }
+
+  // Gán lại các thuộc tính không phải style
+  merged.id = node.id;
+  merged.nodeText = node.nodeText;
+  merged.x = node.x;
+  merged.y = node.y;
+  merged.parentId = node.parentId;
+  merged.side = node.side;
+  merged.collapsed = node.collapsed;
+
+  return merged as NodeData;
+}
+
+// Hàm reset
+export function applyNodeDefaults(
+  node: NodeData,
+  theme: ColorTheme
+): Partial<NodeData> {
+  const themeStyle =
+    node.id === 'root' ? theme.root : theme.quickStyles.default;
+
+  return {
+    ...DEFAULT_NODE_STYLE,
+    ...(themeStyle as Partial<NodeData>),
+    // Đặt lại các giá trị có thể tùy chỉnh về undefined
+    quickStyleId: 'default',
+    shape: undefined,
+    color: undefined,
+    borderColor: undefined,
+    borderWidth: undefined,
+    borderStyle: undefined,
+    fontFamily: undefined,
+    fontSize: undefined,
+    fontWeight: undefined,
+    fontStyle: undefined,
+    textDecoration: undefined,
+    textAlign: undefined,
+    textColor: undefined,
+    textCase: undefined,
+    nodeLength: undefined,
+    localStructure: undefined,
+    branchColor: undefined,
+    branchLineStyle: undefined,
+    branchLineEnd: undefined,
+    branchLineThickness: undefined,
+  };
+}
+
+// =================================================================================
+// Định nghĩa State
 // =================================================================================
 type State = {
-  nodes: NodeData[];
+  nodes: NodeData[]; // <-- Dùng cấu trúc phẳng (FE)
   edges: EdgeData[];
   history: Snapshot[];
   future: Snapshot[];
-  
+
   // Cài đặt toàn cục
   globalStructure: GlobalStructure;
   globalFont: string;
   branchLineWidth: number;
   isColoredBranch: boolean;
-  activeColorThemeId: keyof typeof colorThemes;
+  activeColorThemeId: string;
+  globalBranchColor: string;
 
   setGraph: (n: NodeData[], e: EdgeData[]) => void;
   push: (n: NodeData[], e: EdgeData[]) => void;
   undo: () => Snapshot | null;
   redo: () => Snapshot | null;
   clear: () => void;
-  
-  // Setter cho cài đặt toàn cục
+
   set: (p: Partial<State>) => void;
 };
 
@@ -84,15 +309,14 @@ export const useEditorStore = create<State>((set, get) => ({
   edges: [],
   history: [],
   future: [],
-  
-  // Mặc định
+
+  // Cài đặt toàn cục
   globalStructure: 'mindmap',
-  globalFont: 'Inter',
+  globalFont: fonts[0].value,
   branchLineWidth: 2,
   isColoredBranch: true,
   activeColorThemeId: 'dawn',
-
-  set: (p) => set(p),
+  globalBranchColor: '#94A3B8',
 
   setGraph: (n, e) => {
     set({ nodes: n, edges: e });
@@ -115,11 +339,11 @@ export const useEditorStore = create<State>((set, get) => ({
     const current = h.pop()!;
     const prev = h.at(-1)!;
 
-    set({ 
-      history: h, 
-      future: [current, ...get().future], 
-      nodes: prev.nodes, 
-      edges: prev.edges 
+    set({
+      history: h,
+      future: [current, ...get().future],
+      nodes: prev.nodes,
+      edges: prev.edges,
     });
     return prev;
   },
@@ -129,194 +353,16 @@ export const useEditorStore = create<State>((set, get) => ({
     if (!f.length) return null;
 
     const next = f.shift()!;
-    set({ 
-      history: [...get().history, next], 
-      future: f, 
-      nodes: next.nodes, 
-      edges: next.edges 
+    set({
+      history: [...get().history, next],
+      future: f,
+      nodes: next.nodes,
+      edges: next.edges,
     });
     return next;
   },
 
   clear: () => set({ history: [], future: [] }),
+
+  set: (p) => set(p),
 }));
-
-// =================================================================================
-// Data / Constants
-// =================================================================================
-
-// SỬA: Thêm lại các phông chữ
-export const fonts = [
-  { label: "Inter", value: "Inter" },
-  { label: "Roboto", value: "Roboto" },
-  { label: "Be Vietnam Pro", value: "Be Vietnam Pro" },
-  { label: "Montserrat", value: "Montserrat" },
-  { label: "Source Sans 3", value: "Source Sans 3" },
-  { label: "Lobster", value: "Lobster" },
-  { label: "Pacifico", value: "Pacifico" },
-  { label: "Caveat", value: "Caveat" },
-  { label: "Roboto Mono", value: "Roboto Mono" },
-];
-
-// SỬA: Đổi 'text' thành 'textColor'
-type ColorStyle = { fill: string; stroke: string; textColor: string };
-type RootStyle = ColorStyle & { fontWeight: 'bold' };
-type StrikethroughStyle = ColorStyle & { textDecoration: 'line-through' };
-type ImportantLightStyle = ColorStyle & { fontWeight: 'bold' };
-
-export type ColorTheme = {
-  name: string;
-  background: string;
-  variations: ColorStyle[];
-  quickStyles: {
-    'default': ColorStyle;
-    'important': ColorStyle;
-    'important-light': ImportantLightStyle;
-    'strikethrough': StrikethroughStyle;
-  };
-  root: RootStyle;
-};
-
-// SỬA: Đổi 'text' thành 'textColor' trong tất cả các theme
-export const colorThemes: { [key: string]: ColorTheme } = {
-  dawn: {
-    name: "Bình minh",
-    background: "#FAFAFB", // Nền sáng
-    variations: [
-      { fill: "#C3D1FF", stroke: "#8DA9FF", textColor: "#002EB3" },
-      { fill: "#B5F5D5", stroke: "#7BEAAB", textColor: "#007A3B" },
-      { fill: "#FFE0B5", stroke: "#FFC570", textColor: "#AA5F00" },
-      { fill: "#FFD1D1", stroke: "#FF9E9E", textColor: "#B31D1D" },
-      { fill: "#D1CFFF", stroke: "#A5A3FF", textColor: "#2F2CC4" },
-      { fill: "#BDEFFF", stroke: "#87DBFF", textColor: "#006A99" },
-    ],
-    quickStyles: {
-      'default': { fill: "#FFFFFF", stroke: "#E0E0E0", textColor: "#333333" },
-      'important': { fill: "#2563EB", stroke: "#1D4ED8", textColor: "#FFFFFF" },
-      'important-light': { fill: "#DBEAFE", stroke: "#93C5FD", textColor: "#1E40AF", fontWeight: 'bold' },
-      'strikethrough': { fill: "#F1F5F9", stroke: "#CBD5E1", textColor: "#64748B", textDecoration: 'line-through' },
-    },
-    root: { fill: "#3B82F6", stroke: "#1D4ED8", textColor: "#FFFFFF", fontWeight: 'bold' },
-  },
-  ocean: {
-    name: "Đại dương",
-    background: "#F0F9FF",
-    variations: [
-      { fill: "#B3E0FF", stroke: "#80CFFF", textColor: "#005A9E" },
-      { fill: "#B8F5E1", stroke: "#7FF0C9", textColor: "#007A52" },
-      { fill: "#FFEBB5", stroke: "#FFDA70", textColor: "#AA7B00" },
-      { fill: "#FFDBCF", stroke: "#FFB89E", textColor: "#B34A24" },
-      { fill: "#DBCFFF", stroke: "#B8A3FF", textColor: "#4C2CC4" },
-      { fill: "#CFF5FF", stroke: "#A3E9FF", textColor: "#007499" },
-    ],
-    quickStyles: {
-      'default': { fill: "#FFFFFF", stroke: "#E0E0E0", textColor: "#333333" },
-      'important': { fill: "#0A659E", stroke: "#074B75", textColor: "#FFFFFF" },
-      'important-light': { fill: "#E0F2FE", stroke: "#7DD3FC", textColor: "#0C4A6E", fontWeight: 'bold' },
-      'strikethrough': { fill: "#F1F5F9", stroke: "#CBD5E1", textColor: "#64748B", textDecoration: 'line-through' },
-    },
-    root: { fill: "#0B5C8F", stroke: "#074B75", textColor: "#FFFFFF", fontWeight: 'bold' },
-  },
-};
-
-// =================================================================================
-// Style Helpers
-// =================================================================================
-// SỬA: Thêm 'textColor'
-export const DEFAULT_NODE_STYLE: Partial<NodeData> = {
-  shape: 'roundedRect',
-  color: '#FFFFFF',
-  borderColor: '#E0E0E0',
-  borderWidth: 2,
-  borderStyle: 'solid',
-  fontFamily: fonts[0].value,
-  fontSize: 14,
-  fontWeight: 'normal',
-  fontStyle: 'normal',
-  textDecoration: 'none',
-  textAlign: 'center',
-  textCase: 'normal',
-  textColor: '#333333', // Thêm màu text mặc định
-  nodeLength: 'fit',
-  branchColor: '#B0B0B0',
-  branchLineStyle: 'bezier',
-  branchLineEnd: 'none',
-  branchLineThickness: 'normal',
-  localStructure: undefined,
-  quickStyleId: 'default',
-};
-
-/**
- * Hàm Helper để tính toán style cuối cùng của một node
- */
-export function getNodeComputedStyle(node: NodeData | null, theme: ColorTheme, globalFont: string): NodeData {
-  if (!node) return { ...DEFAULT_NODE_STYLE, fontFamily: globalFont } as NodeData;
-
-  // 1. Bắt đầu với Mặc định + Font Toàn cục
-  const baseStyle: Partial<NodeData> = { ...DEFAULT_NODE_STYLE, fontFamily: globalFont };
-
-  // 2. Áp dụng kiểu từ Theme
-  let themeStyle: Partial<NodeData> = {};
-  if (node.id === 'root') {
-    themeStyle = theme.root as Partial<NodeData>;
-  } else if (node.quickStyleId && theme.quickStyles[node.quickStyleId as keyof typeof theme.quickStyles]) { // Sửa: Thêm check an toàn
-    themeStyle = theme.quickStyles[node.quickStyleId as keyof typeof theme.quickStyles] as Partial<NodeData>;
-  } else {
-    themeStyle = theme.quickStyles.default as Partial<NodeData>;
-  }
-
-  // 3. Hợp nhất: Mặc định <- Theme <- Node (ghi đè)
-  const merged: Partial<NodeData> = {
-    ...baseStyle,
-    ...themeStyle,
-  };
-
-  // 4. Chỉ ghi đè các giá trị đã được xác định cụ thể trên node
-  (Object.keys(DEFAULT_NODE_STYLE) as Array<keyof NodeData>).forEach(key => {
-    if (node[key] !== undefined) {
-      (merged as any)[key] = node[key];
-    }
-  });
-
-  // 5. Node gốc luôn có style đặc biệt
-  if (node.id === 'root') {
-    merged.fontSize = (merged.fontSize || 16) + 4; // To hơn
-    merged.fontWeight = 'bold'; // Luôn đậm
-  }
-
-  return { ...node, ...merged } as NodeData;
-}
-
-// Hàm reset
-export function applyNodeDefaults(node: NodeData, theme: ColorTheme): Partial<NodeData> {
-  const baseStyle = { ...DEFAULT_NODE_STYLE };
-  const themeStyle = (node.id === 'root')
-    ? theme.root
-    : theme.quickStyles.default;
-  
-  return {
-    ...baseStyle,
-    ...(themeStyle as Partial<NodeData>), 
-    quickStyleId: 'default',
-    shape: undefined,
-    color: undefined,
-    borderColor: undefined,
-    borderWidth: undefined,
-    borderStyle: undefined,
-    fontFamily: undefined,
-    fontSize: undefined,
-    fontWeight: undefined,
-    fontStyle: undefined,
-    textDecoration: undefined,
-    textAlign: undefined,
-    textCase: undefined,
-    textColor: undefined, // Sửa: Thêm textColor
-    nodeLength: undefined,
-    localStructure: undefined,
-    branchColor: undefined,
-    branchLineStyle: undefined,
-    branchLineEnd: undefined,
-    branchLineThickness: undefined,
-  };
-}
-

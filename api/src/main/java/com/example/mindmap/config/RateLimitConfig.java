@@ -8,14 +8,15 @@ import jakarta.servlet.http.HttpServletResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.web.servlet.FilterRegistrationBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.Ordered;
+import org.springframework.http.HttpMethod;
 import org.springframework.util.StringUtils;
 
 import java.io.IOException;
-import java.time.Duration;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 
@@ -33,21 +34,22 @@ public class RateLimitConfig {
     @Value("${app.rate-limit.cache.max-size:10000}")
     private long cacheMaxSize;
 
-    @Value("${app.rate-limit.enabled:true}")
-    private boolean enabled;
-
+    /**
+     * ✅ Chỉ đăng ký filter khi app.rate-limit.enabled=true
+     * 🚫 Không return FilterRegistrationBean chứa filter null (gây lỗi khởi động)
+     */
     @Bean
+    @ConditionalOnProperty(value = "app.rate-limit.enabled", havingValue = "true")
     public FilterRegistrationBean<RateLimitFilter> rateLimitFilter() {
-        FilterRegistrationBean<RateLimitFilter> registrationBean = new FilterRegistrationBean<>();
-        if (enabled) {
-            log.info("✅ Giới hạn tốc độ được bật: {} yêu cầu/phút mỗi IP", requestsPerMinute);
-            registrationBean.setFilter(new RateLimitFilter(requestsPerMinute, cacheDurationMinutes, cacheMaxSize));
-            registrationBean.addUrlPatterns("/api/*");
-            registrationBean.setOrder(Ordered.HIGHEST_PRECEDENCE + 1);
-        } else {
-            log.warn("⚠️ Giới hạn tốc độ bị tắt qua app.rate-limit.enabled=false");
-            registrationBean.setEnabled(false);
-        }
+
+        log.info("✅ Giới hạn tốc độ được bật: {} yêu cầu/phút mỗi IP", requestsPerMinute);
+
+        FilterRegistrationBean<RateLimitFilter> registrationBean =
+                new FilterRegistrationBean<>(new RateLimitFilter(requestsPerMinute, cacheDurationMinutes, cacheMaxSize));
+
+        registrationBean.addUrlPatterns("/api/*");
+        registrationBean.setOrder(Ordered.HIGHEST_PRECEDENCE + 1);
+
         return registrationBean;
     }
 
@@ -66,8 +68,15 @@ public class RateLimitConfig {
         @Override
         public void doFilter(ServletRequest request, ServletResponse response, FilterChain chain)
                 throws IOException, ServletException {
+
             HttpServletRequest httpRequest = (HttpServletRequest) request;
             HttpServletResponse httpResponse = (HttpServletResponse) response;
+
+            // ✅ Bypass OPTIONS (Pre-flight CORS)
+            if (HttpMethod.OPTIONS.matches(httpRequest.getMethod())) {
+                chain.doFilter(request, response);
+                return;
+            }
 
             String clientIp = resolveClientIp(httpRequest);
             TokenBucket bucket = rateLimitCache.get(clientIp, key -> new TokenBucket(requestsPerMinute));
@@ -108,10 +117,7 @@ public class RateLimitConfig {
             public boolean tryConsume() {
                 refill();
                 long currentTokens = tokens.get();
-                if (currentTokens > 0 && tokens.compareAndSet(currentTokens, currentTokens - 1)) {
-                    return true;
-                }
-                return false;
+                return currentTokens > 0 && tokens.compareAndSet(currentTokens, currentTokens - 1);
             }
 
             private void refill() {

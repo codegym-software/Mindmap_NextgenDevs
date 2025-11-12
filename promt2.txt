@@ -1,119 +1,76 @@
--- Đây là cấu trúc các file yml của tôi, theo bạn cần phải sửa file nào --
--- Trên thực tế tôi tạo 2 app client một cho FE một cho BE (có secret) nhưng lại chỉ đang dùng 1 app client FE thôi, theo bạn thì tôi có cần phải xoá client BE hay thêm mới app client nào không -- 
+Giai đoạn 6: Tối ưu hóa Luồng Dữ liệu FE (Loại bỏ Map trung gian)
+Mục tiêu: Dọn dẹp code FE để loại bỏ vòng lặp List -> Map -> List không cần thiết. Đảm bảo toàn bộ luồng save (lưu trữ) của FE sử dụng List (Array) nhất quán.
 
+Việc cần làm:
 
-==== ./main/resources/application-prod.yml ====
-# ===================================================================
-# PRODUCTION-READY CONFIGURATION
-# ===================================================================
-# In a real production environment, these values should be set via
-# environment variables or a configuration server (e.g., Spring Cloud Config)
-# for security and flexibility.
+Cập nhật src/pages/Editor.tsx: Sửa useEffect[auto-save] (logic handleSave và saveGuestDoc) để gửi thẳng nodes (dạng List) từ useEditorStore.
 
-server:
-  port: ${SERVER_PORT:8081} # Use environment variable, default to 8081
+Cập nhật src/services/mindmapsApi.ts: Sửa hàm update để chấp nhận nodes (dạng List) và loại bỏ logic Object.values().
 
-spring:
-  data:
-    mongodb:
-      # CRITICAL: Use environment variable for the connection string.
-      # DO NOT hardcode production credentials.
-      uri: ${MONGO_URI:mongodb://localhost:27017/mindmap_prod}
+Kết quả: Luồng dữ liệu được tối ưu thành List (Zustand) -> List (API Layer) -> List (BE). Code sạch hơn, nhanh hơn và sẵn sàng cho các giai đoạn tiếp theo.
 
-  security:
-    oauth2:
-      resourceserver:
-        jwt:
-          # These should be loaded from environment variables in production
-          issuer-uri: ${APP_SECURITY_ISSUER:https://cognito-idp.ap-southeast-2.amazonaws.com/ap-southeast-2_t30OWWizg}
-          jwk-set-uri: ${APP_SECURITY_JWK_SET_URI:https://cognito-idp.ap-southeast-2.amazonaws.com/ap-southeast-2_t30OWWizg/.well-known/jwks.json}
+Giai đoạn 7: Tách biệt Undo/Redo (0.5s) và Lưu trữ (5s)
+Mục tiêu: Triển khai logic 2 tốc độ: Undo/Redo (RAM) phải nhanh (0.5s), Lưu trữ (DB/LocalStorage) có thể chậm hơn (5s).
 
-app:
-  security:
-    frontend-client-id: ${APP_SECURITY_FRONTEND_CLIENT_ID:7so8qnoi7pgne6bq0kq2ppharm}
-    # Audience is optional and can also be an env var if used
-    # audience: ${APP_SECURITY_AUDIENCE:}
+Việc cần làm (Toàn bộ ở src/pages/Editor.tsx):
 
-  cors:
-    # CRITICAL: Do not use localhost in production. Use the actual frontend domain.
-    # Load from an environment variable. Example: "https://www.your-mindmap-app.com"
-    allowed-origins: ${APP_CORS_ALLOWED_ORIGINS:https://your-production-domain.com}
+Import useDebouncedCallback (từ use-debounce).
 
-  rate-limit:
-    # Production rate limit can be adjusted based on expected traffic.
-    enabled: true
-    requests-per-minute: 200 # A more reasonable production limit
+Xóa pushHistory ra khỏi tất cả các hàm hành động (handleAddChild, handleDeleteNode, handleDragEnd, stopEditing, handleUpdateNode, v.v.).
 
-# Logging configuration for Production
-logging:
-  level:
-    # Set default log level to INFO for production to reduce noise
-    root: INFO
-    # Specific packages can be set to DEBUG if needed for troubleshooting
-    com.example.mindmap: INFO
-    org.springframework.security: WARN # Reduce security log verbosity
-    org.springframework.web: WARN
+Tạo 2 hàm debounced mới:
 
-==== ./main/resources/application-dev.yml ====
-server:
-  port: 8081
+debouncedPushHistory (delay 0.5s): Chỉ gọi pushHistory(get().nodes, get().edges).
 
-spring:
-  data:
-    mongodb:
-      uri: mongodb://mongo:27017/mindmapdb
-  security:
-    oauth2:
-      resourceserver:
-        jwt:
-          issuer-uri: ${app.security.issuer}
+debouncedPersistData (delay 5s): Gọi logic useEffect[auto-save] cũ (tức là mindmapsApi.update hoặc saveGuestDoc).
 
-app:
-  security:
-    issuer: https://cognito-idp.ap-southeast-2.amazonaws.com/ap-southeast-2_t30OWWizg
-    frontend-client-id: 7so8qnoi7pgne6bq0kq2ppharm
-    jwk-set-uri: https://cognito-idp.ap-southeast-2.amazonaws.com/ap-southeast-2_t30OWWizg/.well-known/jwks.json  # Thêm dòng này
-  cors:
-    allowed-origins: http://localhost:3000,http://127.0.0.1:3000
+Sửa tất cả các hàm hành động: Sau khi gọi setGraph(...), chúng sẽ gọi cả debouncedPushHistory() và debouncedPersistData().
 
-logging:
-  level:
-    org.springframework.security: DEBUG
-    org.springframework.security.web: DEBUG
-    org.springframework.security.oauth2: DEBUG
-    org.springframework.security.oauth2.server.resource: DEBUG
-    org.springframework.web: DEBUG
-    com.nimbusds.jose: DEBUG
-    com.example.mindmap: DEBUG
-    
-==== ./main/resources/application.yml ====
-server:
-  port: 8081
+Kết quả: Undo/Redo được cá nhân hóa 100% và tách biệt hoàn toàn khỏi logic lưu vào DB. Trải nghiệm người dùng mượt mà hơn.
 
-spring:
-  data:
-    mongodb:
-      uri: mongodb://localhost:27017/mindmapdb
-  security:
-    oauth2:
-      resourceserver:
-        jwt:
-          issuer-uri: ${app.security.issuer}
+Giai đoạn 8: Nâng cấp Backend WebSocket để Xử lý "Bản vá" (Patches)
+Mục tiêu: "Dạy" cho MindmapUpdateHandler.java cách nhận diện và broadcast các thay đổi (patch) cụ thể, thay vì chỉ là một "phòng chat" chung chung.
 
-app:
-  security:
-    issuer: https://cognito-idp.ap-southeast-2.amazonaws.com/ap-southeast-2_t30OWWizg
-    frontend-client-id: 7so8qnoi7pgne6bq0kq2ppharm
-    jwk-set-uri: https://cognito-idp.ap-southeast-2.amazonaws.com/ap-southeast-2_t30OWWizg/.well-known/jwks.json  # Thêm dòng này
-  cors:
-    allowed-origins: http://localhost:3000,http://127.0.0.1:3000
+Việc cần làm:
 
-logging:
-  level:
-    org.springframework.security: DEBUG
-    org.springframework.security.web: DEBUG
-    org.springframework.security.oauth2: DEBUG
-    org.springframework.security.oauth2.server.resource: DEBUG
-    org.springframework.web: DEBUG
-    com.nimbusds.jose: DEBUG
-    com.example.mindmap: DEBUG
+Tạo DTOs (Java): Tạo các file record mới trong features/websocket/dto/ (ví dụ: NodeMovePatch.java, NodeTextPatch.java, NodeCreatePatch.java... để định nghĩa cấu trúc {"type": "...", "payload": {...}}).
+
+Cập nhật MindmapUpdateHandler.java:
+
+Sửa handleTextMessage(String message): Dùng Jackson (ObjectMapper) để deserialize message thành một BasePatch (DTO cha).
+
+Dùng switch(basePatch.getType()) để xác định loại patch (ví dụ: NODE_MOVE).
+
+Quan trọng: Giữ nguyên logic "pure broadcast". Handler này chỉ broadcast bản vá cho người khác, nó không lưu vào DB (việc đó vẫn do HTTP PUT 5s đảm nhiệm).
+
+Kết quả: Backend WebSocket trở thành một bộ định tuyến (router) "bản vá" thông minh, sẵn sàng cho Giai đoạn 9.
+
+Giai đoạn 9: Tích hợp Frontend WebSocket (Gửi và Nhận "Bản vá")
+Mục tiêu: Hoàn thiện vòng lặp cộng tác. FE phải gửi patch khi thay đổi và nhận patch từ người khác.
+
+Việc cần làm (Chủ yếu ở src/pages/Editor.tsx):
+
+Gửi Patch: Sửa tất cả các hàm hành động (handleDragEnd, stopEditing, v.v.): Ngay sau khi setGraph, gọi ws.send(...) ngay lập tức với patch JSON tương ứng (ví dụ: {"type": "NODE_TEXT_CHANGE", ...}).
+
+Kết nối WS: Thêm useEffect để khởi tạo kết nối WebSocket (sử dụng accessToken từ useAuth để xác thực qua WebSocketAuthInterceptor.java).
+
+Nhận Patch: Triển khai logic ws.onmessage:
+
+Parse JSON nhận được.
+
+Dùng switch(message.type) để xử lý.
+
+Ví dụ: case "NODE_MOVE": Lấy nodes hiện tại, tìm node theo id, cập nhật x, y, và gọi setGraph(newNodes, edges) (nhưng không gọi pushHistory).
+
+Kết quả: Ứng dụng có tính năng cộng tác real-time. User A thay đổi, User B thấy ngay lập tức. Undo/Redo của User A không ảnh hưởng đến User B.
+
+Giai đoạn 10: Rà soát & Hoàn thiện (Fix lỗi logo 429)
+Mục tiêu: Dọn dẹp lỗi 429 (Too Many Requests) khi tải logo Google và đảm bảo mọi thứ hoạt động trơn tru.
+
+Việc cần làm:
+
+Tìm logo https://yt3.googleusercontent.com/... trong src/components/layout/Header.tsx.
+
+Giải pháp: Tải logo đó về máy, đặt vào thư mục public/ (ví dụ: public/logo.png) và thay đổi src trong Header.tsx thành src="/logo.png".
+
+Kết quả: Ứng dụng hoàn thiện, chạy mượt, không còn lỗi 429, và có kiến trúc cộng tác Local-First vững chắc.
