@@ -133,8 +133,7 @@ export function normalizeNodeFEtoBE(feNode: FeNodeData): BeNodeData {
     branchLineEnd,
     branchLineThickness,
     quickStyleId,
-
-    // [MỚI GĐ B] Thêm trường 'styleLocked'
+    hyperlink,
     styleLocked,
   } = feNode;
 
@@ -173,6 +172,7 @@ export function normalizeNodeFEtoBE(feNode: FeNodeData): BeNodeData {
     collapsed: collapsed || false,
     side: side,
     style: beStyle,
+    hyperlink: hyperlink,
   };
 
   return beNode;
@@ -183,7 +183,7 @@ export function normalizeNodeFEtoBE(feNode: FeNodeData): BeNodeData {
  * [CẬP NHẬT GĐ B]: Thêm `styleLocked`
  */
 export function normalizeNodeBEtoFE(beNode: BeNodeData): FeNodeData {
-  const { id, text, x, y, parentId, collapsed, side, style } = beNode;
+  const { id, text, x, y, parentId, collapsed, side, style, hyperlink } = beNode;
 
   // [FIX] Thêm kiểm tra 'style' null (từ GĐ 5)
   const safeStyle = style || {};
@@ -197,8 +197,7 @@ export function normalizeNodeBEtoFE(beNode: BeNodeData): FeNodeData {
     parentId: parentId || undefined,
     collapsed: collapsed || false,
     side: side,
-
-    // Trải phẳng các thuộc tính từ 'style'
+    hyperlink: hyperlink || undefined,
     shape: safeStyle.shape,
     color: safeStyle.backgroundColor,
     borderColor: safeStyle.borderColor,

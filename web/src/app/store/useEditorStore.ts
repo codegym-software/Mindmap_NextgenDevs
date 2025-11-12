@@ -76,6 +76,7 @@ export type NodeData = {
   // Style thuộc tính (có thể undefined)
   shape?: 'rectangle' | 'roundedRect'; 
   color?: string; 
+  hyperlink?: string;
   styleLocked?: boolean;
   borderColor?: string;
   borderWidth?: number;

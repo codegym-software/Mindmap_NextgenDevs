@@ -1213,6 +1213,56 @@ const handleFitToScreen = useCallback(() => {
     ]
   );
 
+  const handleUpdateNode = (updates: Partial<NodeData>) => {
+    if (selectedNodeIds.length === 0) return;
+
+    let newNodes = [...nodes];
+    const idSet = selectedIdsSet;
+
+    // [MERGE] Giữ lại logic `styleLocked` từ feature/tt
+    const STYLE_KEYS: Array<keyof NodeData> = [
+      'shape', 'color', 'borderColor', 'borderWidth', 'borderStyle',
+      'fontFamily', 'fontSize', 'fontWeight', 'fontStyle', 'textDecoration', 'textAlign', 'textColor', 'textCase', 'nodeLength',
+      'branchColor', 'branchLineStyle', 'branchLineEnd', 'branchLineThickness'
+    ];
+    const isStyleUpdate = Object.keys(updates).some(k => STYLE_KEYS.includes(k as keyof NodeData));
+
+    if (updates.branchColor !== undefined) {
+      const updateBranchColorRecursive = (nodeId: string, color: string) => {
+        // Chỉ áp dụng cho node đang được chọn
+        if (idSet.has(nodeId)) {
+          newNodes = newNodes.map(n => n.id === nodeId ? { ...n, branchColor: color } : n);
+        }
+        edges.forEach(e => { if (e.from === nodeId) updateBranchColorRecursive(e.to, color); });
+      };
+      // Lặp qua tất cả node được chọn
+      selectedNodeIds.forEach(id => updateBranchColorRecursive(id, updates.branchColor as string));
+    }
+    
+    // Áp dụng update cho tất cả node được chọn
+    newNodes = newNodes.map(n => idSet.has(n.id) ? { ...n, ...updates } : n);
+    
+    if (isStyleUpdate) {
+      const lockRec = (nodeId: string) => {
+        newNodes = newNodes.map(n => n.id === nodeId ? { ...n, styleLocked: true } : n);
+        edges.forEach(e => { if (e.from === nodeId) lockRec(e.to); });
+      };
+      // Lặp qua tất cả node được chọn
+      selectedNodeIds.forEach(id => lockRec(id));
+    }
+
+    setGraph(newNodes, edges);
+    if (updates.nodeLength) {
+      setTimeout(() => handleLayout(true), 50);
+    }
+    debouncedPushHistory();
+    debouncedPersistData();
+    // Gửi patch cho TỪNG node
+    selectedNodeIds.forEach(id => {
+      sendPatch('NODE_STYLE_UPDATE', { id, updates });
+    });
+  };
+
   const handleKeyDown = useCallback(
     (e: KeyboardEvent) => {
       if (e.key === 'Enter') {
@@ -1282,6 +1332,40 @@ const handleFitToScreen = useCallback(() => {
       handleAddSibling, handleDeleteNode, undo, redo, startEditing,
     ]
   );
+
+  const handleToolbarAddChild = useCallback(() => {
+    // Chỉ hoạt động nếu 1 node (và chỉ 1) đang được chọn
+    if (selectedNodeIds.length === 1) { 
+      handleAddChild(selectedNodeIds[0]);
+    }
+  }, [selectedNodeIds, handleAddChild]); // handleAddChild đã được bọc trong useCallback
+
+  const handleToolbarAddSibling = useCallback(() => {
+    // Chỉ hoạt động nếu 1 node (và chỉ 1) đang được chọn
+    if (selectedNodeIds.length === 1) { 
+      handleAddSibling(selectedNodeIds[0]);
+    }
+  }, [selectedNodeIds, handleAddSibling]);
+
+  const handleSetHyperlink = useCallback(() => {
+  if (selectedNodeIds.length !== 1) return;
+  const nodeId = selectedNodeIds[0];
+  const node = nodeMap.get(nodeId);
+  if (!node) return;
+
+  
+
+  // Lấy hyperlink hiện tại (nếu có) từ node.
+  // Cần đảm bảo `node.hyperlink` tồn tại trong kiểu NodeData của bạn.
+  const currentUrl = (node as any).hyperlink || "";
+  const url = window.prompt("Nhập URL cho liên kết (để trống để xóa):", currentUrl);
+  
+  if (url !== null) { // User clicked OK (null nghĩa là Cancel)
+    // Chúng ta gọi handleUpdateNode, nó đã được refactor để xử lý nhiều node
+    // nhưng ở đây nó sẽ chỉ áp dụng cho 1 node đang được chọn
+    handleUpdateNode({ hyperlink: url || undefined });
+  }
+  }, [selectedNodeIds, nodeMap, handleUpdateNode]);
 
   useEffect(() => {
     window.addEventListener('keydown', handleKeyDown);
@@ -1405,58 +1489,6 @@ const handleFitToScreen = useCallback(() => {
   // ================================================
   // Handlers cho Toolbar [CẬP NHẬT GĐ 7 + 9]
   // ================================================
-
-  const handleUpdateNode = (updates: Partial<NodeData>) => {
-    if (selectedNodeIds.length === 0) return;
-
-    let newNodes = [...nodes];
-    const idSet = selectedIdsSet;
-
-    // [MERGE] Giữ lại logic `styleLocked` từ feature/tt
-    const STYLE_KEYS: Array<keyof NodeData> = [
-      'shape', 'color', 'borderColor', 'borderWidth', 'borderStyle',
-      'fontFamily', 'fontSize', 'fontWeight', 'fontStyle', 'textDecoration', 'textAlign', 'textColor', 'textCase', 'nodeLength',
-      'branchColor', 'branchLineStyle', 'branchLineEnd', 'branchLineThickness'
-    ];
-    const isStyleUpdate = Object.keys(updates).some(k => STYLE_KEYS.includes(k as keyof NodeData));
-
-    // [MERGE] Giữ lại logic `branchColor` từ feature/tt
-    if (updates.branchColor !== undefined) {
-      const updateBranchColorRecursive = (nodeId: string, color: string) => {
-        // Chỉ áp dụng cho node đang được chọn
-        if (idSet.has(nodeId)) {
-          newNodes = newNodes.map(n => n.id === nodeId ? { ...n, branchColor: color } : n);
-        }
-        edges.forEach(e => { if (e.from === nodeId) updateBranchColorRecursive(e.to, color); });
-      };
-      // Lặp qua tất cả node được chọn
-      selectedNodeIds.forEach(id => updateBranchColorRecursive(id, updates.branchColor as string));
-    }
-    
-    // Áp dụng update cho tất cả node được chọn
-    newNodes = newNodes.map(n => idSet.has(n.id) ? { ...n, ...updates } : n);
-    
-    // [MERGE] Giữ lại logic `styleLocked` từ feature/tt
-    if (isStyleUpdate) {
-      const lockRec = (nodeId: string) => {
-        newNodes = newNodes.map(n => n.id === nodeId ? { ...n, styleLocked: true } : n);
-        edges.forEach(e => { if (e.from === nodeId) lockRec(e.to); });
-      };
-      // Lặp qua tất cả node được chọn
-      selectedNodeIds.forEach(id => lockRec(id));
-    }
-
-    setGraph(newNodes, edges);
-    if (updates.nodeLength) {
-      setTimeout(() => handleLayout(true), 50);
-    }
-    debouncedPushHistory();
-    debouncedPersistData();
-    // Gửi patch cho TỪNG node
-    selectedNodeIds.forEach(id => {
-      sendPatch('NODE_STYLE_UPDATE', { id, updates });
-    });
-  };
 
   // [MERGE] Giữ lại logic UI mới từ feature/tt
   const handleToggleColoredBranch = (state: boolean) => {
@@ -1795,6 +1827,10 @@ const handleSetGlobalBranchColor = (color: string) => {
           onZoomOut={handleZoomOut}
           onSetZoom={handleSetZoom}
           onFitToScreen={handleFitToScreen}
+          selectedNodeIds={selectedNodeIds}
+          onAddChild={handleToolbarAddChild}
+          onAddSibling={handleToolbarAddSibling}
+          onSetHyperlink={handleSetHyperlink}
         />
         <Sidebar />
 
@@ -2234,6 +2270,31 @@ const handleSetGlobalBranchColor = (color: string) => {
                         </Group>
                        )
                     )}
+                    {(style as any).hyperlink && (
+                    <Group
+                      // Đặt icon ở góc trên bên phải, bên ngoài node
+                      x={w / 2 - 10} // Điều chỉnh vị trí
+                      y={-h / 2 + 10} // Điều chỉnh vị trí
+                      onClick={(e) => {
+                        e.cancelBubble = true; // Ngăn không cho click này chọn node
+                        window.open((style as any).hyperlink, '_blank', 'noopener,noreferrer');
+                      }}
+                      onMouseEnter={(e) => { const stage = e.target.getStage(); if (stage) stage.container().style.cursor = 'pointer'; }}
+                      onMouseLeave={(e) => { const stage = e.target.getStage(); if (stage) stage.container().style.cursor = 'default'; }}
+                      title={`Mở link: ${(style as any).hyperlink}`}
+                    >
+                      {/* Vòng tròn nền nhỏ */}
+                      <Circle radius={9} fill="#E0E7FF" stroke="#4F46E5" strokeWidth={1} />
+                      {/* Icon Link (SVG Path) */}
+                      <Path 
+                        data="M9.25 10.75a.75.75 0 0 0 1.5 0v-1.5h1.5a.75.75 0 0 0 0-1.5h-1.5v-1.5a.75.75 0 0 0-1.5 0v1.5h-1.5a.75.75 0 0 0 0 1.5h1.5v1.5Z M3.75 5.5a2 2 0 0 1 2-2h4.5a2 2 0 0 1 2 2v1a.75.75 0 0 0 1.5 0v-1a3.5 3.5 0 0 0-3.5-3.5h-4.5A3.5 3.5 0 0 0 2.25 5.5v5A3.5 3.5 0 0 0 5.75 14h1a.75.75 0 0 0 0-1.5h-1a2 2 0 0 1-2-2v-5Z"
+                        fill="#4F46E5"
+                        scale={{ x: 0.8, y: 0.8 }}
+                        offsetX={10} // Căn giữa icon
+                        offsetY={10} // Căn giữa icon
+                      />
+                    </Group>
+                  )}
                   </Group>
                 );
               })}
