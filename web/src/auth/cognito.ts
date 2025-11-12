@@ -1,12 +1,18 @@
 // src/auth/cognito.ts
-
-
 import { cognitoConfig } from './cognitoConfig';
 
+/**
+ * [ĐÃ CẬP NHẬT] Sửa lỗi Đăng xuất
+ * Tệp này được dùng bởi trang /logout
+ */
 export function getLogoutUrl(): string {
  const u = new URL(`https://${cognitoConfig.Domain}/logout`);
+ 
+ // [FIX] Thêm 'response_type' VÀ 'logout_uri'
+ u.searchParams.set("response_type", "code");
  u.searchParams.set("client_id", cognitoConfig.ClientId);
- u.searchParams.set("logout_uri", cognitoConfig.RedirectUri.replace('/callback', '/dashboard')); // Redirect to dashboard after logout
+ u.searchParams.set("logout_uri", cognitoConfig.RedirectUri.replace('/callback', '/dashboard'));
+ 
  return u.toString();
 }
 
