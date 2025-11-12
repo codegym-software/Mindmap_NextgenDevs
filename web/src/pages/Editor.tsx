@@ -1413,6 +1413,36 @@ export default function Editor() {
     sendPatch('BACKGROUND_CHANGE', { color });
   };
   
+const handleSetGlobalBranchColor = (color: string) => {
+    pushHistory(useEditorStore.getState().nodes, useEditorStore.getState().edges);
+    // 1. Cập nhật màu toàn cục trong store
+    setGlobalStore({ globalBranchColor: color });
+
+    const { isColoredBranch } = useEditorStore.getState();
+
+    // 2. Nếu KHÔNG ở chế độ nhiều màu, cập nhật lại màu cho các node
+    if (!isColoredBranch) {
+      const newNodes = nodes.map(n => {
+        if (n.styleLocked) return n; // Bỏ qua node đã khóa style
+
+        const fill = mixWithWhite(color, 0.85); // Dùng màu toàn cục mới
+        return {
+          ...n,
+          branchColor: undefined, // Đảm bảo nó kế thừa màu toàn cục
+          color: fill,
+          textColor: getContrastColor(fill)
+        };
+      });
+      setGraph(newNodes, edges);
+    }
+    // (Nếu isColoredBranch = true, không cần làm gì,
+    // vì logic render đã tự đọc globalBranchColor khi cần)
+
+    debouncedPersistData();
+    // Gửi patch cho các user khác
+    sendPatch('GLOBAL_BRANCH_COLOR_CHANGE', { color });
+  };
+
   const handleApplyQuickStyle = (styleId: QuickStyleId) => {
     if (!selectedNodeId) return;
     const node = nodeMap.get(selectedNodeId);
@@ -1745,6 +1775,9 @@ export default function Editor() {
             y={pos.y}
             onWheel={(e) => {
               e.evt.preventDefault();
+              if (!e.evt.ctrlKey) {
+                return;
+              }
               const scaleBy = 1.05;
               const stage = e.target.getStage();
               if (!stage) return;
@@ -1764,15 +1797,22 @@ export default function Editor() {
               });
             }}
             onMouseDown={(e) => {
-              if (
-                e.evt.button === 1 ||
-                (e.evt.button === 0 && e.target === e.target.getStage())
-           ) {
-                setIsPanning(true);
-              }
+              // 1. Xác định ý định Pan: (Ctrl + Click trái) HOẶC (Click giữa)
+              const isPanIntent = (e.evt.ctrlKey && e.evt.button === 0) || e.evt.button === 1;
+
+              // Chỉ xử lý khi click vào nền (Stage)
               if (e.target === e.target.getStage()) {
-                setSelectedNodeId(null);
-                if (editingNodeId) stopEditing(true);
+                if (isPanIntent) {
+                  // Bắt đầu Pan
+                  setIsPanning(true);
+                } else if (e.evt.button === 0) {
+                  // Click trái bình thường -> Bỏ chọn
+                  setSelectedNodeId(null);
+                  if (editingNodeId) stopEditing(true);
+
+                  //  logic "chọn vùng" (selection rect)
+                  // (Hiện tại chỉ là bỏ chọn)
+                }
               }
             }}
             onMouseUp={() => setIsPanning(false)}
@@ -2015,7 +2055,7 @@ export default function Editor() {
                 setGlobalStore({ branchLineWidth: width });
               }}
               onToggleColoredBranch={(state) => handleToggleColoredBranch(state)}
-              // SỬA: Thêm handler cho màu nhánh toàn cục
+              onSetGlobalBranchColor={handleSetGlobalBranchColor}
               onSetActiveColorTheme={(themeName) => {
                 pushHistory(useEditorStore.getState().nodes, useEditorStore.getState().edges);
                 setGlobalStore({ activeColorThemeId: themeName });

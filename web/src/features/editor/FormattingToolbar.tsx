@@ -37,6 +37,7 @@ type FormattingToolbarProps = {
   onSetGlobalFont: (font: string) => void;
   onSetBranchLineWidth: (width: number) => void;
   onToggleColoredBranch: (state: boolean) => void;
+  onSetGlobalBranchColor: (color: string) => void;
   onSetActiveColorTheme: (themeName: keyof typeof colorThemes) => void;
 
   onUpdateNode: (id: string, updates: Partial<NodeData>) => void;
@@ -67,6 +68,7 @@ export default function FormattingToolbar({
   onSetGlobalFont,
   onSetBranchLineWidth,
   onToggleColoredBranch,
+  onSetGlobalBranchColor,
   onSetActiveColorTheme,
   onUpdateNode,
   onApplyQuickStyle,
@@ -119,6 +121,7 @@ export default function FormattingToolbar({
             onSetGlobalFont={onSetGlobalFont}
             onSetBranchLineWidth={onSetBranchLineWidth}
             onToggleColoredBranch={onToggleColoredBranch}
+            onSetGlobalBranchColor={onSetGlobalBranchColor}
           />
         )}
       </div>
@@ -165,6 +168,7 @@ type MapPanelProps = {
   onSetGlobalFont: (font: string) => void;
   onSetBranchLineWidth: (width: number) => void;
   onToggleColoredBranch: (state: boolean) => void;
+  onSetGlobalBranchColor: (color: string) => void;
 };
 function MapPanel({
   globalStructure,
@@ -176,6 +180,7 @@ function MapPanel({
   onSetGlobalFont,
   onSetBranchLineWidth,
   onToggleColoredBranch,
+  onSetGlobalBranchColor,
 }: MapPanelProps) {
   const currentFont = useEditorStore((s) => s.globalFont);
   const currentLineWidth = useEditorStore((s) => s.branchLineWidth);
@@ -245,7 +250,7 @@ function MapPanel({
 <ColorItem
         label="Màu nhánh"
         color={globalBranchColor}
-        onChange={(color) => useEditorStore.setState({ globalBranchColor: color })}
+        onChange={onSetGlobalBranchColor}
       >
         <label className="flex items-center gap-2 cursor-pointer text-sm">
           <input

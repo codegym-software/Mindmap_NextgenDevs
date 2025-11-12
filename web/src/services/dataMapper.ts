@@ -20,7 +20,7 @@ import {
 
 export type BeNodeStyle = {
   // === Các trường BE gốc ===
-  shape: 'rectangle' | 'roundedRect' | 'diamond' | 'ellipse'; // Đảm bảo hỗ trợ đầy đủ
+  shape: 'rectangle' | 'roundedRect'; // Đảm bảo hỗ trợ đầy đủ
   backgroundColor: string; // Tương ứng 'color' của FE
   textColor: string;
   borderStyle: 'solid' | 'dashed' | 'dotted';
