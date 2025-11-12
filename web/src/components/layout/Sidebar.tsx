@@ -6,6 +6,7 @@ import { Plus, Search, Edit, Trash2, Share2, PanelLeftOpen, Pin, PinOff } from '
 import { useToast } from "../../hooks/useToast";
 import { mindmapsApi } from "../../services/mindmapsApi";
 import { useLocalMindmap } from "../../hooks/useLocalMindmap";
+import ConfirmModal from "../common/ConfirmModal";
 
 const PIN_KEY = "mm_sidebar_pinned";
 
@@ -22,6 +23,8 @@ export default function Sidebar() {
 
   const [editingId, setEditingId] = useState<string | null>(null);
   const [tempName, setTempName] = useState<string>("");
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   useEffect(() => {
     const fetchMindmaps = async () => {
@@ -97,22 +100,32 @@ export default function Sidebar() {
     }
   };
 
-  const handleDelete = async (id: string) => {
-    if (!window.confirm("Bạn có chắc chắn muốn xóa mindmap này không?")) return;
+  const handleDelete = (id: string) => {
+    setDeletingId(id);
+    setIsDeleteModalOpen(true);
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!deletingId) return;
 
     try {
       if (isAuthed) {
-        await mindmapsApi.delete(id);
-        setMindmaps({ items: items.filter(i => i.id !== id) });
+        await mindmapsApi.delete(deletingId);
+        setMindmaps({ items: items.filter(i => i.id !== deletingId) });
       } else {
-        removeGuest(id); 
+        removeGuest(deletingId); 
       }
       addToast("Đã xóa mindmap", "success");
     } catch (e: any) {
       console.error("Delete failed:", e);
       addToast(e?.message || "Xóa thất bại", "error");
+    } finally {
+      // Luôn đóng modal và reset ID
+      setIsDeleteModalOpen(false);
+      setDeletingId(null);
     }
   };
+
   const handleShare = (id: string) => {
       const url = `${window.location.origin}/editor/${id}`;
       navigator.clipboard.writeText(url);
@@ -210,6 +223,17 @@ export default function Sidebar() {
             )}
           </div>
         </aside>
+        <ConfirmModal
+          isOpen={isDeleteModalOpen}
+          onClose={() => {
+            setIsDeleteModalOpen(false);
+            setDeletingId(null);
+          }}
+          onConfirm={handleConfirmDelete}
+          title="Xác nhận xóa Mindmap"
+          message="Bạn có chắc chắn muốn xóa mindmap này không? Thao tác này không thể hoàn tác."
+          confirmText="Xác nhận Xóa"
+        />
       </>
   );
 }

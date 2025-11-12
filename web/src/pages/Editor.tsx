@@ -265,7 +265,7 @@ export default function Editor() {
     x: window.innerWidth / 2,
     y: (window.innerHeight - 48) / 2, // UI Mới (h-12)
   });
-  const [selectedNodeId, setSelectedNodeId] = useState<string | null>('root');
+  const [selectedNodeIds, setSelectedNodeIds] = useState<string[]>(['root']);
   const [isPanning, setIsPanning] = useState(false);
   const [editingNodeId, setEditingNodeId] = useState<string | null>(null);
   const [scale, setScale] = useState(1);
@@ -297,10 +297,25 @@ export default function Editor() {
     () => new Set(edges.map((e) => e.from)),
     [edges]
   );
+  const [selectionRect, setSelectionRect] = useState({
+    x: 0,
+    y: 0,
+    width: 0,
+    height: 0,
+    visible: false,
+  });
+  const selectionStartPos = useRef({ x: 0, y: 0 });
+  const isSelecting = useRef(false); // Thêm cờ này để biết đang kéo chọn vùng
+
+  // Dùng Set để kiểm tra `isSelected` nhanh hơn
+  const selectedIdsSet = useMemo(() => new Set(selectedNodeIds), [selectedNodeIds]);
+
+  // Lấy node đầu tiên trong danh sách chọn để hiển thị style trên toolbar
+  const firstSelectedId = useMemo(() => selectedNodeIds[0], [selectedNodeIds]);
   const currentNode = useMemo(() => {
-    if (!selectedNodeId) return null;
-    return nodeMap.get(selectedNodeId) || null;
-  }, [selectedNodeId, nodeMap]);
+    if (!firstSelectedId) return null;
+    return nodeMap.get(firstSelectedId) || null;
+  }, [firstSelectedId, nodeMap]);
 
   // Logic tính toán (Không thay đổi)
   const computedNodeStyles = useMemo(() => {
@@ -438,7 +453,7 @@ export default function Editor() {
           const theme =
             colorThemes[activeColorThemeId as keyof typeof colorThemes];
           setBackgroundColor(theme.background);
-          setSelectedNodeId('root');
+          setSelectedNodeIds(['root']);
           setIsDataLoaded(true);
         }
       } catch (error) {
@@ -954,7 +969,7 @@ export default function Editor() {
   // ================================================
 
   const startEditing = useCallback((nodeId: string) => {
-    setSelectedNodeId(nodeId);
+    setSelectedNodeIds([nodeId]);
     setEditingNodeId(nodeId);
     setTimeout(() => {
       editingInputRef.current?.focus();
@@ -1109,9 +1124,13 @@ export default function Editor() {
   }, [nodes, edges, pushHistory, setGraph, nodeMap, nodeVisuals, startEditing, handleLayout, handleAddChild]);
 
   const handleDeleteNode = useCallback(
-    (nodeId: string) => {
-      if (nodeId === 'root' || !selectedNodeId) return;
-      const nodesToDelete = new Set<string>([nodeId]);
+    () => { // Bỏ tham số nodeId
+      if (selectedNodeIds.length === 0) return;
+
+      const idsToDelete = selectedNodeIds.filter(id => id !== 'root');
+      if (idsToDelete.length === 0) return;
+
+      const nodesToDelete = new Set<string>();
       const findChildren = (id: string) => {
         edges.forEach((e) => {
           if (e.from === id) {
@@ -1120,22 +1139,28 @@ export default function Editor() {
           }
         });
       };
-      findChildren(nodeId);
-      const parentId = nodes.find((n) => n.id === nodeId)?.parentId ?? 'root';
+      
+      idsToDelete.forEach(id => {
+        nodesToDelete.add(id);
+        findChildren(id);
+      });
+
+      // Chọn cha của node ĐẦU TIÊN bị xóa
+      const parentId = nodes.find((n) => n.id === idsToDelete[0])?.parentId ?? 'root';
       const newNodes = nodes.filter((n) => !nodesToDelete.has(n.id));
       const newEdges = edges.filter(
         (e) => !nodesToDelete.has(e.from) && !nodesToDelete.has(e.to)
       );
       setGraph(newNodes, newEdges);
-      setSelectedNodeId(parentId);
+      setSelectedNodeIds([parentId]); // Chọn node cha
       setTimeout(() => handleLayout(true), 50);
       debouncedPushHistory();
       debouncedPersistData();
-      sendPatch('NODE_DELETE', { nodeIds: Array.from(nodesToDelete) }); // GĐ 9
+      sendPatch('NODE_DELETE', { nodeIds: Array.from(nodesToDelete) });
     },
     [
-      nodes, edges, setGraph, selectedNodeId, handleLayout,
-      debouncedPushHistory, debouncedPersistData, sendPatch, // GĐ 7 & 9
+      nodes, edges, setGraph, selectedNodeIds, handleLayout, // Cập nhật dependency
+      debouncedPushHistory, debouncedPersistData, sendPatch,
     ]
   );
 
@@ -1167,19 +1192,29 @@ export default function Editor() {
         return; // Thoát sớm
       }
 
-      if (!selectedNodeId) return;
+      if (selectedNodeIds.length !== 1) {
+        // Ngoại trừ phím Delete
+        if (e.key === 'Delete' || e.key === 'Backspace') {
+          e.preventDefault();
+          handleDeleteNode(); // Gọi hàm không tham số
+        }
+        return;
+      }
+      
+      const singleSelectedId = selectedNodeIds[0]; // Đây là node duy nhất đang được chọn
+
       if (e.key === 'Tab') {
         e.preventDefault();
-        handleAddChild(selectedNodeId);
+        handleAddChild(singleSelectedId);
       } else if (e.key === 'Enter') {
         e.preventDefault();
-        handleAddSibling(selectedNodeId);
+        handleAddSibling(singleSelectedId);
       } else if (e.key === 'Delete' || e.key === 'Backspace') {
         e.preventDefault();
-        handleDeleteNode(selectedNodeId);
-      } else if (e.key === 'F2') {
+        handleDeleteNode(); // Gọi hàm không tham số
+      } else if (e.key === 'F2') {
         e.preventDefault();
-        startEditing(selectedNodeId);
+        startEditing(singleSelectedId);
       } else if (
         e.key.length === 1 &&
         /^[a-zA-Z0-9\S]$/.test(e.key) &&
@@ -1187,16 +1222,16 @@ export default function Editor() {
         !e.metaKey
       ) {
         e.preventDefault();
-        startEditing(selectedNodeId);
+        startEditing(singleSelectedId);
         setTimeout(() => {
           if (editingInputRef.current) editingInputRef.current.value = e.key;
         }, 50);
       }
     },
     [
-      editingNodeId, selectedNodeId, handleAddChild,
+      editingNodeId, selectedNodeIds, handleAddChild, // Cập nhật dependency
       handleAddSibling, handleDeleteNode, undo, redo, startEditing,
-    ] // lastEditStopTime là ref, không cần
+    ]
   );
 
   useEffect(() => {
@@ -1322,9 +1357,11 @@ export default function Editor() {
   // Handlers cho Toolbar [CẬP NHẬT GĐ 7 + 9]
   // ================================================
 
-  const handleUpdateNode = (id: string, updates: Partial<NodeData>) => {
-    // [GĐ 7] Xóa pushHistory (đã làm ở GĐ 7 gốc)
+  const handleUpdateNode = (updates: Partial<NodeData>) => {
+    if (selectedNodeIds.length === 0) return;
+
     let newNodes = [...nodes];
+    const idSet = selectedIdsSet;
 
     // [MERGE] Giữ lại logic `styleLocked` từ feature/tt
     const STYLE_KEYS: Array<keyof NodeData> = [
@@ -1337,13 +1374,18 @@ export default function Editor() {
     // [MERGE] Giữ lại logic `branchColor` từ feature/tt
     if (updates.branchColor !== undefined) {
       const updateBranchColorRecursive = (nodeId: string, color: string) => {
-        newNodes = newNodes.map(n => n.id === nodeId ? { ...n, branchColor: color } : n);
+        // Chỉ áp dụng cho node đang được chọn
+        if (idSet.has(nodeId)) {
+          newNodes = newNodes.map(n => n.id === nodeId ? { ...n, branchColor: color } : n);
+        }
         edges.forEach(e => { if (e.from === nodeId) updateBranchColorRecursive(e.to, color); });
       };
-      updateBranchColorRecursive(id, updates.branchColor as string);
+      // Lặp qua tất cả node được chọn
+      selectedNodeIds.forEach(id => updateBranchColorRecursive(id, updates.branchColor as string));
     }
     
-    newNodes = newNodes.map(n => n.id === id ? { ...n, ...updates } : n);
+    // Áp dụng update cho tất cả node được chọn
+    newNodes = newNodes.map(n => idSet.has(n.id) ? { ...n, ...updates } : n);
     
     // [MERGE] Giữ lại logic `styleLocked` từ feature/tt
     if (isStyleUpdate) {
@@ -1351,18 +1393,20 @@ export default function Editor() {
         newNodes = newNodes.map(n => n.id === nodeId ? { ...n, styleLocked: true } : n);
         edges.forEach(e => { if (e.from === nodeId) lockRec(e.to); });
       };
-      lockRec(id);
+      // Lặp qua tất cả node được chọn
+      selectedNodeIds.forEach(id => lockRec(id));
     }
 
     setGraph(newNodes, edges);
     if (updates.nodeLength) {
       setTimeout(() => handleLayout(true), 50);
     }
-    // [GĐ 7] Gọi debouncer
     debouncedPushHistory();
     debouncedPersistData();
-    // [GĐ 9] Gửi patch
-    sendPatch('NODE_STYLE_UPDATE', { id, updates });
+    // Gửi patch cho TỪNG node
+    selectedNodeIds.forEach(id => {
+      sendPatch('NODE_STYLE_UPDATE', { id, updates });
+    });
   };
 
   // [MERGE] Giữ lại logic UI mới từ feature/tt
@@ -1444,20 +1488,28 @@ const handleSetGlobalBranchColor = (color: string) => {
   };
 
   const handleApplyQuickStyle = (styleId: QuickStyleId) => {
-    if (!selectedNodeId) return;
-    const node = nodeMap.get(selectedNodeId);
-    if (!node) return;
+    if (selectedNodeIds.length === 0) return;
+    const idSet = selectedIdsSet;
 
-    const resetStyle = applyNodeDefaults(node, activeTheme);
-    const newNodes = nodes.map((n) =>
-      n.id === selectedNodeId
-        ? { ...n, ...resetStyle, quickStyleId: styleId } : n
-    );
+    const newNodes = nodes.map((n) => {
+      if (idSet.has(n.id)) {
+        const resetStyle = applyNodeDefaults(n, activeTheme);
+        return { ...n, ...resetStyle, quickStyleId: styleId };
+      }
+      return n;
+    });
+    
     setGraph(newNodes, edges);
     setTimeout(() => handleLayout(true), 50);
     debouncedPushHistory();
     debouncedPersistData();
-    sendPatch('NODE_QUICK_STYLE_APPLY', { id: selectedNodeId, styleId, resetStyle }); // GĐ 9
+    
+    // Gửi patch cho TỪNG node
+    const tempResetStyle = applyNodeDefaults(nodes[0], activeTheme); // Tạm
+    selectedNodeIds.forEach(id => {
+      // TODO: Cần lấy resetStyle chính xác cho từng node
+      sendPatch('NODE_QUICK_STYLE_APPLY', { id: id, styleId, resetStyle: tempResetStyle });
+    });
   };
 
   const handleCopyStyle = () => {
@@ -1473,28 +1525,30 @@ const handleSetGlobalBranchColor = (color: string) => {
   };
 
   const handlePasteStyle = () => {
-    if (!selectedNodeId || !styleClipboard) return;
+    if (!selectedNodeIds || !styleClipboard) return;
+    const idSet = selectedIdsSet;
     const newNodes = nodes.map((n) =>
-      n.id === selectedNodeId ? { ...n, ...styleClipboard } : n
+      idSet.has(n.id) ? { ...n, ...styleClipboard } : n
     );
     setGraph(newNodes, edges);
     setTimeout(() => handleLayout(true), 50);
     debouncedPushHistory();
     debouncedPersistData();
-    sendPatch('NODE_STYLE_PASTE', { id: selectedNodeId, style: styleClipboard }); // GĐ 9
+    sendPatch('NODE_STYLE_PASTE', { id: selectedNodeIds, style: styleClipboard }); // GĐ 9
   };
 
   const handleResetStyle = () => {
-    if (!selectedNodeId || !currentNode) return;
+    if (!selectedNodeIds || !currentNode) return;
+    const idSet = selectedIdsSet;
     const resetStyle = applyNodeDefaults(currentNode, activeTheme);
     const newNodes = nodes.map((n) =>
-      n.id === selectedNodeId ? { ...n, ...resetStyle } : n
+      idSet.has(n.id) ? { ...n, ...resetStyle } : n
     );
     setGraph(newNodes, edges);
     setTimeout(() => handleLayout(true), 50);
     debouncedPushHistory();
     debouncedPersistData();
-    sendPatch('NODE_STYLE_RESET', { id: selectedNodeId, resetStyle }); // GĐ 9
+    sendPatch('NODE_STYLE_RESET', { id: selectedNodeIds, resetStyle }); // GĐ 9
   };
 
   // ================================================
@@ -1797,28 +1851,109 @@ const handleSetGlobalBranchColor = (color: string) => {
               });
             }}
             onMouseDown={(e) => {
-              // 1. Xác định ý định Pan: (Ctrl + Click trái) HOẶC (Click giữa)
+              const stage = e.target.getStage();
+              if (!stage) return;
+
               const isPanIntent = (e.evt.ctrlKey && e.evt.button === 0) || e.evt.button === 1;
 
               // Chỉ xử lý khi click vào nền (Stage)
-              if (e.target === e.target.getStage()) {
+              if (e.target === stage) {
                 if (isPanIntent) {
-                  // Bắt đầu Pan
                   setIsPanning(true);
+                  isSelecting.current = false;
                 } else if (e.evt.button === 0) {
-                  // Click trái bình thường -> Bỏ chọn
-                  setSelectedNodeId(null);
+                  // Click trái bình thường -> Bắt đầu chọn vùng
+                  setIsPanning(false);
+                  isSelecting.current = true;
+                  
+                  const pos = stage.getPointerPosition();
+                  if (!pos) return;
+                  
+                  // Lấy vị trí tương đối (un-scaled)
+                  const unscaledPos = {
+                    x: (pos.x - stage.x()) / stage.scaleX(),
+                    y: (pos.y - stage.y()) / stage.scaleY(),
+                  };
+                  
+                  selectionStartPos.current = unscaledPos;
+                  setSelectionRect({
+                    x: unscaledPos.x,
+                    y: unscaledPos.y,
+                    width: 0,
+                    height: 0,
+                    visible: true,
+                  });
+                  
+                  // Nếu không giữ Shift, bỏ chọn tất cả
+                  if (!e.evt.shiftKey) {
+                    setSelectedNodeIds([]);
+                  }
                   if (editingNodeId) stopEditing(true);
-
-                  //  logic "chọn vùng" (selection rect)
-                  // (Hiện tại chỉ là bỏ chọn)
                 }
               }
             }}
-            onMouseUp={() => setIsPanning(false)}
+            onMouseUp={(e) => {
+              setIsPanning(false);
+
+              if (isSelecting.current && selectionRect.visible) {
+                // Đã kéo xong, ẩn hình chữ nhật
+                isSelecting.current = false;
+                setSelectionRect({ ...selectionRect, visible: false });
+
+                // Xác định các node nằm trong vùng chọn
+                const { x, y, width, height } = selectionRect;
+                const rect = {
+                  x1: x,
+                  y1: y,
+                  x2: x + width,
+                  y2: y + height,
+                };
+
+                const newlySelectedIds = visibleNodes
+                  .filter((node) => {
+                    // Chọn nếu tâm node nằm trong hình chữ nhật
+                    return (
+                      node.x > rect.x1 &&
+                      node.x < rect.x2 &&
+                      node.y > rect.y1 &&
+                      node.y < rect.y2
+                    );
+                  })
+                  .map((node) => node.id);
+
+                if (e.evt.shiftKey) {
+                  // Thêm vào danh sách cũ
+                  setSelectedNodeIds(prevIds => [...new Set([...prevIds, ...newlySelectedIds])]);
+                } else {
+                  // Thay thế danh sách cũ
+                  setSelectedNodeIds(newlySelectedIds);
+                }
+              }
+            }}
             onMouseMove={(e) => {
-              if (isPanning)
+              if (isPanning) {
                 setPos({ x: pos.x + e.evt.movementX, y: pos.y + e.evt.movementY });
+              } else if (isSelecting.current) {
+                // Cập nhật kích thước hình chữ nhật chọn
+                const stage = e.target.getStage();
+                if (!stage) return;
+                const pos = stage.getPointerPosition();
+                if (!pos) return;
+                
+                const currentUnscaledPos = {
+                  x: (pos.x - stage.x()) / stage.scaleX(),
+                  y: (pos.y - stage.y()) / stage.scaleY(),
+                };
+                
+                const start = selectionStartPos.current;
+                setSelectionRect({
+                  visible: true,
+                  x: Math.min(start.x, currentUnscaledPos.x),
+                  y: Math.min(start.y, currentUnscaledPos.y),
+                  width: Math.abs(start.x - currentUnscaledPos.x),
+                  height: Math.abs(start.y - currentUnscaledPos.y),
+               });
+              }
             }}
             onDblClick={(e) => {
               const stage = e.target.getStage();
@@ -1917,7 +2052,7 @@ const handleSetGlobalBranchColor = (color: string) => {
                 if (!visual) return null;
                 const { style, box } = visual;
                 const { w, h, textToRender, finalFontSize } = box;
-                const isSelected = node.id === selectedNodeId;
+                const isSelected = selectedIdsSet.has(node.id);
                 const isDropTarget = node.id === dropTargetId;
                 const hasChildren = nodesWithChildren.has(node.id);
                 const shapeProps = {
@@ -1933,7 +2068,24 @@ const handleSetGlobalBranchColor = (color: string) => {
                     onDragStart={() => handleDragStart(node.id)}
                     onDragMove={(e) => handleDragMove(e, node.id)}
                     onDragEnd={(e) => handleDragEnd(e, node.id)}
-                    onClick={(e) => { e.cancelBubble = true; setSelectedNodeId(node.id); }}
+                    onClick={(e) => {
+                      e.cancelBubble = true;
+                      if (e.evt.shiftKey) {
+                        // Giữ Shift: Thêm/bớt
+                        setSelectedNodeIds(prevIds => {
+                          const newSet = new Set(prevIds);
+                          if (newSet.has(node.id)) {
+                            newSet.delete(node.id);
+                          } else {
+                            newSet.add(node.id);
+                          }
+                          return Array.from(newSet);
+                        });
+                      } else {
+                        // Click thường: Chỉ chọn node này
+                        setSelectedNodeIds([node.id]);
+                      }
+                    }}
                     onDblClick={(e) => { e.cancelBubble = true; startEditing(node.id); }}
                     onMouseEnter={() => setHoveredNodeId(node.id)}
                     onMouseLeave={() => setHoveredNodeId(null)}
@@ -2031,11 +2183,21 @@ const handleSetGlobalBranchColor = (color: string) => {
                   </Group>
                 );
               })}
+              <Rect
+                x={selectionRect.x}
+                y={selectionRect.y}
+                width={selectionRect.width}
+                height={selectionRect.height}
+                fill="rgba(0, 100, 255, 0.3)"
+                stroke="#0064FF"
+                strokeWidth={1}
+                visible={selectionRect.visible}
+              />
             </Layer>
           </Stage>
           {isFormattingToolbarOpen && (
             <FormattingToolbar
-              selectedId={selectedNodeId}
+              selectedIds={selectedNodeIds}
               currentNode={currentNode}
               currentBackgroundColor={backgroundColor}
               globalStructure={globalStructure}
@@ -2062,11 +2224,11 @@ const handleSetGlobalBranchColor = (color: string) => {
                 setBackgroundColor(colorThemes[themeName as keyof typeof colorThemes].background);
               }}
               
-              onUpdateNode={(id, updates) => handleUpdateNode(id, updates)}
+              onUpdateNode={handleUpdateNode}
               onApplyQuickStyle={handleApplyQuickStyle}
               onCopyStyle={handleCopyStyle}
               onPasteStyle={handlePasteStyle}
-              onResetStyle={handleResetStyle}
+              onResetStyle={handleResetStyle}
             />
           )}
         </div>
