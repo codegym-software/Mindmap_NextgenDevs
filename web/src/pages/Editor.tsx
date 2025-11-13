@@ -103,7 +103,7 @@ function mixWithWhite(hex: string, amount = 0.85) {
 function getContrastColor(hex: string) {
   const { r, g, b } = hexToRgb(hex);
   const lum = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
-  return lum > 0.6 ? '#000000' : '#FFFFFF';
+return lum > 0.6 ? '#000000' : '#FFFFFF';
 }
 
 // =================================================================================
@@ -167,6 +167,7 @@ function saveGuestDoc(
  */
 function calculateNodeBox(node: NodeData, style: NodeData) {
   const { fontSize, nodeLength, nodeText, textCase, shape } = style;
+  const borderWidth = style.borderWidth || 0;
   let processedText = nodeText || '';
   if (textCase === 'uppercase') processedText = processedText.toUpperCase();
   if (textCase === 'lowercase') processedText = processedText.toLowerCase();
@@ -186,12 +187,13 @@ function calculateNodeBox(node: NodeData, style: NodeData) {
     processedText.split('\n').forEach((line: string) => {
       maxWidth = Math.max(maxWidth, measureWidth(line));
     });
-    w = maxWidth + PADDING_X * 2;
+    w = maxWidth + PADDING_X * 2 + borderWidth * 2;
     w = Math.max(w, 80);
     wrappedLines = processedText.split('\n');
   } else {
     w = Number(nodeLength) || 150;
-    const lines = processedText.split('\n');
+    const contentWidth = w - PADDING_X * 2 - borderWidth * 2;
+const lines = processedText.split('\n');
     lines.forEach((line: string) => {
       if (line.length === 0) {
         wrappedLines.push('');
@@ -202,10 +204,10 @@ function calculateNodeBox(node: NodeData, style: NodeData) {
       for (const word of words) {
         const testLine = currentLine ? `${currentLine} ${word}` : word;
         const testWidth = measureWidth(testLine);
-        if (testWidth > w - PADDING_X * 2) {
+        if (testWidth > contentWidth) {
           if (currentLine) wrappedLines.push(currentLine);
           currentLine = word;
-          while (measureWidth(currentLine) > w - PADDING_X * 2) {
+          while (measureWidth(currentLine) > contentWidth) {
             wrappedLines.push(currentLine.substring(0, 20));
             currentLine = currentLine.substring(20);
           }
@@ -220,8 +222,7 @@ function calculateNodeBox(node: NodeData, style: NodeData) {
     finalLineHeight + PADDING_Y * 2,
     wrappedLines.length * finalLineHeight + PADDING_Y * 2
   );
-  // (Logic shape diamond/ellipse đã bị xóa khỏi feature/tt,
-  // nhưng sẽ được hỗ trợ bởi dataMapper/useEditorStore (GĐ B) nếu chúng ta render nó)
+
   return { w, h, textToRender: wrappedLines.join('\n'), finalFontSize };
 }
 
@@ -265,7 +266,7 @@ export default function Editor() {
     x: window.innerWidth / 2,
     y: (window.innerHeight - 48) / 2, // UI Mới (h-12)
   });
-  const [selectedNodeId, setSelectedNodeId] = useState<string | null>('root');
+  const [selectedNodeIds, setSelectedNodeIds] = useState<string[]>(['root']);
   const [isPanning, setIsPanning] = useState(false);
   const [editingNodeId, setEditingNodeId] = useState<string | null>(null);
   const [scale, setScale] = useState(1);
@@ -278,7 +279,7 @@ export default function Editor() {
   const [backgroundColor, setBackgroundColor] = useState('#FAFAFB');
   const [styleClipboard, setStyleClipboard] = useState<Partial<NodeData> | null>(
     null
-  );
+);
   // [MERGE] State UI mới từ feature/tt
   const [rootCollapse, setRootCollapse] = useState({ left: false, right: false });
   const lastEditStopTime = useRef(0);
@@ -297,10 +298,25 @@ export default function Editor() {
     () => new Set(edges.map((e) => e.from)),
     [edges]
   );
+  const [selectionRect, setSelectionRect] = useState({
+    x: 0,
+    y: 0,
+    width: 0,
+    height: 0,
+    visible: false,
+  });
+  const selectionStartPos = useRef({ x: 0, y: 0 });
+  const isSelecting = useRef(false); // Thêm cờ này để biết đang kéo chọn vùng
+
+  // Dùng Set để kiểm tra `isSelected` nhanh hơn
+  const selectedIdsSet = useMemo(() => new Set(selectedNodeIds), [selectedNodeIds]);
+
+  // Lấy node đầu tiên trong danh sách chọn để hiển thị style trên toolbar
+  const firstSelectedId = useMemo(() => selectedNodeIds[0], [selectedNodeIds]);
   const currentNode = useMemo(() => {
-    if (!selectedNodeId) return null;
-    return nodeMap.get(selectedNodeId) || null;
-  }, [selectedNodeId, nodeMap]);
+    if (!firstSelectedId) return null;
+    return nodeMap.get(firstSelectedId) || null;
+  }, [firstSelectedId, nodeMap]);
 
   // Logic tính toán (Không thay đổi)
   const computedNodeStyles = useMemo(() => {
@@ -347,8 +363,8 @@ export default function Editor() {
 
   // 1. Luồng Undo/Redo (0.5s)
   const debouncedPushHistory = useDebouncedCallback(() => {
-    const { nodes, edges } = useEditorStore.getState();
-    pushHistory(nodes, edges);
+const { nodes, edges } = useEditorStore.getState();
+    pushHistory(useEditorStore.getState().nodes, useEditorStore.getState().edges);
     // console.log("v0.5: Đã lưu vào Undo stack");
   }, 500);
 
@@ -433,12 +449,12 @@ export default function Editor() {
           setGraph(data.nodes, data.edges);
           pushHistory(data.nodes, data.edges); // Push lần đầu
           setGlobalStore({
-            globalStructure: (data.layoutMode as GlobalStructure) || 'mindmap',
+globalStructure: (data.layoutMode as GlobalStructure) || 'mindmap',
           });
           const theme =
             colorThemes[activeColorThemeId as keyof typeof colorThemes];
           setBackgroundColor(theme.background);
-          setSelectedNodeId('root');
+          setSelectedNodeIds(['root']);
           setIsDataLoaded(true);
         }
       } catch (error) {
@@ -525,8 +541,7 @@ export default function Editor() {
 
     let isConnecting = true;
     let isMounted = true; // Cờ cleanup
-
-    const connect = async () => {
+const connect = async () => {
       try {
         const token = await getAccessToken();
         if (!token || !isMounted) return;
@@ -556,7 +571,6 @@ export default function Editor() {
               useEditorStore.getState();
 
             // QUAN TRỌNG: Chỉ gọi setGraph, KHÔNG gọi debouncedPushHistory
-            // để đảm bảo Undo/Redo cá nhân hóa.
 
             switch (type) {
               case 'USER_JOINED':
@@ -569,7 +583,7 @@ export default function Editor() {
               case 'NODE_MOVE': {
                 const { id: nodeId, x, y } = payload;
                 const newNodes = currentNodes.map((n) =>
-                  n.id === nodeId ? { ...n, x, y } : n
+                   n.id === nodeId ? { ...n, x, y } : n
                 );
                 setGraph(newNodes, currentEdges);
                 break;
@@ -600,7 +614,7 @@ export default function Editor() {
                 setTimeout(() => handleLayout(true), 0);
                 break;
               }
-              case 'NODE_REPARENT': {
+case 'NODE_REPARENT': {
                 const { nodeId, newParentId, x, y, side } = payload;
                 const newNodes = currentNodes.map((n) =>
                   n.id === nodeId
@@ -620,7 +634,7 @@ export default function Editor() {
                   ];
                 }
                 setGraph(newNodes, newEdges);
-                setTimeout(() => handleLayout(true), 0);
+               setTimeout(() => handleLayout(true), 0);
                 break;
               }
               case 'NODE_STYLE_UPDATE': {
@@ -633,7 +647,7 @@ export default function Editor() {
                 break;
               }
               case 'NODE_QUICK_STYLE_APPLY': {
-                const { id: nodeId, styleId, resetStyle } = payload;
+              const { id: nodeId, styleId, resetStyle } = payload;
                 const newNodes = currentNodes.map((n) =>
                   n.id === nodeId
                     ? { ...n, ...resetStyle, quickStyleId: styleId }
@@ -644,12 +658,12 @@ export default function Editor() {
                 break;
               }
               case 'NODE_STYLE_PASTE': {
-                const { id: nodeId, style } = payload;
+               const { id: nodeId, style } = payload;
                 const newNodes = currentNodes.map((n) =>
                   n.id === nodeId ? { ...n, ...style } : n
                 );
                 setGraph(newNodes, currentEdges);
-                setTimeout(() => handleLayout(true), 0);
+               setTimeout(() => handleLayout(true), 0);
                 break;
               }
               case 'NODE_STYLE_RESET': {
@@ -667,13 +681,13 @@ export default function Editor() {
                   n.id === nodeId ? { ...n, collapsed: !n.collapsed } : n
                 );
                 setGraph(newNodes, currentEdges);
-                break;
+               break;
               }
               case 'ROOT_TOGGLE_COLLAPSE': {
-                const { side } = payload;
+const { side } = payload;
                 // [FIX TS ERROR] Thêm type guard
                 if (side === 'left' || side === 'right') {
-                  setRootCollapse(prev => ({ ...prev, [side as 'left' | 'right']: !prev[side as 'left' | 'right'] }));
+               setRootCollapse(prev => ({ ...prev, [side as 'left' | 'right']: !prev[side as 'left' | 'right'] }));
                 } else {
                   console.warn(`Invalid side received in ROOT_TOGGLE_COLLAPSE: ${side}`);
                 }
@@ -684,7 +698,7 @@ export default function Editor() {
             }
           } catch (e) {
             console.error('Lỗi khi xử lý tin nhắn WebSocket:', e);
-          }
+         }
         };
       } catch (err) {
         console.error("Không thể lấy access token cho WebSocket:", err);
@@ -698,7 +712,7 @@ export default function Editor() {
     return () => {
       isMounted = false;
       if (wsRef.current && !isConnecting) {
-        console.log('Closing WebSocket connection...');
+       console.log('Closing WebSocket connection...');
         wsRef.current.close();
       }
       wsRef.current = null;
@@ -710,6 +724,8 @@ export default function Editor() {
   // Style & Layout Logic
   // [MERGE] Giữ nguyên logic 5 bước của feature/tt
   // ================================================
+
+  
 
   const handleLayout = useCallback(
     (keepCamera: boolean = false) => {
@@ -732,7 +748,7 @@ export default function Editor() {
           let root: TreeNode | null = null;
           nodes.forEach((node) => {
             treeMap.set(node.id, { ...node, children: [], subtreeHeight: 0 });
-          });
+       });
           edges.forEach((edge) => {
             const parent = treeMap.get(edge.from);
             const child = treeMap.get(edge.to);
@@ -753,7 +769,7 @@ export default function Editor() {
           }
           let childrenTotalHeight = 0;
           node.children.forEach((child, index) => {
-            childrenTotalHeight += calculateSubtreeHeights(child);
+childrenTotalHeight += calculateSubtreeHeights(child);
             if (index > 0) {
               childrenTotalHeight += VERTICAL_GAP;
             }
@@ -825,7 +841,7 @@ export default function Editor() {
           const rightGroup: TreeNode[] = [];
           const leftGroup: TreeNode[] = [];
           let rightHeight = 0;
-          let leftHeight = 0;
+let leftHeight = 0;
           const sortedRootChildren = [...rootNode.children].sort(
             (a, b) => b.subtreeHeight - a.subtreeHeight
           );
@@ -859,7 +875,7 @@ export default function Editor() {
         });
         nodes.forEach((node) => {
           const visual = nodeVisuals.get(node.id);
-          let w = visual?.box.w || 100;
+         let w = visual?.box.w || 100;
           let h = visual?.box.h || 50;
           if (layoutType === 'logic') {
             const children = adjMap.get(node.id) || [];
@@ -881,7 +897,7 @@ export default function Editor() {
                 if (idx > 0) childrenWidth += 30;
               });
               w = Math.max(w, childrenWidth);
-            }
+         }
           }
           g.setNode(node.id, { label: node.nodeText, width: w, height: h });
         });
@@ -894,6 +910,93 @@ export default function Editor() {
           return pos ? { ...n, x: pos.x, y: pos.y, side: side } : n;
         });
       }
+
+      const finalNodesMap = new Map(newNodes.map(n => [n.id, n]));
+const allEdges = useEditorStore.getState().edges;
+
+      // 2. Tìm tất cả các node gốc (không có cha) NGOẠI TRỪ 'root'
+      const floatingRoots = newNodes.filter(
+        n => (n.parentId === undefined || n.parentId === null) && n.id !== 'root'
+      );
+
+      // 3. Tạo một map các cạnh để tìm con (chỉ cần làm 1 lần)
+      const adjMap = new Map<string, string[]>();
+      allEdges.forEach(e => {
+        if (!adjMap.has(e.from)) adjMap.set(e.from, []);
+        adjMap.get(e.from)!.push(e.to);
+      });
+
+      // 4. Duyệt qua từng "đảo"
+      for (const floatingRoot of floatingRoots) {
+        const islandNodes = new Map<string, NodeData>();
+        const islandEdges: EdgeData[] = [];
+        const q: NodeData[] = [floatingRoot]; // Hàng đợi cho BFS
+
+        // 5. Tìm tất cả con cháu của đảo này (BFS)
+        while (q.length > 0) {
+          const current = q.shift()!;
+          if (!islandNodes.has(current.id)) {
+            islandNodes.set(current.id, current);
+            
+            const childrenIds = adjMap.get(current.id) || [];
+            childrenIds.forEach(childId => {
+              // Lấy node từ map (đã được layout chính cập nhật)
+              const childNode = finalNodesMap.get(childId); 
+              if (childNode) {
+                q.push(childNode);
+                islandEdges.push({ id: `e-${childId}`, from: current.id, to: childId });
+              }
+            });
+          }
+        }
+
+        if (islandNodes.size <= 1) continue; // Không có con, bỏ qua
+
+        // 6. Tạo 1 graph Dagre *riêng* cho hòn đảo này
+        const g = new dagre.graphlib.Graph();
+        const islandLayoutDir = 'LR';
+        g.setGraph({ rankdir: islandLayoutDir, nodesep: 50, ranksep: 100 });
+        g.setDefaultEdgeLabel(() => ({}));
+
+        islandNodes.forEach((node) => {
+          const visual = nodeVisuals.get(node.id);
+          g.setNode(node.id, {
+            label: node.nodeText,
+            width: visual?.box.w || 100,
+            height: visual?.box.h || 50
+          });
+        });
+        islandEdges.forEach((edge) => g.setEdge(edge.from, edge.to));
+        
+        // 7. Chạy layout cục bộ
+        dagre.layout(g);
+
+        // 8. Tính toán độ dời (offset)
+        // Vị trí "neo" là vị trí hiện tại của node nổi (do người dùng kéo)
+        const anchorPos = finalNodesMap.get(floatingRoot.id)!; 
+        const dagreRootPos = g.node(floatingRoot.id);
+        const offsetX = anchorPos.x - dagreRootPos.x;
+        const offsetY = anchorPos.y - dagreRootPos.y;
+
+        // 9. Áp dụng vị trí mới (đã dời) cho tất cả con cháu
+        islandNodes.forEach((node, id) => {
+          const dagrePos = g.node(id);
+          if (dagrePos) {
+            const existingNode = finalNodesMap.get(id)!;
+            const updatedNode = {
+              ...existingNode,
+              x: dagrePos.x + offsetX,
+              y: dagrePos.y + offsetY,
+              // Gán "side" để đường kẻ vẽ đúng
+side: (islandLayoutDir === 'LR' ? (dagrePos.x < 0 ? 'left' : 'right') : 'right') as 'left' | 'right', 
+            };
+            finalNodesMap.set(id, updatedNode); // Cập nhật lại map
+          }
+        });
+      } // Kết thúc vòng lặp for (duyệt các đảo)
+      
+      // 10. Chuyển map cuối cùng về mảng newNodes
+      newNodes = Array.from(finalNodesMap.values());
 
       // Cập nhật state VÀ reset collapse root (UI mới)
       setGraph(newNodes, edges);
@@ -949,12 +1052,59 @@ export default function Editor() {
     [nodeVisuals, setGraph, edges] // [GĐ 7] Bỏ 'nodes'
   );
 
+  // [SỬA] THÊM CÁC HÀM XỬ LÝ ZOOM NÀY
+const zoomStep = 1.2; // Tốc độ zoom
+
+const handleZoomIn = useCallback(() => {
+  // Zoom vào vị trí trung tâm màn hình
+  handleSetZoom(scale * zoomStep);
+}, [scale]); // [SỬA] Thêm scale vào dependency
+
+const handleZoomOut = useCallback(() => {
+  // Zoom ra từ vị trí trung tâm màn hình
+  handleSetZoom(scale / zoomStep);
+}, [scale]); // [SỬA] Thêm scale vào dependency
+
+const handleSetZoom = useCallback((newScale: number) => {
+  const stage = stageRef.current;
+  if (!stage) {
+setScale(newScale);
+    return;
+  }
+
+  const { width, height } = dimensions;
+  const oldScale = scale;
+
+  // Lấy vị trí trung tâm màn hình
+  const center = { x: width / 2, y: height / 2 };
+
+  // Tính toán điểm thế giới (world point) mà trung tâm màn hình đang trỏ tới
+  const mousePointTo = {
+    x: (center.x - pos.x) / oldScale,
+    y: (center.y - pos.y) / oldScale,
+  };
+
+  // Đặt scale mới
+  setScale(newScale);
+
+  // Cập nhật vị trí (pos) để giữ nguyên điểm trung tâm
+  setPos({
+    x: center.x - mousePointTo.x * newScale,
+    y: center.y - mousePointTo.y * newScale,
+  });
+}, [scale, pos.x, pos.y, dimensions.width, dimensions.height]);
+
+const handleFitToScreen = useCallback(() => {
+  // Gọi handleLayout(false) sẽ tự động căn giữa và zoom
+  handleLayout(false); 
+}, [handleLayout]); 
+
   // ================================================
   // Node Actions [CẬP NHẬT GĐ 7 + 9]
   // ================================================
 
   const startEditing = useCallback((nodeId: string) => {
-    setSelectedNodeId(nodeId);
+    setSelectedNodeIds([nodeId]);
     setEditingNodeId(nodeId);
     setTimeout(() => {
       editingInputRef.current?.focus();
@@ -998,61 +1148,118 @@ export default function Editor() {
     ]
   );
 
-  const handleAddChild = useCallback(
-    (parentId: string) => {
-      const parentVisual = nodeVisuals.get(parentId);
-      if (!parentVisual) return;
-      const parentStyle = parentVisual.style;
-      const newId = 'n' + Date.now();
-      const newNodeData: NodeData = {
-        id: newId,
-        nodeText: 'Nội dung', // UI Mới
-        x: parentStyle.x + 40,
-        y: parentStyle.y + 20,
-        parentId,
-        side: parentStyle.side,
-        branchColor: parentStyle.branchColor,
-        branchLineEnd: parentStyle.branchLineEnd,
-        branchLineStyle: parentStyle.branchLineStyle,
-        branchLineThickness: parentStyle.branchLineThickness,
-      };
-      const newEdgeData: EdgeData = {
-        id: `e-${newId}`,
-        from: parentId,
-        to: newId,
-      };
-      const newNodes = [...nodes, newNodeData];
-      const newEdges = [...edges, newEdgeData];
+  const handleAddChild = useCallback((parentId: string) => {
+    const parentNode = nodeMap.get(parentId); // Lấy dữ liệu THÔ của node cha
+    const parentVisual = nodeVisuals.get(parentId); // Lấy dữ liệu HÌNH ẢNH của node cha
+    
+    if (!parentNode || !parentVisual) return;
 
-      setGraph(newNodes, newEdges);
-      startEditing(newId);
-      setTimeout(() => handleLayout(true), 50);
-      debouncedPushHistory();
-      debouncedPersistData();
-      sendPatch('NODE_CREATE', { node: newNodeData, edge: newEdgeData }); // GĐ 9
-    },
-    [
-      nodes, edges, setGraph, nodeVisuals, startEditing, handleLayout,
-      debouncedPushHistory, debouncedPersistData, sendPatch, // GĐ 7 & 9
-    ]
-  );
+    const parentComputedStyle = parentVisual.style; // Dùng để lấy vị trí, "bên" (side)
 
-  const handleAddSibling = useCallback(
-    (nodeId: string) => {
-      if (nodeId === 'root') {
-        handleAddChild('root');
-        return;
+    const newId = "n" + Date.now();
+
+    // 1. Bắt đầu với các thuộc tính cơ bản
+    const newNodeData: NodeData = { 
+      id: newId, 
+      nodeText: "Nội dung",
+// Lấy vị trí và "bên" (side) từ style đã tính toán của cha
+      x: parentComputedStyle.x + 40,
+      y: parentComputedStyle.y + 20,
+      parentId,
+      side: parentComputedStyle.side, 
+    };
+
+    // 2. Lấy TẤT CẢ các key style từ DEFAULT_NODE_STYLE
+    const styleKeys = Object.keys(DEFAULT_NODE_STYLE) as Array<keyof typeof DEFAULT_NODE_STYLE>;
+
+    // 3. Sao chép TẤT CẢ các giá trị style từ node cha (parentNode)
+    styleKeys.forEach(key => {
+      // Nếu node cha (dữ liệu thô) có định nghĩa một style cụ thể (không phải undefined),
+      // thì node con sẽ kế thừa nó.
+      if (parentNode[key] !== undefined) {
+        (newNodeData as any)[key] = parentNode[key];
       }
-      const parentId = nodes.find((n) => n.id === nodeId)?.parentId;
-      if (parentId) handleAddChild(parentId);
-    },
-    [nodes, handleAddChild]
-  );
+    });
+
+    // 4. Xử lý trường hợp đặc biệt: Kế thừa từ ROOT
+    if (parentId === 'root') {
+      // Không kế thừa style hình dạng của root (root to, màu khác)
+      // Đặt lại chúng về 'undefined' để chúng lấy từ theme/quickstyle
+      newNodeData.color = undefined;
+      newNodeData.textColor = undefined;
+      newNodeData.shape = undefined;
+      newNodeData.borderColor = undefined;
+      newNodeData.borderWidth = undefined;
+      newNodeData.fontSize = undefined; 
+      newNodeData.fontWeight = undefined;
+      newNodeData.textCase = undefined;
+      newNodeData.nodeLength = undefined; 
+    }
+
+    const newEdgeData: EdgeData = { id: `e-${newId}`, from: parentId, to: newId };
+    
+    const newNodes = [...nodes, newNodeData];
+    const newEdges = [...edges, newEdgeData];
+
+    pushHistory(nodes, edges);
+    setGraph(newNodes, newEdges);
+    startEditing(newId);
+    setTimeout(() => handleLayout(true), 50); 
+  }, [nodes, edges, pushHistory, setGraph, nodeMap, nodeVisuals, startEditing, handleLayout]); // CẬP NHẬT: Thêm nodeMap
+
+  const handleAddSibling = useCallback((nodeId: string) => {
+    if (nodeId === 'root') { 
+      handleAddChild('root'); // Trường hợp đặc biệt: thêm "anh em" cho root -> thêm con
+      return; 
+    }
+
+    const siblingNode = nodeMap.get(nodeId); 
+    const parentId = siblingNode?.parentId;
+
+    if (!parentId || !siblingNode) return; 
+
+    const parentVisual = nodeVisuals.get(parentId);
+    if (!parentVisual) return;
+
+    const newId = "n" + Date.now();
+
+    const newNodeData: NodeData = { 
+      id: newId, 
+      nodeText: "Nội dung",
+      x: parentVisual.style.x + 40, 
+      y: parentVisual.style.y + 40, 
+      parentId: parentId, 
+      side: siblingNode.side, 
+    };
+
+    const styleKeys = Object.keys(DEFAULT_NODE_STYLE) as Array<keyof typeof DEFAULT_NODE_STYLE>;
+
+    styleKeys.forEach(key => {
+      if (siblingNode[key] !== undefined) {
+        (newNodeData as any)[key] = siblingNode[key];
+      }
+    });
+
+    const newEdgeData: EdgeData = { id: `e-${newId}`, from: parentId, to: newId };
+    
+    const newNodes = [...nodes, newNodeData];
+    const newEdges = [...edges, newEdgeData];
+
+    pushHistory(nodes, edges);
+    setGraph(newNodes, newEdges);
+    startEditing(newId);
+setTimeout(() => handleLayout(true), 50); 
+    
+  }, [nodes, edges, pushHistory, setGraph, nodeMap, nodeVisuals, startEditing, handleLayout, handleAddChild]);
 
   const handleDeleteNode = useCallback(
-    (nodeId: string) => {
-      if (nodeId === 'root' || !selectedNodeId) return;
-      const nodesToDelete = new Set<string>([nodeId]);
+    () => { // Bỏ tham số nodeId
+      if (selectedNodeIds.length === 0) return;
+
+      const idsToDelete = selectedNodeIds.filter(id => id !== 'root');
+      if (idsToDelete.length === 0) return;
+
+      const nodesToDelete = new Set<string>();
       const findChildren = (id: string) => {
         edges.forEach((e) => {
           if (e.from === id) {
@@ -1061,24 +1268,80 @@ export default function Editor() {
           }
         });
       };
-      findChildren(nodeId);
-      const parentId = nodes.find((n) => n.id === nodeId)?.parentId ?? 'root';
+      
+      idsToDelete.forEach(id => {
+        nodesToDelete.add(id);
+        findChildren(id);
+      });
+
+      // Chọn cha của node ĐẦU TIÊN bị xóa
+      const parentId = nodes.find((n) => n.id === idsToDelete[0])?.parentId ?? 'root';
       const newNodes = nodes.filter((n) => !nodesToDelete.has(n.id));
       const newEdges = edges.filter(
         (e) => !nodesToDelete.has(e.from) && !nodesToDelete.has(e.to)
       );
       setGraph(newNodes, newEdges);
-      setSelectedNodeId(parentId);
+      setSelectedNodeIds([parentId]); // Chọn node cha
       setTimeout(() => handleLayout(true), 50);
       debouncedPushHistory();
       debouncedPersistData();
-      sendPatch('NODE_DELETE', { nodeIds: Array.from(nodesToDelete) }); // GĐ 9
+      sendPatch('NODE_DELETE', { nodeIds: Array.from(nodesToDelete) });
     },
     [
-      nodes, edges, setGraph, selectedNodeId, handleLayout,
-      debouncedPushHistory, debouncedPersistData, sendPatch, // GĐ 7 & 9
+      nodes, edges, setGraph, selectedNodeIds, handleLayout, // Cập nhật dependency
+      debouncedPushHistory, debouncedPersistData, sendPatch,
     ]
   );
+
+  const handleUpdateNode = (updates: Partial<NodeData>) => {
+    if (selectedNodeIds.length === 0) return;
+
+    let newNodes = [...nodes];
+    const idSet = selectedIdsSet;
+
+    // [MERGE] Giữ lại logic `styleLocked` từ feature/tt
+    const STYLE_KEYS: Array<keyof NodeData> = [
+      'shape', 'color', 'borderColor', 'borderWidth', 'borderStyle',
+      'fontFamily', 'fontSize', 'fontWeight', 'fontStyle', 'textDecoration', 'textAlign', 'textColor', 'textCase', 'nodeLength',
+      'branchColor', 'branchLineStyle', 'branchLineEnd', 'branchLineThickness'
+    ];
+    const isStyleUpdate = Object.keys(updates).some(k => STYLE_KEYS.includes(k as keyof NodeData));
+
+    if (updates.branchColor !== undefined) {
+      const updateBranchColorRecursive = (nodeId: string, color: string) => {
+        // Chỉ áp dụng cho node đang được chọn
+        if (idSet.has(nodeId)) {
+          newNodes = newNodes.map(n => n.id === nodeId ? { ...n, branchColor: color } : n);
+        }
+        edges.forEach(e => { if (e.from === nodeId) updateBranchColorRecursive(e.to, color); });
+      };
+      // Lặp qua tất cả node được chọn
+      selectedNodeIds.forEach(id => updateBranchColorRecursive(id, updates.branchColor as string));
+    }
+    
+    // Áp dụng update cho tất cả node được chọn
+    newNodes = newNodes.map(n => idSet.has(n.id) ? { ...n, ...updates } : n);
+    
+    if (isStyleUpdate) {
+      const lockRec = (nodeId: string) => {
+newNodes = newNodes.map(n => n.id === nodeId ? { ...n, styleLocked: true } : n);
+        edges.forEach(e => { if (e.from === nodeId) lockRec(e.to); });
+      };
+      // Lặp qua tất cả node được chọn
+      selectedNodeIds.forEach(id => lockRec(id));
+    }
+
+    setGraph(newNodes, edges);
+    if (updates.nodeLength) {
+      setTimeout(() => handleLayout(true), 50);
+    }
+    debouncedPushHistory();
+    debouncedPersistData();
+    // Gửi patch cho TỪNG node
+    selectedNodeIds.forEach(id => {
+      sendPatch('NODE_STYLE_UPDATE', { id, updates });
+    });
+  };
 
   const handleKeyDown = useCallback(
     (e: KeyboardEvent) => {
@@ -1088,31 +1351,62 @@ export default function Editor() {
           return;
         }
       }
+      if (e.key === 'Tab') {
+        e.preventDefault(); // LUÔN LUÔN chặn trình duyệt "nhảy"
+
+        // Chỉ thêm node con nếu:
+        // 1. Không đang edit (editingNodeId là null)
+        // 2. Chỉ có 1 node được chọn
+        if (!editingNodeId && selectedNodeIds.length === 1) {
+          handleAddChild(selectedNodeIds[0]);
+        }
+        // Nếu đang edit, hoặc chọn nhiều node, hoặc không chọn node nào,
+        // phím Tab sẽ không làm gì cả (vì đã preventDefault).
+        return; // Kết thúc xử lý cho phím Tab
+      }
       if (editingNodeId) return;
       if (
         document.activeElement &&
         ['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement.tagName)
       )
         return;
-      if (!selectedNodeId) return;
-      if (e.key === 'Tab') {
-        e.preventDefault();
-        handleAddChild(selectedNodeId);
-      } else if (e.key === 'Enter') {
-        e.preventDefault();
-        handleAddSibling(selectedNodeId);
-      } else if (e.key === 'Delete' || e.key === 'Backspace') {
-        e.preventDefault();
-        handleDeleteNode(selectedNodeId);
-      } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
+
+      // [SỬA 1] Di chuyển Undo/Redo lên TRƯỚC khi kiểm tra selectedNodeId
+      // để đảm bảo chúng hoạt động toàn cục.
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
         e.preventDefault();
         undo();
-      } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y') {
+        return; // Thoát sớm
+      }
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y') {
         e.preventDefault();
         redo();
+        return; // Thoát sớm
+      }
+
+      if (selectedNodeIds.length !== 1) {
+        // Ngoại trừ phím Delete
+        if (e.key === 'Delete' || e.key === 'Backspace') {
+          e.preventDefault();
+          handleDeleteNode(); // Gọi hàm không tham số
+        }
+        return;
+      }
+      
+      const singleSelectedId = selectedNodeIds[0]; // Đây là node duy nhất đang được chọn
+
+      if (e.key === 'Tab') {
+        e.preventDefault();
+        handleAddChild(singleSelectedId);
+      } else if (e.key === 'Enter') {
+        e.preventDefault();
+        handleAddSibling(singleSelectedId);
+      } else if (e.key === 'Delete' || e.key === 'Backspace') {
+        e.preventDefault();
+        handleDeleteNode(); // Gọi hàm không tham số
       } else if (e.key === 'F2') {
         e.preventDefault();
-        startEditing(selectedNodeId);
+        startEditing(singleSelectedId);
       } else if (
         e.key.length === 1 &&
         /^[a-zA-Z0-9\S]$/.test(e.key) &&
@@ -1120,17 +1414,51 @@ export default function Editor() {
         !e.metaKey
       ) {
         e.preventDefault();
-        startEditing(selectedNodeId);
-        setTimeout(() => {
+        startEditing(singleSelectedId);
+setTimeout(() => {
           if (editingInputRef.current) editingInputRef.current.value = e.key;
         }, 50);
       }
     },
     [
-      editingNodeId, selectedNodeId, handleAddChild,
+      editingNodeId, selectedNodeIds, handleAddChild, // Cập nhật dependency
       handleAddSibling, handleDeleteNode, undo, redo, startEditing,
-    ] // lastEditStopTime là ref, không cần
+    ]
   );
+
+  const handleToolbarAddChild = useCallback(() => {
+    // Chỉ hoạt động nếu 1 node (và chỉ 1) đang được chọn
+    if (selectedNodeIds.length === 1) { 
+      handleAddChild(selectedNodeIds[0]);
+    }
+  }, [selectedNodeIds, handleAddChild]); // handleAddChild đã được bọc trong useCallback
+
+  const handleToolbarAddSibling = useCallback(() => {
+    // Chỉ hoạt động nếu 1 node (và chỉ 1) đang được chọn
+    if (selectedNodeIds.length === 1) { 
+      handleAddSibling(selectedNodeIds[0]);
+    }
+  }, [selectedNodeIds, handleAddSibling]);
+
+  const handleSetHyperlink = useCallback(() => {
+  if (selectedNodeIds.length !== 1) return;
+  const nodeId = selectedNodeIds[0];
+  const node = nodeMap.get(nodeId);
+  if (!node) return;
+
+  
+
+  // Lấy hyperlink hiện tại (nếu có) từ node.
+  // Cần đảm bảo `node.hyperlink` tồn tại trong kiểu NodeData của bạn.
+  const currentUrl = (node as any).hyperlink || "";
+  const url = window.prompt("Nhập URL cho liên kết (để trống để xóa):", currentUrl);
+  
+  if (url !== null) { // User clicked OK (null nghĩa là Cancel)
+    // Chúng ta gọi handleUpdateNode, nó đã được refactor để xử lý nhiều node
+    // nhưng ở đây nó sẽ chỉ áp dụng cho 1 node đang được chọn
+    handleUpdateNode({ hyperlink: url || undefined });
+  }
+  }, [selectedNodeIds, nodeMap, handleUpdateNode]);
 
   useEffect(() => {
     window.addEventListener('keydown', handleKeyDown);
@@ -1142,7 +1470,7 @@ export default function Editor() {
   // ================================================
 
   const handleDragStart = (nodeId: string) => {
-    pushHistory(nodes, edges); // GĐ 7
+    pushHistory(useEditorStore.getState().nodes, useEditorStore.getState().edges); // GĐ 7
     setDragStartState({ nodes, edges });
     const node = stageRef.current?.findOne(`#${nodeId}`);
     if (node && editingNodeId === nodeId) {
@@ -1174,7 +1502,7 @@ export default function Editor() {
 
   const handleDragEnd = (e: any, draggedNodeId: string) => {
     setDragStartState(null);
-    const finalX = e.target.x();
+const finalX = e.target.x();
     const finalY = e.target.y();
 
     if (dropTargetId && dropTargetId !== draggedNodeId) {
@@ -1246,7 +1574,8 @@ export default function Editor() {
     setDropTargetId(null);
     setTimeout(() => handleLayout(true), 50); // Giữ camera
     // [GĐ 7] Gọi debouncer
-    debouncedPushHistory();
+    // [SỬA 2] Xóa debouncedPushHistory. Đã push ở handleDragStart.
+    // debouncedPushHistory();
     debouncedPersistData();
   };
 
@@ -1254,55 +1583,12 @@ export default function Editor() {
   // Handlers cho Toolbar [CẬP NHẬT GĐ 7 + 9]
   // ================================================
 
-  const handleUpdateNode = (id: string, updates: Partial<NodeData>) => {
-    // [GĐ 7] Xóa pushHistory (đã làm ở GĐ 7 gốc)
-    let newNodes = [...nodes];
-
-    // [MERGE] Giữ lại logic `styleLocked` từ feature/tt
-    const STYLE_KEYS: Array<keyof NodeData> = [
-      'shape', 'color', 'borderColor', 'borderWidth', 'borderStyle',
-      'fontFamily', 'fontSize', 'fontWeight', 'fontStyle', 'textDecoration', 'textAlign', 'textColor', 'textCase', 'nodeLength',
-      'branchColor', 'branchLineStyle', 'branchLineEnd', 'branchLineThickness'
-    ];
-    const isStyleUpdate = Object.keys(updates).some(k => STYLE_KEYS.includes(k as keyof NodeData));
-
-    // [MERGE] Giữ lại logic `branchColor` từ feature/tt
-    if (updates.branchColor !== undefined) {
-      const updateBranchColorRecursive = (nodeId: string, color: string) => {
-        newNodes = newNodes.map(n => n.id === nodeId ? { ...n, branchColor: color } : n);
-        edges.forEach(e => { if (e.from === nodeId) updateBranchColorRecursive(e.to, color); });
-      };
-      updateBranchColorRecursive(id, updates.branchColor as string);
-    }
-    
-    newNodes = newNodes.map(n => n.id === id ? { ...n, ...updates } : n);
-    
-    // [MERGE] Giữ lại logic `styleLocked` từ feature/tt
-    if (isStyleUpdate) {
-      const lockRec = (nodeId: string) => {
-        newNodes = newNodes.map(n => n.id === nodeId ? { ...n, styleLocked: true } : n);
-        edges.forEach(e => { if (e.from === nodeId) lockRec(e.to); });
-      };
-      lockRec(id);
-    }
-
-    setGraph(newNodes, edges);
-    if (updates.nodeLength) {
-      setTimeout(() => handleLayout(true), 50);
-    }
-    // [GĐ 7] Gọi debouncer
-    debouncedPushHistory();
-    debouncedPersistData();
-    // [GĐ 9] Gửi patch
-    sendPatch('NODE_STYLE_UPDATE', { id, updates });
-  };
-
   // [MERGE] Giữ lại logic UI mới từ feature/tt
   const handleToggleColoredBranch = (state: boolean) => {
-    pushHistory(nodes, edges); // Logic này ảnh hưởng toàn bộ, push ngay
+    pushHistory(useEditorStore.getState().nodes, useEditorStore.getState().edges); // Logic này ảnh hưởng toàn bộ, push ngay
     if (state) {
       const rootChildren = edges.filter(e => e.from === 'root').map(e => e.to);
-      let newNodes = [...nodes];
+let newNodes = [...nodes];
       rootChildren.forEach((childId, idx) => {
         const color = BRANCH_COLORS_PALETTE[idx % BRANCH_COLORS_PALETTE.length];
         const assignRec = (nodeId: string) => {
@@ -1338,28 +1624,66 @@ export default function Editor() {
         textColor: getContrastColor(fill) 
       };
     });
-    pushHistory(nodes, edges); // Logic này ảnh hưởng toàn bộ, push ngay
+    pushHistory(useEditorStore.getState().nodes, useEditorStore.getState().edges); // Logic này ảnh hưởng toàn bộ, push ngay
     setGraph(newNodes, edges);
     // [GĐ 7 & 9] Kích hoạt lưu và gửi patch
     debouncedPersistData();
     sendPatch('BACKGROUND_CHANGE', { color });
   };
   
-  const handleApplyQuickStyle = (styleId: QuickStyleId) => {
-    if (!selectedNodeId) return;
-    const node = nodeMap.get(selectedNodeId);
-    if (!node) return;
+const handleSetGlobalBranchColor = (color: string) => {
+    pushHistory(useEditorStore.getState().nodes, useEditorStore.getState().edges);
+    // 1. Cập nhật màu toàn cục trong store
+    setGlobalStore({ globalBranchColor: color });
 
-    const resetStyle = applyNodeDefaults(node, activeTheme);
-    const newNodes = nodes.map((n) =>
-      n.id === selectedNodeId
-        ? { ...n, ...resetStyle, quickStyleId: styleId } : n
-    );
+    const { isColoredBranch } = useEditorStore.getState();
+
+    // 2. Nếu KHÔNG ở chế độ nhiều màu, cập nhật lại màu cho các node
+    if (!isColoredBranch) {
+      const newNodes = nodes.map(n => {
+        if (n.styleLocked) return n; // Bỏ qua node đã khóa style
+
+        const fill = mixWithWhite(color, 0.85); // Dùng màu toàn cục mới
+        return {
+          ...n,
+          branchColor: undefined, // Đảm bảo nó kế thừa màu toàn cục
+          color: fill,
+          textColor: getContrastColor(fill)
+        };
+      });
+      setGraph(newNodes, edges);
+    }
+    // (Nếu isColoredBranch = true, không cần làm gì,
+    // vì logic render đã tự đọc globalBranchColor khi cần)
+
+    debouncedPersistData();
+    // Gửi patch cho các user khác
+    sendPatch('GLOBAL_BRANCH_COLOR_CHANGE', { color });
+  };
+
+  const handleApplyQuickStyle = (styleId: QuickStyleId) => {
+if (selectedNodeIds.length === 0) return;
+    const idSet = selectedIdsSet;
+
+    const newNodes = nodes.map((n) => {
+      if (idSet.has(n.id)) {
+        const resetStyle = applyNodeDefaults(n, activeTheme);
+        return { ...n, ...resetStyle, quickStyleId: styleId };
+      }
+      return n;
+    });
+    
     setGraph(newNodes, edges);
     setTimeout(() => handleLayout(true), 50);
     debouncedPushHistory();
     debouncedPersistData();
-    sendPatch('NODE_QUICK_STYLE_APPLY', { id: selectedNodeId, styleId, resetStyle }); // GĐ 9
+    
+    // Gửi patch cho TỪNG node
+    const tempResetStyle = applyNodeDefaults(nodes[0], activeTheme); // Tạm
+    selectedNodeIds.forEach(id => {
+      // TODO: Cần lấy resetStyle chính xác cho từng node
+      sendPatch('NODE_QUICK_STYLE_APPLY', { id: id, styleId, resetStyle: tempResetStyle });
+    });
   };
 
   const handleCopyStyle = () => {
@@ -1375,28 +1699,30 @@ export default function Editor() {
   };
 
   const handlePasteStyle = () => {
-    if (!selectedNodeId || !styleClipboard) return;
+    if (!selectedNodeIds || !styleClipboard) return;
+    const idSet = selectedIdsSet;
     const newNodes = nodes.map((n) =>
-      n.id === selectedNodeId ? { ...n, ...styleClipboard } : n
+      idSet.has(n.id) ? { ...n, ...styleClipboard } : n
     );
     setGraph(newNodes, edges);
     setTimeout(() => handleLayout(true), 50);
     debouncedPushHistory();
     debouncedPersistData();
-    sendPatch('NODE_STYLE_PASTE', { id: selectedNodeId, style: styleClipboard }); // GĐ 9
+    sendPatch('NODE_STYLE_PASTE', { id: selectedNodeIds, style: styleClipboard }); // GĐ 9
   };
 
   const handleResetStyle = () => {
-    if (!selectedNodeId || !currentNode) return;
+    if (!selectedNodeIds || !currentNode) return;
+    const idSet = selectedIdsSet;
     const resetStyle = applyNodeDefaults(currentNode, activeTheme);
     const newNodes = nodes.map((n) =>
-      n.id === selectedNodeId ? { ...n, ...resetStyle } : n
+      idSet.has(n.id) ? { ...n, ...resetStyle } : n
     );
     setGraph(newNodes, edges);
     setTimeout(() => handleLayout(true), 50);
     debouncedPushHistory();
     debouncedPersistData();
-    sendPatch('NODE_STYLE_RESET', { id: selectedNodeId, resetStyle }); // GĐ 9
+    sendPatch('NODE_STYLE_RESET', { id: selectedNodeIds, resetStyle }); // GĐ 9
   };
 
   // ================================================
@@ -1418,7 +1744,7 @@ export default function Editor() {
         const newNodes = nodes.map(n => 
           n.id === nodeId ? { ...n, collapsed: !n.collapsed } : n
         );
-        setGraph(newNodes, edges);
+setGraph(newNodes, edges);
         debouncedPushHistory();
         debouncedPersistData();
         sendPatch('NODE_TOGGLE_COLLAPSE', { id: nodeId }); // GĐ 9
@@ -1507,13 +1833,13 @@ export default function Editor() {
       if (!visual || !el) return;
       el.style.height = 'auto';
       const unscaledScroll = el.scrollHeight / Math.max(scale, 0.0001);
-      const target = Math.max(visual.box.h, unscaledScroll);
+const target = Math.max(visual.box.h, unscaledScroll);
       el.style.height = `${target}px`;
     };
     resize();
     const t = setTimeout(resize, 50);
     return () => clearTimeout(t);
-  }, [editingNodeId, scale, pos]); // 'nodeVisuals' đã bị xóa
+  }, [editingNodeId, scale, pos, nodeVisuals]); // [SỬA] Thêm lại nodeVisuals vào dependencies
 
   // [MERGE] Giữ lại logic UI mới (textarea) từ feature/tt
   const computeEditingNodePosition = useCallback(() => {
@@ -1586,9 +1912,18 @@ export default function Editor() {
           }}
           onTheme={toggleTheme} // Logic theme mới của tt đã bị xóa, dùng lại logic cũ
           onSave={handleSave}
-          onToggleFormattingToolbar={() =>
+onToggleFormattingToolbar={() =>
             setFormattingToolbarOpen(!isFormattingToolbarOpen)
           }
+          currentScale={scale}
+          onZoomIn={handleZoomIn}
+          onZoomOut={handleZoomOut}
+          onSetZoom={handleSetZoom}
+          onFitToScreen={handleFitToScreen}
+          selectedNodeIds={selectedNodeIds}
+          onAddChild={handleToolbarAddChild}
+          onAddSibling={handleToolbarAddSibling}
+          onSetHyperlink={handleSetHyperlink}
         />
         <Sidebar />
 
@@ -1633,7 +1968,10 @@ export default function Editor() {
                       stopEditing(true);
                     } else if (e.key === 'Escape') {
                       stopEditing(false);
-                    }
+                    } else if (e.key === 'Tab') {
+                      e.preventDefault(); // Ngăn Tab nhảy focus
+                      stopEditing(true); // Lưu và kết thúc
+                  }
                   }}
                   style={{
                     position: 'absolute',
@@ -1642,7 +1980,7 @@ export default function Editor() {
                     width: visual.box.w,
                     height: visual.box.h,
                     fontSize: `${visual.box.finalFontSize}px`,
-                    fontWeight: visual.style.fontWeight || 'normal',
+fontWeight: visual.style.fontWeight || 'normal',
                     fontStyle: visual.style.fontStyle === 'italic' ? 'italic' : 'normal',
                     fontFamily: visual.style.fontFamily || 'Inter',
                     lineHeight: LINE_HEIGHT_MULTIPLIER,
@@ -1650,12 +1988,19 @@ export default function Editor() {
                     textAlign: visual.style.textAlign || 'center',
                     textDecoration: visual.style.textDecoration || 'none',
                     color: visual.style.textColor || '#333333',
-                    backgroundColor: 'transparent',
-                    border: 'none',
+                    backgroundColor: visual.style.color,
+                    border: `${visual.style.borderWidth || 0}px ${
+                      visual.style.borderStyle === 'dashed' ? 'dashed'
+                      : visual.style.borderStyle === 'dotted' ? 'dotted'
+                      : 'solid'
+                    } ${visual.style.borderColor || 'transparent'}`,
+                    borderRadius: visual.style.shape === 'roundedRect' ? '8px' : '0px',
+                    boxSizing: 'border-box',
                     outline: 'none',
                     boxShadow: 'none',
                     transition: 'none',
                     pointerEvents: 'auto',
+                    overflow: 'hidden',
                   }}
                   className="z-50 rounded-md outline-none resize-none"
                 />
@@ -1676,41 +2021,141 @@ export default function Editor() {
             x={pos.x}
             y={pos.y}
             onWheel={(e) => {
-              e.evt.preventDefault();
-              const scaleBy = 1.05;
+              e.evt.preventDefault(); // Ngăn trang web cuộn
               const stage = e.target.getStage();
               if (!stage) return;
-              const oldScale = stage.scaleX();
-              const pointerPos = stage.getPointerPosition();
-              if (!pointerPos) return;
-              const mousePointTo = {
-                x: (pointerPos.x - stage.x()) / oldScale,
-                y: (pointerPos.y - stage.y()) / oldScale,
-              };
-              const newScale =
-                e.evt.deltaY > 0 ? oldScale / scaleBy : oldScale * scaleBy;
-              setScale(newScale);
-              setPos({
-                x: pointerPos.x - mousePointTo.x * newScale,
-                y: pointerPos.y - mousePointTo.y * newScale,
-              });
+
+              if (e.evt.ctrlKey) {
+                // === LOGIC ZOOM (Giữ nguyên) ===
+                const scaleBy = 1.05;
+                const oldScale = stage.scaleX();
+                const pointerPos = stage.getPointerPosition();
+                if (!pointerPos) return;
+
+                const mousePointTo = {
+                  x: (pointerPos.x - stage.x()) / oldScale,
+                  y: (pointerPos.y - stage.y()) / oldScale,
+                };
+                const newScale =
+                  e.evt.deltaY > 0 ? oldScale / scaleBy : oldScale * scaleBy;
+                setScale(newScale);
+                setPos({
+                  x: pointerPos.x - mousePointTo.x * newScale,
+                  y: pointerPos.y - mousePointTo.y * newScale,
+                });
+              } else {
+                // === LOGIC PAN (Thêm mới) ===
+                // Dùng cho cuộn chuột 2 ngón tay trên touchpad
+                setPos({
+                  x: pos.x - e.evt.deltaX, // Dùng dấu trừ để di chuyển đúng hướng
+y: pos.y - e.evt.deltaY,
+                });
+              }
             }}
             onMouseDown={(e) => {
-              if (
-                e.evt.button === 1 ||
-                (e.evt.button === 0 && e.target === e.target.getStage())
-              ) {
-                setIsPanning(true);
-              }
-              if (e.target === e.target.getStage()) {
-                setSelectedNodeId(null);
-                if (editingNodeId) stopEditing(true);
+              const stage = e.target.getStage();
+              if (!stage) return;
+
+              const isPanIntent = (e.evt.ctrlKey && e.evt.button === 0) || e.evt.button === 1;
+
+              // Chỉ xử lý khi click vào nền (Stage)
+              if (e.target === stage) {
+                if (isPanIntent) {
+                  setIsPanning(true);
+                  isSelecting.current = false;
+                } else if (e.evt.button === 0) {
+                  // Click trái bình thường -> Bắt đầu chọn vùng
+                  setIsPanning(false);
+                  isSelecting.current = true;
+                  
+                  const pos = stage.getPointerPosition();
+                  if (!pos) return;
+                  
+                  // Lấy vị trí tương đối (un-scaled)
+                  const unscaledPos = {
+                    x: (pos.x - stage.x()) / stage.scaleX(),
+                    y: (pos.y - stage.y()) / stage.scaleY(),
+                  };
+                  
+                  selectionStartPos.current = unscaledPos;
+                  setSelectionRect({
+                    x: unscaledPos.x,
+                    y: unscaledPos.y,
+                    width: 0,
+                    height: 0,
+                    visible: true,
+                  });
+                  
+                  // Nếu không giữ Shift, bỏ chọn tất cả
+                  if (!e.evt.shiftKey) {
+                    setSelectedNodeIds([]);
+                  }
+                  if (editingNodeId) stopEditing(true);
+                }
               }
             }}
-            onMouseUp={() => setIsPanning(false)}
+            onMouseUp={(e) => {
+              setIsPanning(false);
+
+              if (isSelecting.current && selectionRect.visible) {
+                // Đã kéo xong, ẩn hình chữ nhật
+                isSelecting.current = false;
+                setSelectionRect({ ...selectionRect, visible: false });
+
+                // Xác định các node nằm trong vùng chọn
+                const { x, y, width, height } = selectionRect;
+                const rect = {
+                  x1: x,
+                  y1: y,
+                  x2: x + width,
+                  y2: y + height,
+                };
+
+                const newlySelectedIds = visibleNodes
+                  .filter((node) => {
+                    // Chọn nếu tâm node nằm trong hình chữ nhật
+                    return (
+                      node.x > rect.x1 &&
+                      node.x < rect.x2 &&
+                      node.y > rect.y1 &&
+                      node.y < rect.y2
+                    );
+                  })
+                  .map((node) => node.id);
+
+                if (e.evt.shiftKey) {
+                  // Thêm vào danh sách cũ
+                  setSelectedNodeIds(prevIds => [...new Set([...prevIds, ...newlySelectedIds])]);
+                } else {
+                  // Thay thế danh sách cũ
+setSelectedNodeIds(newlySelectedIds);
+                }
+              }
+            }}
             onMouseMove={(e) => {
-              if (isPanning)
+              if (isPanning) {
                 setPos({ x: pos.x + e.evt.movementX, y: pos.y + e.evt.movementY });
+              } else if (isSelecting.current) {
+                // Cập nhật kích thước hình chữ nhật chọn
+                const stage = e.target.getStage();
+                if (!stage) return;
+                const pos = stage.getPointerPosition();
+                if (!pos) return;
+                
+                const currentUnscaledPos = {
+                  x: (pos.x - stage.x()) / stage.scaleX(),
+                  y: (pos.y - stage.y()) / stage.scaleY(),
+                };
+                
+                const start = selectionStartPos.current;
+                setSelectionRect({
+                  visible: true,
+                  x: Math.min(start.x, currentUnscaledPos.x),
+                  y: Math.min(start.y, currentUnscaledPos.y),
+                  width: Math.abs(start.x - currentUnscaledPos.x),
+                  height: Math.abs(start.y - currentUnscaledPos.y),
+               });
+              }
             }}
             onDblClick={(e) => {
               const stage = e.target.getStage();
@@ -1755,7 +2200,7 @@ export default function Editor() {
                 let p1 = { x: fromStyle.x, y: fromStyle.y };
                 let p4 = { x: toStyle.x, y: toStyle.y };
                 const fromSide = fromStyle.side || 'right';
-                const toSide = toStyle.side || 'right';
+const toSide = toStyle.side || 'right';
                 let points: number[];
                 if (globalStructure === 'org') {
                   p1 = { x: fromStyle.x, y: fromStyle.y + fromBox.h / 2 };
@@ -1783,7 +2228,7 @@ export default function Editor() {
                     strokeColor = BRANCH_COLORS_PALETTE[childIndex % BRANCH_COLORS_PALETTE.length];
                   } else {
                     strokeColor = toStyle.branchColor || globalBranchColor;
-                  }
+                }
                 } else {
                   strokeColor = globalBranchColor;
                 }
@@ -1808,8 +2253,8 @@ export default function Editor() {
                 const visual = nodeVisuals.get(node.id);
                 if (!visual) return null;
                 const { style, box } = visual;
-                const { w, h, textToRender, finalFontSize } = box;
-                const isSelected = node.id === selectedNodeId;
+const { w, h, textToRender, finalFontSize } = box;
+                const isSelected = selectedIdsSet.has(node.id);
                 const isDropTarget = node.id === dropTargetId;
                 const hasChildren = nodesWithChildren.has(node.id);
                 const shapeProps = {
@@ -1825,22 +2270,30 @@ export default function Editor() {
                     onDragStart={() => handleDragStart(node.id)}
                     onDragMove={(e) => handleDragMove(e, node.id)}
                     onDragEnd={(e) => handleDragEnd(e, node.id)}
-                    onClick={(e) => { e.cancelBubble = true; setSelectedNodeId(node.id); }}
+                    onClick={(e) => {
+                      e.cancelBubble = true;
+                      if (e.evt.shiftKey) {
+                        // Giữ Shift: Thêm/bớt
+                        setSelectedNodeIds(prevIds => {
+                          const newSet = new Set(prevIds);
+                          if (newSet.has(node.id)) {
+                            newSet.delete(node.id);
+                          } else {
+                            newSet.add(node.id);
+                          }
+                          return Array.from(newSet);
+                        });
+                      } else {
+                        // Click thường: Chỉ chọn node này
+                        setSelectedNodeIds([node.id]);
+                      }
+                    }}
                     onDblClick={(e) => { e.cancelBubble = true; startEditing(node.id); }}
                     onMouseEnter={() => setHoveredNodeId(node.id)}
                     onMouseLeave={() => setHoveredNodeId(null)}
-                  >
+               >
                     {(style.shape === 'rectangle' || style.shape === 'roundedRect') && (
                       <Rect {...shapeProps} cornerRadius={style.shape === 'roundedRect' ? 8 : 0} />
-                    )}
-                    {/* [MERGE] Thêm lại logic render 'diamond' (GĐ B) */}
-                    {(style.shape === 'diamond') && (
-                       <Path
-                        {...shapeProps}
-                        data={`M${w / 2} 0 L${w} ${h / 2} L${w / 2} ${h} L0 ${h / 2} Z`}
-                        offsetX={w / 2}
-                        offsetY={h / 2}
-                      />
                     )}
                     
                     <Text
@@ -1854,7 +2307,7 @@ export default function Editor() {
                       fontSize={finalFontSize}
                       fontStyle={style.fontStyle === 'italic' ? 'italic' : style.fontWeight}
                       fontFamily={style.fontFamily}
-                      textDecoration={style.textDecoration === 'none' ? undefined : style.textDecoration}
+textDecoration={style.textDecoration === 'none' ? undefined : style.textDecoration}
                       lineHeight={LINE_HEIGHT_MULTIPLIER}
                     />
                     
@@ -1869,7 +2322,7 @@ export default function Editor() {
                             onMouseLeave={(e) => { const stage = e.target.getStage(); if (stage) stage.container().style.cursor = 'default'; }}
                           >
                             <Circle radius={8} fill="#3b82f6" stroke="#FFFFFF" strokeWidth={2} />
-                            {rootCollapse.left ? (
+                          {rootCollapse.left ? (
                               <Text
                                 text={`${descendantCounts.rootCounts.left || 0}`}
                                 fontSize={9} fill="#FFFFFF"
@@ -1890,7 +2343,7 @@ export default function Editor() {
                             onMouseLeave={(e) => { const stage = e.target.getStage(); if (stage) stage.container().style.cursor = 'default'; }}
                           >
                             <Circle radius={8} fill="#3b82f6" stroke="#FFFFFF" strokeWidth={2} />
-                            {rootCollapse.right ? (
+                          {rootCollapse.right ? (
                               <Text
                                 text={`${descendantCounts.rootCounts.right || 0}`}
                                 fontSize={9} fill="#FFFFFF"
@@ -1901,7 +2354,7 @@ export default function Editor() {
                             ) : (
                               <Path data="M-4 0 H4" stroke="#FFFFFF" strokeWidth={2} lineCap="round" />
                             )}
-                          </Group>
+</Group>
                         )}
                       </>
                     ) : (
@@ -1912,7 +2365,7 @@ export default function Editor() {
                           y={0}
                           onClick={(e) => handleToggleCollapse(e, node.id)}
                           onMouseEnter={(e) => { const stage = e.target.getStage(); if (stage) stage.container().style.cursor = 'pointer'; }}
-                          onMouseLeave={(e) => { const stage = e.target.getStage(); if (stage) stage.container().style.cursor = 'default'; }}
+                         onMouseLeave={(e) => { const stage = e.target.getStage(); if (stage) stage.container().style.cursor = 'default'; }}
                         >
                           <Circle radius={8} fill="#3b82f6" stroke="#FFFFFF" strokeWidth={2} />
                           {node.collapsed ? (
@@ -1927,57 +2380,78 @@ export default function Editor() {
                             <Path data="M-4 0 H4" stroke="#FFFFFF" strokeWidth={2} lineCap="round" />
                           )}
                         </Group>
-                      )
+                       )
                     )}
+                    {(style as any).hyperlink && (
+                    <Group
+                      // Đặt icon ở góc trên bên phải, bên ngoài node
+                      x={w / 2 - 10} // Điều chỉnh vị trí
+                      y={-h / 2 + 10} // Điều chỉnh vị trí
+                      onClick={(e) => {
+                        e.cancelBubble = true; // Ngăn không cho click này chọn node
+                        window.open((style as any).hyperlink, '_blank', 'noopener,noreferrer');
+                      }}
+                      onMouseEnter={(e) => { const stage = e.target.getStage(); if (stage) stage.container().style.cursor = 'pointer'; }}
+                      onMouseLeave={(e) => { const stage = e.target.getStage(); if (stage) stage.container().style.cursor = 'default'; }}
+                      title={`Mở link: ${(style as any).hyperlink}`}
+                    >
+                      {/* Vòng tròn nền nhỏ */}
+                      <Circle radius={9} fill="#E0E7FF" stroke="#4F46E5" strokeWidth={1} />
+                      {/* Icon Link (SVG Path) */}
+                      <Path
+data="M9.25 10.75a.75.75 0 0 0 1.5 0v-1.5h1.5a.75.75 0 0 0 0-1.5h-1.5v-1.5a.75.75 0 0 0-1.5 0v1.5h-1.5a.75.75 0 0 0 0 1.5h1.5v1.5Z M3.75 5.5a2 2 0 0 1 2-2h4.5a2 2 0 0 1 2 2v1a.75.75 0 0 0 1.5 0v-1a3.5 3.5 0 0 0-3.5-3.5h-4.5A3.5 3.5 0 0 0 2.25 5.5v5A3.5 3.5 0 0 0 5.75 14h1a.75.75 0 0 0 0-1.5h-1a2 2 0 0 1-2-2v-5Z"
+                        fill="#4F46E5"
+                        scale={{ x: 0.8, y: 0.8 }}
+                        offsetX={10} // Căn giữa icon
+                        offsetY={10} // Căn giữa icon
+                      />
+                    </Group>
+                  )}
                   </Group>
                 );
               })}
+              <Rect
+                x={selectionRect.x}
+                y={selectionRect.y}
+                width={selectionRect.width}
+                height={selectionRect.height}
+                fill="rgba(0, 100, 255, 0.3)"
+                stroke="#0064FF"
+                strokeWidth={1}
+                visible={selectionRect.visible}
+              />
             </Layer>
           </Stage>
           {isFormattingToolbarOpen && (
             <FormattingToolbar
-              selectedId={selectedNodeId}
+              selectedIds={selectedNodeIds}
               currentNode={currentNode}
               currentBackgroundColor={backgroundColor}
               globalStructure={globalStructure}
               activeColorThemeId={activeColorThemeId}
               
-              // [MERGE] Cập nhật handler để gọi logic GĐ 7/9
               onApplyLayout={(structure) => {
+                pushHistory(useEditorStore.getState().nodes, useEditorStore.getState().edges);
                 setGlobalStore({ globalStructure: structure });
-                handleLayout(true); // Giữ camera
-                debouncedPersistData();
-                sendPatch('LAYOUT_CHANGE', { structure });
+                handleLayout(true);
               }}
-              onSetBackgroundColor={(color) => {
-                handleSetBackgroundColor(color); // Hàm này đã có push/persist/patch
-              }}
+              onSetBackgroundColor={handleSetBackgroundColor}
               onSetGlobalFont={(font) => {
-                setGlobalStore({ globalFont: font });
-                debouncedPushHistory();
-                debouncedPersistData();
-                sendPatch('FONT_CHANGE', { font });
-              }}
-              onSetBranchLineWidth={(width) => {
+                pushHistory(useEditorStore.getState().nodes, useEditorStore.getState().edges);
+                setGlobalStore({ globalFont: font })}}
+                onSetBranchLineWidth={(width) => {
+                pushHistory(useEditorStore.getState().nodes, useEditorStore.getState().edges);
                 setGlobalStore({ branchLineWidth: width });
-                debouncedPushHistory();
-                debouncedPersistData();
-                sendPatch('LINE_WIDTH_CHANGE', { width });
               }}
-              onToggleColoredBranch={(state) => {
-                handleToggleColoredBranch(state); // Hàm này đã có push/persist/patch
-              }}
+              onToggleColoredBranch={(state) => handleToggleColoredBranch(state)}
+              onSetGlobalBranchColor={handleSetGlobalBranchColor}
               onSetActiveColorTheme={(themeName) => {
+                pushHistory(useEditorStore.getState().nodes, useEditorStore.getState().edges);
                 setGlobalStore({ activeColorThemeId: themeName });
-                setBackgroundColor(
-                  colorThemes[themeName as keyof typeof colorThemes].background
-                );
-                debouncedPushHistory();
-                debouncedPersistData();
-                sendPatch('THEME_CHANGE', { themeName });
+                setBackgroundColor(colorThemes[themeName as keyof typeof colorThemes].background);
               }}
               
-              onUpdateNode={(id, updates) => handleUpdateNode(id, updates)}
+              onUpdateNode={handleUpdateNode}
               onApplyQuickStyle={handleApplyQuickStyle}
               onCopyStyle={handleCopyStyle}
               onPasteStyle={handlePasteStyle}

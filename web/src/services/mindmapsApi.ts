@@ -197,7 +197,7 @@ export const mindmapsApi = {
       fontWeight: 'normal',
       fontStyle: 'normal',
       textDecoration: 'none',
-      textAlign: 'CENTER',
+      textAlign: 'center',
       textCase: 'normal',
       nodeLength: 'fit',
       localStructure: 'default',
