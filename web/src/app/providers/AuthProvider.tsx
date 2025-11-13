@@ -14,17 +14,17 @@ import { refreshToken } from "../../services/AuthApi"; // [MỚI] Import refresh
 // Decode JWT (Không thay đổi)
 function decodeJwt(token: string) {
 try {
-  const base64Url = token.split(".")[1];
-  const base64 = base64Url.replace(/-/g, "+").replace(/_/g, "/");
-  const jsonPayload = decodeURIComponent(
-  atob(base64)
-   .split("")
-   .map(c => "%" + ("00" + c.charCodeAt(0).toString(16)).slice(-2))
-   .join("")
-  );
-  return JSON.parse(jsonPayload);
+  const base64Url = token.split(".")[1];
+  const base64 = base64Url.replace(/-/g, "+").replace(/_/g, "/");
+  const jsonPayload = decodeURIComponent(
+  atob(base64)
+   .split("")
+   .map(c => "%" + ("00" + c.charCodeAt(0).toString(16)).slice(-2))
+   .join("")
+  );
+  return JSON.parse(jsonPayload);
 } catch {
-  return null;
+  return null;
 }
 }
 
@@ -51,8 +51,8 @@ ensureFreshAccessToken: async () => null,
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
 const [tokens, setTokensState] = useState<Tokens | null>(() => loadTokens());
 const [user, setUser] = useState<Record<string, any> | null>(() => {
-  const t = loadTokens();
-  return t?.id_token ? decodeJwt(t.id_token) : null;
+  const t = loadTokens();
+  return t?.id_token ? decodeJwt(t.id_token) : null;
 });
 
 // State for Auth Modal (Không thay đổi)
@@ -60,42 +60,42 @@ const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
 const [initialAuthMode, setInitialAuthMode] = useState<'login' | 'register'>('login');
 
 const setAuthTokens = useCallback((t: Tokens | null) => {
-  setTokensState(t);
-  if (t) {
-    saveTokens(t);
-    if (t.id_token) {
-      const decoded = decodeJwt(t.id_token);
-      setUser(decoded);
-    }
-  } else {
-    clearTokens();
-    setUser(null);
-  }
+  setTokensState(t);
+  if (t) {
+    saveTokens(t);
+    if (t.id_token) {
+      const decoded = decodeJwt(t.id_token);
+      setUser(decoded);
+    }
+  } else {
+    clearTokens();
+    setUser(null);
+  }
 }, []);
 
 // Đồng bộ localStorage (Không thay đổi)
 useEffect(() => {
-  const onStorage = (e: StorageEvent) => {
-    if (e.key === "mm_tokens") {
-      const latest = loadTokens();
-      setTokensState(latest);
-      setUser(latest?.id_token ? decodeJwt(latest.id_token) : null);
-    }
-  };
-  window.addEventListener("storage", onStorage);
-  return () => window.removeEventListener("storage", onStorage);
+  const onStorage = (e: StorageEvent) => {
+    if (e.key === "mm_tokens") {
+      const latest = loadTokens();
+      setTokensState(latest);
+      setUser(latest?.id_token ? decodeJwt(latest.id_token) : null);
+    }
+  };
+  window.addEventListener("storage", onStorage);
+  return () => window.removeEventListener("storage", onStorage);
 }, []);
 
 const isAuthed = !!tokens?.access_token;
 
 const login = useCallback((initialMode: 'login' | 'register' = 'login') => {
-  setInitialAuthMode(initialMode);
-  setIsAuthModalOpen(true);
+  setInitialAuthMode(initialMode);
+  setIsAuthModalOpen(true);
 }, []);
 
 // Logic Logout (Không thay đổi)
 const logout = useCallback(() => {
-  signOut();
+  signOut();
 }, []);
 
 /**
@@ -125,7 +125,7 @@ const ensureFreshAccessToken = useCallback(async () => {
 
   console.log("Access token expired, attempting refresh...");
 
-  try {
+  try {
     // 3. Gọi hàm refreshToken mới (từ AuthApi.ts)
     const newSession = await refreshToken(currentTokens.refresh_token);
 
@@ -145,35 +145,35 @@ const ensureFreshAccessToken = useCallback(async () => {
     // 5. Trả về access token MỚI
     return newTokens.access_token;
 
-  } catch (error) {
-    console.error("Token refresh failed (API):", error);
-    // Nếu refresh thất bại (ví dụ: refresh token hết hạn), đăng xuất
-    logout(); 
-    throw new Error("Session expired, logging out.");
-  }
+  } catch (error) {
+    console.error("Token refresh failed (API):", error);
+    // Nếu refresh thất bại (ví dụ: refresh token hết hạn), đăng xuất
+    logout(); 
+    throw new Error("Session expired, logging out.");
+  }
 }, [tokens, setAuthTokens, logout]); // Thêm 'tokens' làm dependency
 
 const value = useMemo(
-  () => ({
-    tokens,
-    user,
-    isAuthed,
-    login,
-    logout,
-    setAuthTokens,
-    ensureFreshAccessToken,
-  }),
-  [tokens, user, isAuthed, login, logout, setAuthTokens, ensureFreshAccessToken]
+  () => ({
+    tokens,
+    user,
+    isAuthed,
+    login,
+    logout,
+    setAuthTokens,
+    ensureFreshAccessToken,
+  }),
+  [tokens, user, isAuthed, login, logout, setAuthTokens, ensureFreshAccessToken]
 );
 
 return (
-  <AuthContext.Provider value={value}>
-    {children}
-    <AuthModal
-      isOpen={isAuthModalOpen}
-      onClose={() => setIsAuthModalOpen(false)}
-      initialMode={initialAuthMode}
-    />
-  </AuthContext.Provider>
+  <AuthContext.Provider value={value}>
+    {children}
+    <AuthModal
+      isOpen={isAuthModalOpen}
+      onClose={() => setIsAuthModalOpen(false)}
+      initialMode={initialAuthMode}
+    />
+  </AuthContext.Provider>
 );
 };
