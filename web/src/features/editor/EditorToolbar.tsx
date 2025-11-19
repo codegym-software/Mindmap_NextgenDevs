@@ -1,40 +1,38 @@
 import React from 'react';
 import {
   Share2, Undo, Redo, Save, PanelRight, ZoomIn, ZoomOut, ChevronDown,
-  AlignHorizontalJustifyCenter,  // Node con
+  AlignHorizontalJustifyCenter, // Node con
   AlignStartVertical,  // Node anh em
-  GitPullRequestDraft,       // Relationship
+  GitPullRequestDraft,     // Relationship
   BoxSelect,  // Boundary
   TextSelect, // Summary
   PlusSquare  // Insert
 } from 'lucide-react';
 import UserAvatarMenu from '../auth/UserAvatarMenu';
+import { useEditorStore } from '../../app/store/useEditorStore'; 
+import { useMindmapsStore } from '../../app/store/useMindmapsStore';
 
 type EditorToolbarProps = {
-  name: string;
-  onNameChange: (v: string) => void;
-  onCommitName: () => void;
+  onCommitName: () => void; 
   onDashboard: () => void;
   onUndo: () => void;
   onRedo: () => void;
   onShare: () => void;
   onTheme: () => void;
   onSave: () => void;
+  isDirty: boolean; 
   onToggleFormattingToolbar: () => void;
   currentScale: number;
   onZoomIn: () => void;
   onZoomOut: () => void;
   onSetZoom: (scale: number) => void;
   onFitToScreen: () => void;
-
-  // [SỬA] Thêm props mới để xử lý logic
   selectedNodeIds: string[];
   onAddChild: () => void;
   onAddSibling: () => void;
-  onSetHyperlink: () => void; // Cho nút Insert
+  onSetHyperlink: () => void; 
 };
 
-// [SỬA] Component Nút Bấm Tùy Chỉnh (để xử lý `disabled`)
 const ToolbarButton = ({
   onClick,
   disabled,
@@ -64,15 +62,32 @@ const ToolbarButton = ({
 
 
 export default function EditorToolbar({
-  name, onNameChange, onCommitName,
-  onDashboard, onUndo, onRedo, onShare, onTheme, onSave, onToggleFormattingToolbar,
+  onCommitName,
+  onDashboard, onUndo, onRedo, onShare, onTheme, onSave, isDirty, onToggleFormattingToolbar,
   currentScale, onZoomIn, onZoomOut, onSetZoom, onFitToScreen,
-  // [SỬA] Nhận props mới
   selectedNodeIds,
   onAddChild,
   onAddSibling,
   onSetHyperlink
 }: EditorToolbarProps) {
+  
+  const setMindmapsItems = useMindmapsStore(s => s.set);
+  const mindmapItems = useMindmapsStore(s => s.items);
+
+  const name = useEditorStore(s => s.currentMindmapName);
+  const currentMindmapId = useEditorStore(s => s.currentMindmapId); 
+
+  const setName = (newName: string) => useEditorStore.setState({ currentMindmapName: newName, isDirty: true });
+
+  const handleCommitName = () => {
+    onCommitName(); 
+    if (currentMindmapId) {
+        const newItems = mindmapItems.map(item => 
+            item.id === currentMindmapId ? { ...item, name: name } : item
+        );
+        setMindmapsItems({ items: newItems });
+    }
+  };
 
   const zoomLevels: number[] = [];
   for (let i = 50; i <= 400; i += 50) {
@@ -93,13 +108,10 @@ export default function EditorToolbar({
     }
   };
 
-  // Chỉ bật khi CHỈ MỘT node được chọn
   const isSingleNodeFocused = selectedNodeIds.length === 1;
-  // Chỉ bật khi MỘT node được chọn VÀ đó KHÔNG PHẢI là root
   const isNotRootAndSingle = isSingleNodeFocused && selectedNodeIds[0] !== 'root';
 
   return (
-    // [SỬA] Thay đổi layout để có 3 phần (Trái, Giữa, Phải)
     <div className="fixed top-0 left-0 right-0 h-12 bg-[#F5F5F5] border-b border-gray-200 flex items-center px-4 z-40">
 
       {/* 1. PHẦN BÊN TRÁI (Logo, Tên) */}
@@ -110,9 +122,9 @@ export default function EditorToolbar({
         <div className="w-px h-6 bg-gray-300 mx-2" />
         <input
           value={name}
-          onChange={(e) => onNameChange(e.target.value)}
+          onChange={(e) => setName(e.target.value)} 
           onKeyDown={(e) => e.key === "Enter" && (e.target as HTMLInputElement).blur()}
-          onBlur={onCommitName}
+          onBlur={handleCommitName}
           className="px-3 py-1.5 rounded-md bg-transparent text-black outline-none ring-1 ring-transparent hover:bg-gray-300/50 focus:bg-white focus:ring-blue-500 w-64 transition-all"
           placeholder="Đặt tên mindmap…"
         />
@@ -122,7 +134,7 @@ export default function EditorToolbar({
       <div className="flex-grow flex items-center justify-center gap-2">
         <ToolbarButton
           onClick={onAddChild}
-          disabled={!isSingleNodeFocused} // Tắt khi chọn > 1 node
+          disabled={!isSingleNodeFocused} 
           title="Thêm Node con (Tab)"
         >
           <AlignHorizontalJustifyCenter size={20} />
@@ -130,7 +142,7 @@ export default function EditorToolbar({
 
         <ToolbarButton
           onClick={onAddSibling}
-          disabled={!isNotRootAndSingle} // Tắt khi chọn > 1 node hoặc chọn root
+          disabled={!isNotRootAndSingle} 
           title="Thêm Node anh em (Enter)"
         >
           <AlignStartVertical size={20} />
@@ -140,7 +152,7 @@ export default function EditorToolbar({
 
         <ToolbarButton
           onClick={() => alert('Chức năng Relationship (Liên kết) sẽ sớm ra mắt!')}
-          disabled={!isNotRootAndSingle} // Bật khi 1 node (không phải root) được chọn
+          disabled={!isNotRootAndSingle} 
           title="Tạo liên kết (Sắp ra mắt)"
         >
           <GitPullRequestDraft size={20} />
@@ -148,7 +160,7 @@ export default function EditorToolbar({
 
         <ToolbarButton
           onClick={() => alert('Chức năng Boundary (Đường viền) sẽ sớm ra mắt!')}
-          disabled={!isNotRootAndSingle} // Bật khi 1 node (không phải root) được chọn
+          disabled={!isNotRootAndSingle} 
           title="Tạo đường viền (Sắp ra mắt)"
         >
           <BoxSelect size={20} />
@@ -156,15 +168,15 @@ export default function EditorToolbar({
         
         <ToolbarButton
           onClick={() => alert('Chức năng Summary (Tóm tắt) sẽ sớm ra mắt!')}
-          disabled={!isNotRootAndSingle} // Bật khi 1 node (không phải root) được chọn
+          disabled={!isNotRootAndSingle} 
           title="Tạo tóm tắt (Sắp ra mắt)"
         >
           <TextSelect size={20} />
         </ToolbarButton>
         
         <ToolbarButton
-          onClick={onSetHyperlink} // [SỬA] Kích hoạt nút Insert
-          disabled={!isSingleNodeFocused} // Bật khi 1 node (kể cả root) được chọn
+          onClick={onSetHyperlink} 
+          disabled={!isSingleNodeFocused} 
           title="Chèn Hyperlink"
         >
           <PlusSquare size={20} />
@@ -202,8 +214,12 @@ export default function EditorToolbar({
 
         <div className="w-px h-6 bg-gray-300 mx-2" />
 
-        <button onClick={onSave} className="px-4 py-1.5 rounded-md hover:bg-gray-300/50 text-gray-700 transition-all flex items-center gap-2" title="Lưu (Ctrl+S)">
-          <Save size={16} />
+        <button
+          onClick={onSave}
+          disabled={!isDirty} // Ẩn (mờ) khi !isDirty, Hiện khi isDirty
+          title={isDirty ? "Lưu thay đổi (Ctrl+S)" : "Chưa có gì thay đổi"}
+        >
+          <Save size={20} />
         </button>
 
         <div className="w-px h-6 bg-gray-300 mx-2" />

@@ -45,14 +45,14 @@ export type ColorTheme = {
 
 export const colorThemes: Record<string, ColorTheme> = {
   dawn: {
-    background: "#ffffffff",
+    background: "#ffffffff", 
     quickStyles: {
       'important-dark': { fill: "#420a27ff", color:"#970074ff", stroke: "#97266D", textColor: "#ffffffff", fontSize:18, fontWeight: "bold" },
-      'important-light': { fill: "#FBB6CE", color:"#b60ac0ff", stroke: "#ED89A7", textColor: "#ffffffff" },
+      'important-light': { fill: "#FBB6CE", color:"#b60ac0ff", stroke: "#ED89A7", textColor: "#ffffffff" }, // SỬA: Đổi mã hex
       strikethrough: { fill: "#FFFFFF", color:"#ffffffff", stroke: "#CBD5E0", textColor: "#A0AEC0", textDecoration: "line-through" },
       default: { fill: "#FFFFFF", color:"#ffffffff", stroke: "#CBD5E0", textColor: "#4A5568" },
     },
-    root: { fill: "#6366F1", stroke: "#4338CA", textColor: "#FFFFFF" },
+    root: { fill: "#6366F1", stroke: "#4338CA", textColor: "#650505ff" },
   },
 };
 
@@ -126,7 +126,7 @@ export const DEFAULT_NODE_STYLE: Partial<NodeData> = {
   textAlign: 'center',
   textColor: '#4A5568',
   textCase: 'normal',
-  nodeLength: 230,
+  nodeLength: 'fit', // SỬA: Đổi 230 thành 'fit'
   branchColor: undefined,
   branchLineStyle: 'bezier',
   branchLineEnd: 'none',
@@ -183,10 +183,13 @@ export function getNodeComputedStyle(
   if (node.id === 'root') {
     merged.fontSize = (merged.fontSize || 16) + 8;
     merged.fontWeight = 'bold';
-    merged.nodeLength = 300;
-    merged.textColor = '#480000ff';
+    merged.nodeLength = 300; 
+    merged.textColor = theme.root.textColor || '#4a0505ff'; 
     merged.textCase = 'uppercase';
   }
+
+ 
+  
 
   // Gán lại các thuộc tính không phải style
   merged.id = node.id;
@@ -196,6 +199,8 @@ export function getNodeComputedStyle(
   merged.parentId = node.parentId;
   merged.side = node.side;
   merged.collapsed = node.collapsed;
+  merged.hyperlink = node.hyperlink; // SỬA: Thêm hyperlink
+  merged.styleLocked = node.styleLocked; // SỬA: Thêm styleLocked
 
   return merged as NodeData;
 }
@@ -225,12 +230,14 @@ export function applyNodeDefaults(node: NodeData, theme: ColorTheme): Partial<No
     textAlign: undefined,
     textColor: undefined,
     textCase: undefined,
-    nodeLength: undefined,
+    nodeLength: undefined, // SỬA: Reset cả nodeLength
     localStructure: undefined,
     branchColor: undefined,
     branchLineStyle: undefined,
     branchLineEnd: undefined,
     branchLineThickness: undefined,
+    styleLocked: undefined, // SỬA: Thêm styleLocked
+    hyperlink: undefined, // SỬA: Thêm hyperlink
   };
 }
 
@@ -250,8 +257,15 @@ type State = {
   branchLineWidth: number;
   isColoredBranch: boolean;
   activeColorThemeId: string;
-  globalBranchColor: string; // SỬA: Thêm màu nhánh toàn cục
+  globalBranchColor: string; 
+  backgroundColor: string; // [MỚI] Thêm màu nền
 
+  // [MỚI] Quản lý trạng thái editor
+  isDirty: boolean; // Theo dõi thay đổi
+  currentMindmapId: string | null; // ID của map đang mở
+  currentMindmapName: string; // Tên của map đang mở
+
+  setIsDirty: (isDirty: boolean) => void; 
   setGraph: (n: NodeData[], e: EdgeData[]) => void;
   push: (n: NodeData[], e: EdgeData[]) => void;
   undo: () => Snapshot | null;
@@ -273,10 +287,15 @@ export const useEditorStore = create<State>((set, get) => ({
   branchLineWidth: 2,
   isColoredBranch: true,
   activeColorThemeId: 'dawn',
-  globalBranchColor: '#94A3B8', // SỬA: Thêm màu mặc định
+  globalBranchColor: '#94A3B8', 
+  backgroundColor: '#FAFAFB', 
+  isDirty: false,
+  currentMindmapId: null,
+  currentMindmapName: 'Đang tải...',
 
+  setIsDirty: (status) => set({ isDirty: status }),
   setGraph: (n, e) => {
-    set({ nodes: n, edges: e });
+    set({ nodes: n, edges: e, isDirty: true });
   },
 
   push: (n, e) => {
@@ -285,7 +304,7 @@ export const useEditorStore = create<State>((set, get) => ({
 
     if (!lastHistoryState || !isEqual(lastHistoryState, currentState)) {
       const nextHistory = [...get().history, currentState].slice(-MAX_HISTORY);
-      set({ history: nextHistory, future: [] });
+      set({ history: nextHistory, future: [], isDirty: true });
     }
   },
 
@@ -300,7 +319,8 @@ export const useEditorStore = create<State>((set, get) => ({
       history: h,
       future: [current, ...get().future],
       nodes: prev.nodes,
-      edges: prev.edges
+      edges: prev.edges,
+      isDirty: true,
     });
     return prev;
   },
@@ -314,7 +334,8 @@ export const useEditorStore = create<State>((set, get) => ({
       history: [...get().history, next],
       future: f,
       nodes: next.nodes,
-      edges: next.edges
+      edges: next.edges,
+      isDirty: true,
     });
     return next;
   },

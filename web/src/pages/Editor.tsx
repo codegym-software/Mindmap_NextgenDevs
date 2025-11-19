@@ -18,14 +18,10 @@ import {
   Arrow,
 } from 'react-konva';
 import * as dagre from 'dagre';
-// [MERGE GĐ 7] Import Debounce
 import { useDebouncedCallback } from 'use-debounce';
-
-// [MERGE] Import UI mới từ feature/tt
 import EditorToolbar from '../features/editor/EditorToolbar';
 import Sidebar from '../components/layout/Sidebar';
 import FormattingToolbar from '../features/editor/FormattingToolbar';
-// [MERGE] Import Store đã hợp nhất (GĐ B)
 import {
   useEditorStore,
   NodeData,
@@ -38,18 +34,16 @@ import {
   getNodeComputedStyle,
   applyNodeDefaults,
   DEFAULT_NODE_STYLE,
-  NodeData as FeNodeData, // Alias cho rõ ràng
+  NodeData as FeNodeData, 
 } from '../app/store/useEditorStore';
-// [MERGE] Import API đã nâng cấp (GĐ 2 & 6)
 import { mindmapsApi, FeMindmapDoc } from '../services/mindmapsApi';
-// [MERGE] Import Auth (GĐ 9 - Lấy token cho WS)
 import { useAuth } from '../hooks/useAuth';
 import { useToast } from '../hooks/useToast';
 import { useTheme } from '../hooks/useTheme';
 import Spinner from '../components/common/Spinner';
 import { useLocalMindmap } from '../hooks/useLocalMindmap';
+import { useMindmapsStore } from '../app/store/useMindmapsStore';
 
-// [MERGE] Import Data Mapper (GĐ 1) và Types (GĐ 8, 9)
 import {
   BeMindmapContent,
   BeMindmapDoc,
@@ -148,10 +142,7 @@ function saveGuestDoc(
   feEdges: EdgeData[]
 ) {
   try {
-    const beContent = normalizeContentFEtoBE(feNodes, feEdges, {
-      layoutMode: useEditorStore.getState().globalStructure,
-      theme: 'light',
-    });
+    const beContent = normalizeContentFEtoBE(feNodes, feEdges);
     const all = JSON.parse(localStorage.getItem(GUEST_BUCKET) || '{}');
     const beDoc: BeGuestDoc = { id: id, name: name, content: beContent };
     all[id] = beDoc;
@@ -231,12 +222,11 @@ export default function Editor() {
   const navigate = useNavigate();
   const { addToast } = useToast();
   const { toggleTheme } = useTheme();
-  // [MERGE GĐ 9] Thêm `getAccessToken`
   const { isAuthed, login, getAccessToken } = useAuth();
   const { createGuest } = useLocalMindmap();
   const isGuest = !!id && id.startsWith('guest-');
 
-  // State từ store (Không thay đổi)
+  // State từ store 
   const {
     nodes,
     edges,
@@ -252,6 +242,7 @@ export default function Editor() {
     activeColorThemeId,
     set: setGlobalStore,
     globalBranchColor,
+    isDirty
   } = useEditorStore();
 
   // State nội bộ (Lấy từ feature/tt, bao gồm logic UI mới)
@@ -260,11 +251,11 @@ export default function Editor() {
   const [isFormattingToolbarOpen, setFormattingToolbarOpen] = useState(false); // UI Mới
   const [dimensions, setDimensions] = useState({
     width: window.innerWidth,
-    height: window.innerHeight - 48, // UI Mới (h-12)
+    height: window.innerHeight - 48,
   });
   const [pos, setPos] = useState({
     x: window.innerWidth / 2,
-    y: (window.innerHeight - 48) / 2, // UI Mới (h-12)
+    y: (window.innerHeight - 48) / 2, 
   });
   const [selectedNodeIds, setSelectedNodeIds] = useState<string[]>(['root']);
   const [isPanning, setIsPanning] = useState(false);
@@ -280,19 +271,15 @@ export default function Editor() {
   const [styleClipboard, setStyleClipboard] = useState<Partial<NodeData> | null>(
     null
   );
-  // [MERGE] State UI mới từ feature/tt
   const [rootCollapse, setRootCollapse] = useState({ left: false, right: false });
   const lastEditStopTime = useRef(0);
 
   const stageRef = useRef<any>(null);
   const editingInputRef = useRef<HTMLTextAreaElement>(null);
-  // [MERGE GĐ 9] Ref cho WebSocket
   const wsRef = useRef<WebSocket | null>(null);
 
   const activeTheme =
-    colorThemes[activeColorThemeId as keyof typeof colorThemes];
-
-  // Map (Không thay đổi)
+  colorThemes[activeColorThemeId as keyof typeof colorThemes];
   const nodeMap = useMemo(() => new Map(nodes.map((n) => [n.id, n])), [nodes]);
   const nodesWithChildren = useMemo(
     () => new Set(edges.map((e) => e.from)),
@@ -308,7 +295,6 @@ export default function Editor() {
   const selectionStartPos = useRef({ x: 0, y: 0 });
   const isSelecting = useRef(false); // Thêm cờ này để biết đang kéo chọn vùng
 
-  // Dùng Set để kiểm tra `isSelected` nhanh hơn
   const selectedIdsSet = useMemo(() => new Set(selectedNodeIds), [selectedNodeIds]);
 
   // Lấy node đầu tiên trong danh sách chọn để hiển thị style trên toolbar
@@ -317,6 +303,9 @@ export default function Editor() {
     if (!firstSelectedId) return null;
     return nodeMap.get(firstSelectedId) || null;
   }, [firstSelectedId, nodeMap]);
+
+  const setMindmapsStore = useMindmapsStore(s => s.set);
+  const mindmapItems = useMindmapsStore(s => s.items);
 
   // Logic tính toán (Không thay đổi)
   const computedNodeStyles = useMemo(() => {
@@ -376,35 +365,29 @@ export default function Editor() {
 
     if (isGuest) {
       saveGuestDoc(id, name, currentNodes, currentEdges);
-      // console.log("v5.0: Đã lưu vào LocalStorage");
     } else if (isAuthed) {
       const docToSave = {
         name,
         content: { nodes: currentNodes, edges: currentEdges },
       };
-      // Gọi hàm API đã tối ưu (GĐ 6)
       mindmapsApi.update(id, docToSave).catch((e) => {
         console.error('Lưu trữ (persist) ngầm thất bại:', e);
       });
-      // console.log("v5.0: Đã lưu vào DB");
     }
   }, 5000, {
-    // Phải truyền deps vào debouncer
   });
 
-  // [KHÔNG ĐỔI] Resize (GĐ 5)
   useEffect(() => {
     const handleResize = () => {
       setDimensions({
         width: window.innerWidth,
-        height: window.innerHeight - 48, // UI Mới (h-12)
+        height: window.innerHeight - 48, 
       });
     };
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
-  // [MERGE GĐ 5] CẤY GHÉP LOGIC LOAD (Fix Race Condition)
   useEffect(() => {
     let isMounted = true;
     const loadData = async () => {
@@ -445,15 +428,20 @@ export default function Editor() {
 
         if (isMounted) {
           setName(data.name);
+          useEditorStore.setState({ currentMindmapId: id, currentMindmapName: data.name, isDirty: false });
           clearHistory();
           setGraph(data.nodes, data.edges);
-          pushHistory(data.nodes, data.edges); // Push lần đầu
+          pushHistory(data.nodes, data.edges); 
           setGlobalStore({
             globalStructure: (data.layoutMode as GlobalStructure) || 'mindmap',
+            globalFont: data.fontFamily || fonts[0].value,
+            branchLineWidth: data.branchLineWidth || 2,
+            isColoredBranch: data.isColoredBranch ?? true,
+            globalBranchColor: data.globalBranchColor || '#94A3B8',
+            activeColorThemeId: data.activeColorThemeId || 'dawn',
+            backgroundColor: data.backgroundColor || '#FAFAFB', 
           });
-          const theme =
-            colorThemes[activeColorThemeId as keyof typeof colorThemes];
-          setBackgroundColor(theme.background);
+          setBackgroundColor(data.backgroundColor || '#FAFAFB');
           setSelectedNodeIds(['root']);
           setIsDataLoaded(true);
         }
@@ -474,17 +462,22 @@ export default function Editor() {
     isGuest, createGuest,
   ]);
 
-  // [MERGE GĐ 6] CẤY GHÉP LOGIC SAVE (Tối ưu List-only)
   const handleSave = () => {
     if (!isAuthed) {
       addToast('Vui lòng đăng nhập để lưu mindmap.', 'info');
       login();
     } else if (id) {
-      // Gửi Mảng (List) trực tiếp
       const content = { nodes: nodes, edges };
       mindmapsApi
         .update(id, { name, content })
-        .then(() => addToast('Đã lưu mindmap!', 'success'))
+        .then(() => {
+          addToast('Đã lưu mindmap!', 'success');
+          useEditorStore.setState({ isDirty: false });
+          const newItems = mindmapItems.map(item => 
+             item.id === id ? { ...item, name: name } : item
+          );
+          setMindmapsStore({ items: newItems });
+        })
         .catch((e) => {
           console.error('Save failed:', e);
           addToast('Lưu thất bại', 'error');
@@ -492,7 +485,12 @@ export default function Editor() {
     }
   };
 
-  // [MERGE GĐ 5] CẤY GHÉP LOGIC TẠO MỚI (Fix Race Condition)
+  useEffect(() => {
+    if (selectedNodeIds.length > 0) {
+       setFormattingToolbarOpen(true);
+    }
+  }, [selectedNodeIds]);
+
   const handleCreateNew = useCallback(async () => {
     try {
       if (isAuthed) {
@@ -511,16 +509,11 @@ export default function Editor() {
     }
   }, [isAuthed, createGuest, addToast]);
 
-  // [KHÔNG ĐỔI] Lắng nghe sự kiện tạo mới
   useEffect(() => {
     const createHandler = () => handleCreateNew();
     window.addEventListener('mm:create', createHandler);
     return () => window.removeEventListener('mm:create', createHandler);
   }, [handleCreateNew]);
-
-  /**
-   * [MERGE GĐ 9] CẤY GHÉP LOGIC WEBSOCKET
-   */
 
   // 1. Hàm Gửi Patch
   const sendPatch = useCallback((type: string, payload: any) => {
@@ -1137,10 +1130,11 @@ const handleFitToScreen = useCallback(() => {
           n.id === editingNodeId ? { ...n, nodeText: newText } : n
         );
         setGraph(newNodes, edges);
-        justStoppedEditingRef.current = true; // Kích hoạt layout
+        justStoppedEditingRef.current = true; 
+        useEditorStore.setState({ isDirty: true });
         debouncedPushHistory();
         debouncedPersistData();
-        sendPatch('NODE_TEXT_CHANGE', { id: editingNodeId, text: newText }); // GĐ 9
+        sendPatch('NODE_TEXT_CHANGE', { id: editingNodeId, text: newText }); 
       }
     },
     [
@@ -1825,7 +1819,6 @@ const handleSetGlobalBranchColor = (color: string) => {
     return { counts, rootCounts };
   }, [edges, nodeMap]);
 
-  // [MERGE] Giữ lại logic UI mới (textarea) từ feature/tt
   useEffect(() => {
     if (!editingNodeId || !editingInputRef.current) return;
     const el = editingInputRef.current;
@@ -1840,9 +1833,8 @@ const handleSetGlobalBranchColor = (color: string) => {
     resize();
     const t = setTimeout(resize, 50);
     return () => clearTimeout(t);
-  }, [editingNodeId, scale, pos, nodeVisuals]); // [SỬA] Thêm lại nodeVisuals vào dependencies
+  }, [editingNodeId, scale, pos, nodeVisuals]); 
 
-  // [MERGE] Giữ lại logic UI mới (textarea) từ feature/tt
   const computeEditingNodePosition = useCallback(() => {
     if (!editingNodeId) return null;
     const visual = nodeVisuals.get(editingNodeId);
@@ -1882,7 +1874,6 @@ const handleSetGlobalBranchColor = (color: string) => {
     );
   }
 
-  // [MERGE] Lấy JSX từ feature/tt
   return (
     <>
       <style>
@@ -1897,10 +1888,7 @@ const handleSetGlobalBranchColor = (color: string) => {
       </style>
       <div className="w-screen h-screen bg-white overflow-hidden flex flex-col">
         <EditorToolbar
-          name={name}
-          onNameChange={setName}
           onCommitName={() => {
-            // [MERGE GĐ 7+9]
             debouncedPersistData();
             sendPatch('MAP_NAME_CHANGE', { name });
           }}
@@ -1911,8 +1899,9 @@ const handleSetGlobalBranchColor = (color: string) => {
             navigator.clipboard.writeText(window.location.href);
             addToast('Đã sao chép link chia sẻ!', 'success');
           }}
-          onTheme={toggleTheme} // Logic theme mới của tt đã bị xóa, dùng lại logic cũ
+          onTheme={toggleTheme} 
           onSave={handleSave}
+          isDirty={isDirty}
           onToggleFormattingToolbar={() =>
             setFormattingToolbarOpen(!isFormattingToolbarOpen)
           }
@@ -2434,15 +2423,20 @@ const handleSetGlobalBranchColor = (color: string) => {
               onApplyLayout={(structure) => {
                 pushHistory(useEditorStore.getState().nodes, useEditorStore.getState().edges);
                 setGlobalStore({ globalStructure: structure });
-                handleLayout(true);
+                handleLayout(false);
+                useEditorStore.setState({ isDirty: true });
               }}
-              onSetBackgroundColor={handleSetBackgroundColor}
+              onSetBackgroundColor={(color) => {
+                 handleSetBackgroundColor(color);
+                 useEditorStore.setState({ isDirty: true });
+              }}
               onSetGlobalFont={(font) => {
                 pushHistory(useEditorStore.getState().nodes, useEditorStore.getState().edges);
-                setGlobalStore({ globalFont: font })}}
-                onSetBranchLineWidth={(width) => {
+                useEditorStore.setState({ globalFont: font, isDirty: true });
+              }}
+              onSetBranchLineWidth={(width) => {
                 pushHistory(useEditorStore.getState().nodes, useEditorStore.getState().edges);
-                setGlobalStore({ branchLineWidth: width });
+                useEditorStore.setState({ branchLineWidth: width, isDirty: true });
               }}
               onToggleColoredBranch={(state) => handleToggleColoredBranch(state)}
               onSetGlobalBranchColor={handleSetGlobalBranchColor}

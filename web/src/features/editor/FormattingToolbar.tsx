@@ -84,7 +84,6 @@ export default function FormattingToolbar({
   // [SỬA] Logic cấm/tắt tab Style
   const isDisabled = useMemo(() => {
     if (selectedIds.length === 0) return true;
-    if (selectedIds.length === 1 && selectedIds[0] === 'root') return true;
     return false;
   }, [selectedIds]);
 
