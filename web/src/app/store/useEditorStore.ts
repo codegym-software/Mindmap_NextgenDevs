@@ -1,6 +1,19 @@
 import { create } from "zustand";
 import { isEqual } from "lodash";
 
+import { getBranchColorByDepth, getContrastingTextColor } from '../../utils/colorUtils';
+
+// Định nghĩa thêm Palette màu mặc định nếu chưa có
+const DEFAULT_PALETTE = [
+  '#EF4444', '#F97316', '#FACC15', '#22C55E', 
+  '#06B6D4', '#3B82F6', '#8B5CF6', '#EC4899'
+];
+
+// Interface cho thông tin Topo (được tính toán ở Editor)
+export type NodeTopology = {
+  depth: number;
+  branchIndex: number; // Index của nhánh Cấp 1 mà node này thuộc về
+};
 // ================
 // Định nghĩa Fonts
 // ================
@@ -141,16 +154,17 @@ export const DEFAULT_NODE_STYLE: Partial<NodeData> = {
 export function getNodeComputedStyle(
   node: NodeData | null,
   theme: ColorTheme,
-  globalFont: string
+  globalFont: string,
+  topology?: NodeTopology // [MỚI] Tham số topo
 ): NodeData {
   const baseStyle: Partial<NodeData> = {
     ...DEFAULT_NODE_STYLE,
-    fontFamily: globalFont // 1. Áp dụng Global Font
+    fontFamily: globalFont 
   };
 
   if (!node) return baseStyle as NodeData;
 
-  // 2. Lấy style từ Theme (Root, QuickStyle, hoặc Default)
+  // 1. Lấy style cơ bản từ Theme
   let themeStyle: Partial<ColorThemeStyle> = {};
   if (node.id === 'root') {
     themeStyle = theme.root;
@@ -160,38 +174,56 @@ export function getNodeComputedStyle(
     themeStyle = theme.quickStyles.default;
   }
 
-  // 3. Hợp nhất: Default <- Theme
+  // 2. Hợp nhất
   const merged: Partial<NodeData> = {
     ...baseStyle,
     ...(themeStyle as Partial<NodeData>),
   };
 
-  // 4. Áp dụng style tùy chỉnh (ghi đè)
-  // Chỉ ghi đè các giá trị đã được xác định cụ thể trên node
+  // 3. [LOGIC MỚI] Áp dụng Smart Color Logic (nếu style chưa bị lock)
+  // Chỉ áp dụng nếu có thông tin topology và không phải root
+  if (topology && node.id !== 'root' && !node.styleLocked) {
+    const { depth, branchIndex } = topology;
+    
+    // a. Xác định Base Color (Màu gốc của nhánh)
+    // Dùng Palette từ theme hoặc mặc định
+    // Nếu node có branchColor riêng (do người dùng chỉnh nhánh cha), có thể ưu tiên dùng nó (nâng cao)
+    // Ở đây ta dùng Palette xoay vòng theo branchIndex
+    const palette = DEFAULT_PALETTE; // Hoặc lấy từ theme.palette nếu có
+    const baseHueColor = palette[branchIndex % palette.length];
+
+    // b. Tính toán Lightness và Cutoff theo độ sâu
+    const smartColors = getBranchColorByDepth(baseHueColor, depth);
+
+    merged.color = smartColors.bg;
+    merged.borderColor = smartColors.border;
+    
+    // c. Tự động tương phản chữ
+    merged.textColor = getContrastingTextColor(smartColors.bg);
+    
+    // d. Điều chỉnh viền cho các node sâu (Cutoff)
+    if (depth >= 6) {
+       merged.borderWidth = 2; // Viền dày hơn chút để rõ màu nhánh
+    }
+  }
+
+  // 4. Áp dụng style tùy chỉnh (ghi đè) từ chính Node (như cũ)
   (Object.keys(DEFAULT_NODE_STYLE) as Array<keyof typeof DEFAULT_NODE_STYLE>).forEach(key => {
     if (node[key] !== undefined) {
       (merged as any)[key] = node[key];
     }
   });
-  
-  // SỬA: Ghi đè font toàn cục NẾU node có font tùy chỉnh
-  if (node.fontFamily) {
-    merged.fontFamily = node.fontFamily;
-  }
 
-  // Node gốc luôn có style đặc biệt
+  // Root override (như cũ)
   if (node.id === 'root') {
     merged.fontSize = (merged.fontSize || 16) + 8;
     merged.fontWeight = 'bold';
-    merged.nodeLength = 300; 
-    merged.textColor = theme.root.textColor || '#4a0505ff'; 
+    merged.nodeLength = 300;
+    merged.textColor = '#000000'; 
     merged.textCase = 'uppercase';
   }
-
- 
   
-
-  // Gán lại các thuộc tính không phải style
+  // ... Gán lại các thuộc tính khác (id, text, x, y...)
   merged.id = node.id;
   merged.nodeText = node.nodeText;
   merged.x = node.x;
@@ -199,8 +231,8 @@ export function getNodeComputedStyle(
   merged.parentId = node.parentId;
   merged.side = node.side;
   merged.collapsed = node.collapsed;
-  merged.hyperlink = node.hyperlink; // SỬA: Thêm hyperlink
-  merged.styleLocked = node.styleLocked; // SỬA: Thêm styleLocked
+  merged.hyperlink = node.hyperlink;
+  merged.styleLocked = node.styleLocked;
 
   return merged as NodeData;
 }

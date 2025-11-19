@@ -35,6 +35,7 @@ import {
   applyNodeDefaults,
   DEFAULT_NODE_STYLE,
   NodeData as FeNodeData, 
+  NodeTopology
 } from '../app/store/useEditorStore';
 import { mindmapsApi, FeMindmapDoc } from '../services/mindmapsApi';
 import { useAuth } from '../hooks/useAuth';
@@ -280,6 +281,38 @@ export default function Editor() {
 
   const activeTheme =
   colorThemes[activeColorThemeId as keyof typeof colorThemes];
+  const nodeTopology = useMemo(() => {
+    const topology = new Map<string, NodeTopology>();
+    
+    // Xây dựng Adjacency List để duyệt cây nhanh
+    const adj = new Map<string, string[]>();
+    edges.forEach(e => {
+      if (!adj.has(e.from)) adj.set(e.from, []);
+      adj.get(e.from)!.push(e.to);
+    });
+
+    // Hàm duyệt cây DFS
+    // nodeId: Node đang xét
+    // depth: Độ sâu hiện tại
+    // rootBranchIndex: Chỉ số nhánh của tổ tiên cấp 1 (để xác định màu)
+    const traverse = (nodeId: string, depth: number, rootBranchIndex: number) => {
+      topology.set(nodeId, { depth, branchIndex: rootBranchIndex });
+      
+      const children = adj.get(nodeId) || [];
+      children.forEach((childId, index) => {
+        // Logic quan trọng:
+        // - Nếu là con trực tiếp của Root (depth 0 -> 1): branchIndex chính là thứ tự index của nó.
+        // - Nếu sâu hơn: kế thừa branchIndex từ cha.
+        const nextBranchIndex = (nodeId === 'root') ? index : rootBranchIndex;
+        traverse(childId, depth + 1, nextBranchIndex);
+      });
+    };
+
+    // Bắt đầu duyệt từ Root
+    traverse('root', 0, 0);
+    
+    return topology;
+  }, [nodes, edges]);
   const nodeMap = useMemo(() => new Map(nodes.map((n) => [n.id, n])), [nodes]);
   const nodesWithChildren = useMemo(
     () => new Set(edges.map((e) => e.from)),
@@ -311,10 +344,17 @@ export default function Editor() {
   const computedNodeStyles = useMemo(() => {
     const map = new Map<string, NodeData>();
     nodes.forEach((node) => {
-      map.set(node.id, getNodeComputedStyle(node, activeTheme, globalFont));
+      // Lấy thông tin topo của node hiện tại
+      const topo = nodeTopology.get(node.id);
+      
+      // Truyền topo vào hàm tính style
+      map.set(
+        node.id, 
+        getNodeComputedStyle(node, activeTheme, globalFont, topo)
+      );
     });
     return map;
-  }, [nodes, activeTheme, globalFont]);
+  }, [nodes, activeTheme, globalFont, nodeTopology]);
 
   const nodeVisuals = useMemo(() => {
     const map = new Map<
