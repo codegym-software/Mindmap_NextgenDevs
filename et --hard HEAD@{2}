@@ -1,0 +1,97 @@
+[33m414b28d[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mDev-refactor[m[33m)[m HEAD@{0}: commit: 1
+[33m9eb2fb5[m[33m ([m[1;31morigin/main[m[33m, [m[1;31morigin/HEAD[m[33m, [m[1;31morigin/Dev-refactor[m[33m)[m HEAD@{1}: reset: moving to origin/Dev-refactor
+[33md63e787[m HEAD@{2}: checkout: moving from dev to Dev-refactor
+[33m9e725c5[m[33m ([m[1;32mdev[m[33m)[m HEAD@{3}: checkout: moving from feature/fixrefactor to dev
+[33md6f4865[m[33m ([m[1;31morigin/feature/fixrefactor[m[33m, [m[1;32mfeature/fixrefactor[m[33m)[m HEAD@{4}: commit (merge): Merge branch 'feature/tt' into feature/fixrefactor
+[33mc035c6c[m HEAD@{5}: checkout: moving from feature/tt to feature/fixrefactor
+[33m7efc4db[m[33m ([m[1;31morigin/feature/tt[m[33m, [m[1;32mfeature/tt[m[33m)[m HEAD@{6}: commit: Format panel
+[33m54d00a8[m HEAD@{7}: commit: List Mindmap
+[33mf1d79ae[m HEAD@{8}: checkout: moving from feature/fixrefactor to feature/tt
+[33mc035c6c[m HEAD@{9}: commit: chia nhánh
+[33m7fe709e[m HEAD@{10}: commit: them ham tinh chieu cao
+[33m15768e2[m HEAD@{11}: commit (merge): Merge branch 'feature/tt' into feature/fixrefactor
+[33m6d62477[m HEAD@{12}: checkout: moving from feature/tt to feature/fixrefactor
+[33mf1d79ae[m HEAD@{13}: commit: tu dong layout
+[33m9eb2fb5[m[33m ([m[1;31morigin/main[m[33m, [m[1;31morigin/HEAD[m[33m, [m[1;31morigin/Dev-refactor[m[33m)[m HEAD@{14}: reset: moving to origin/feature/tt
+[33me6157db[m HEAD@{15}: checkout: moving from feature/fixrefactor to feature/tt
+[33m6d62477[m HEAD@{16}: commit: ver 2
+[33m6050f27[m HEAD@{17}: commit: 1
+[33md3848e5[m HEAD@{18}: commit (merge): Merge branch 'feature/fixsidebar' into feature/fixrefactor
+[33m409479e[m HEAD@{19}: checkout: moving from feature/fixsidebar to feature/fixrefactor
+[33me33f1da[m[33m ([m[1;31morigin/feature/fixsidebar[m[33m, [m[1;32mfeature/fixsidebar[m[33m)[m HEAD@{20}: commit: implements chuc năng
+[33md942e5b[m HEAD@{21}: commit: notification
+[33m58719c4[m HEAD@{22}: commit: them chuc nang
+[33m17a13b2[m HEAD@{23}: commit: add sidebar
+[33m9eb2fb5[m[33m ([m[1;31morigin/main[m[33m, [m[1;31morigin/HEAD[m[33m, [m[1;31morigin/Dev-refactor[m[33m)[m HEAD@{24}: checkout: moving from feature/fixrefactor to feature/fixsidebar
+[33m409479e[m HEAD@{25}: commit: fix database
+[33m9eb2fb5[m[33m ([m[1;31morigin/main[m[33m, [m[1;31morigin/HEAD[m[33m, [m[1;31morigin/Dev-refactor[m[33m)[m HEAD@{26}: checkout: moving from dev to feature/fixrefactor
+[33m9e725c5[m[33m ([m[1;32mdev[m[33m)[m HEAD@{27}: commit (merge): Merge branch 'feature/canvas' into dev
+[33mecf25bd[m HEAD@{28}: checkout: moving from feature/canvas to dev
+[33m4e0f86e[m[33m ([m[1;31morigin/feature/canvas[m[33m, [m[1;32mfeature/canvas[m[33m)[m HEAD@{29}: commit: fit camera
+[33meb4e4ca[m HEAD@{30}: commit: background
+[33m9eb2fb5[m[33m ([m[1;31morigin/main[m[33m, [m[1;31morigin/HEAD[m[33m, [m[1;31morigin/Dev-refactor[m[33m)[m HEAD@{31}: checkout: moving from dev to feature/canvas
+[33mecf25bd[m HEAD@{32}: commit (merge): Merge branch 'ft/Summary' into dev
+[33m8170178[m HEAD@{33}: checkout: moving from ft/Summary to dev
+[33m01f101d[m[33m ([m[1;31morigin/ft/Summary[m[33m, [m[1;32mft/Summary[m[33m)[m HEAD@{34}: commit: chỉnh viền
+[33mfc38c47[m HEAD@{35}: commit: restyle ConfirmForm
+[33m4fa7eeb[m HEAD@{36}: commit: AuthModal
+[33m8425deb[m HEAD@{37}: checkout: moving from dev to ft/Summary
+[33m8170178[m HEAD@{38}: commit (merge): Merge branch 'ft/relationship' into dev
+[33mc2e0faa[m HEAD@{39}: checkout: moving from ft/relationship to dev
+[33m34da7db[m[33m ([m[1;31morigin/ft/relationship[m[33m, [m[1;32mft/relationship[m[33m)[m HEAD@{40}: commit (merge): Merge branch 'feature/morongnode' into ft/relationship
+[33m256335c[m HEAD@{41}: checkout: moving from feature/morongnode to ft/relationship
+[33me46312d[m[33m ([m[1;31morigin/feature/morongnode[m[33m, [m[1;32mfeature/morongnode[m[33m)[m HEAD@{42}: commit: fix chức năng mở rộng node
+[33m9eb2fb5[m[33m ([m[1;31morigin/main[m[33m, [m[1;31morigin/HEAD[m[33m, [m[1;31morigin/Dev-refactor[m[33m)[m HEAD@{43}: reset: moving to origin/feature/morongnode
+[33md4a008e[m HEAD@{44}: checkout: moving from ft/relationship to feature/morongnode
+[33m256335c[m HEAD@{45}: commit: type relationship
+[33mb79c302[m HEAD@{46}: commit: them relationship
+[33m9eb2fb5[m[33m ([m[1;31morigin/main[m[33m, [m[1;31morigin/HEAD[m[33m, [m[1;31morigin/Dev-refactor[m[33m)[m HEAD@{47}: checkout: moving from dev to ft/relationship
+[33mc2e0faa[m HEAD@{48}: commit (merge): Merge branch 'ft/Summary' into dev
+[33m07ad2e3[m HEAD@{49}: checkout: moving from ft/Summary to dev
+[33m8425deb[m HEAD@{50}: commit: fix auth
+[33m9eb2fb5[m[33m ([m[1;31morigin/main[m[33m, [m[1;31morigin/HEAD[m[33m, [m[1;31morigin/Dev-refactor[m[33m)[m HEAD@{51}: reset: moving to origin/ft/Summary
+[33mee88836[m HEAD@{52}: checkout: moving from dev to ft/Summary
+[33m07ad2e3[m HEAD@{53}: commit (merge): Merge branch 'feature/Undo-Redo' into dev
+[33m986048f[m HEAD@{54}: checkout: moving from feature/Undo-Redo to dev
+[33m144cc60[m[33m ([m[1;31morigin/feature/Undo-Redo[m[33m, [m[1;32mfeature/Undo-Redo[m[33m)[m HEAD@{55}: commit: update git
+[33m9eb2fb5[m[33m ([m[1;31morigin/main[m[33m, [m[1;31morigin/HEAD[m[33m, [m[1;31morigin/Dev-refactor[m[33m)[m HEAD@{56}: checkout: moving from dev to feature/Undo-Redo
+[33m986048f[m HEAD@{57}: checkout: moving from Dev to dev
+[33m986048f[m HEAD@{58}: checkout: moving from feature/tt to Dev
+[33me6157db[m HEAD@{59}: checkout: moving from Dev-refactor to feature/tt
+[33md63e787[m HEAD@{60}: checkout: moving from feature/Undo-Redo to Dev-refactor
+[33m9eb2fb5[m[33m ([m[1;31morigin/main[m[33m, [m[1;31morigin/HEAD[m[33m, [m[1;31morigin/Dev-refactor[m[33m)[m HEAD@{61}: checkout: moving from dev to feature/Undo-Redo
+[33m986048f[m HEAD@{62}: commit: gitignore
+[33m9eb2fb5[m[33m ([m[1;31morigin/main[m[33m, [m[1;31morigin/HEAD[m[33m, [m[1;31morigin/Dev-refactor[m[33m)[m HEAD@{63}: pull origin dev: Fast-forward
+[33md229242[m HEAD@{64}: checkout: moving from feature/ThemeSets to dev
+[33m07fb130[m[33m ([m[1;31morigin/feature/ThemeSets[m[33m, [m[1;32mfeature/ThemeSets[m[33m)[m HEAD@{65}: commit: ver 1
+[33m1bff9dc[m[33m ([m[1;31morigin/ft/update[m[33m, [m[1;32mft/update[m[33m)[m HEAD@{66}: checkout: moving from ft/update to feature/ThemeSets
+[33m1bff9dc[m[33m ([m[1;31morigin/ft/update[m[33m, [m[1;32mft/update[m[33m)[m HEAD@{67}: commit: fix đổi tên
+[33mdb46c20[m HEAD@{68}: commit: bản đẹp
+[33m0458408[m HEAD@{69}: commit: Ver.3
+[33m9c188be[m HEAD@{70}: commit: ver2.3
+[33m11e5a40[m HEAD@{71}: commit: ver.2.2
+[33m5d32409[m HEAD@{72}: commit: ver 2.1
+[33m3813c1a[m HEAD@{73}: commit: ver 2
+[33me09652d[m HEAD@{74}: commit: bản đẹp v1
+[33mf6f406a[m HEAD@{75}: checkout: moving from feature/tt to ft/update
+[33me6157db[m HEAD@{76}: checkout: moving from ft/update to feature/tt
+[33mf6f406a[m HEAD@{77}: commit: 1
+[33mf5f0cd1[m HEAD@{78}: pull: Fast-forward
+[33m49eeeb1[m HEAD@{79}: checkout: moving from feature/tt to ft/update
+[33me6157db[m HEAD@{80}: checkout: moving from ft/update to feature/tt
+[33m49eeeb1[m HEAD@{81}: checkout: moving from feature/tt to ft/update
+[33me6157db[m HEAD@{82}: commit: 7
+[33m35a890b[m HEAD@{83}: commit: 6
+[33m54a4291[m HEAD@{84}: commit: 5
+[33m93246bd[m HEAD@{85}: commit: 4
+[33m9429bee[m HEAD@{86}: commit: 3
+[33m319d65f[m HEAD@{87}: commit: fix autolayout
+[33m5322fa4[m HEAD@{88}: commit: 2
+[33me9ae95d[m HEAD@{89}: commit: 1
+[33m5c1cf6f[m HEAD@{90}: commit: 123
+[33m835e6eb[m HEAD@{91}: commit: tt
+[33mce48009[m HEAD@{92}: checkout: moving from Dev to feature/tt
+[33md229242[m HEAD@{93}: checkout: moving from feature/tt to Dev
+[33mce48009[m HEAD@{94}: commit: update
+[33m8d9cfd0[m HEAD@{95}: checkout: moving from feature/morongnode to feature/tt
+[33md4a008e[m HEAD@{96}: checkout: 
