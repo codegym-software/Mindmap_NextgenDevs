@@ -5,9 +5,6 @@ type Props = {
     infoMessage?: string;
     errorMessage?: string;
 };
-
-// [MERGE] Sử dụng phiên bản "light mode" từ feature/tt
-// (Tệp này không thay đổi, nhưng được bao gồm cho đầy đủ Giai đoạn A)
 const MessageDisplay: React.FC<Props> = ({ infoMessage, errorMessage }) => {
     if (!infoMessage && !errorMessage) return null;
 
