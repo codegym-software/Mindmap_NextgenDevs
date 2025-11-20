@@ -94,4 +94,39 @@
 [33md229242[m HEAD@{93}: checkout: moving from feature/tt to Dev
 [33mce48009[m HEAD@{94}: commit: update
 [33m8d9cfd0[m HEAD@{95}: checkout: moving from feature/morongnode to feature/tt
-[33md4a008e[m HEAD@{96}: checkout: 
+[33md4a008e[m HEAD@{96}: checkout: moving from feature/tt to feature/morongnode
+[33m8d9cfd0[m HEAD@{97}: checkout: moving from feature/morongnode to feature/tt
+[33md4a008e[m HEAD@{98}: commit: gitignore
+[33m8a60de5[m HEAD@{99}: checkout: moving from feature/tt to feature/morongnode
+[33m8d9cfd0[m HEAD@{100}: commit: backup
+[33mc3c362e[m HEAD@{101}: commit: Revert về trạng thái commit abc (7a7d64f)
+[33ma7f9b48[m HEAD@{102}: commit: new
+[33m39ed436[m HEAD@{103}: commit: Replace api
+[33m7a7d64f[m HEAD@{104}: reset: moving to HEAD
+[33m7a7d64f[m HEAD@{105}: checkout: moving from ft/update to feature/tt
+[33m49eeeb1[m HEAD@{106}: checkout: moving from feature/tt to ft/update
+[33m7a7d64f[m HEAD@{107}: commit: abc
+[33mc7b4c50[m HEAD@{108}: commit: sdfs
+[33md63e787[m HEAD@{109}: checkout: moving from Dev-refactor to feature/tt
+[33md63e787[m HEAD@{110}: commit (merge): Merge branch 'feature/morongnode' into Dev-refactor
+[33maba55c6[m HEAD@{111}: checkout: moving from feature/morongnode to Dev-refactor
+[33m8a60de5[m HEAD@{112}: checkout: moving from Dev-refactor to feature/morongnode
+[33maba55c6[m HEAD@{113}: commit: Revert "Merge branch 'ft/Summary' into Dev-refactor"
+[33ma4a8773[m HEAD@{114}: commit (merge): Merge branch 'ft/Summary' into Dev-refactor
+[33ma85af9d[m HEAD@{115}: checkout: moving from ft/Summary to Dev-refactor
+[33mee88836[m HEAD@{116}: checkout: moving from Dev-refactor to ft/Summary
+[33ma85af9d[m HEAD@{117}: commit: fix form signup signin forgot
+[33m59784a5[m HEAD@{118}: commit: use
+[33m959f209[m HEAD@{119}: checkout: moving from dev to Dev-refactor
+[33md229242[m HEAD@{120}: commit: Done .v1
+[33m472c72f[m HEAD@{121}: checkout: moving from main to dev
+[33m0f06d36[m[33m ([m[1;32mmain[m[33m)[m HEAD@{122}: checkout: moving from dev to main
+[33m472c72f[m HEAD@{123}: commit: first commit
+[33m493b072[m HEAD@{124}: commit: Ignore docker-compose.dev.yml from repo
+[33m1ae95c1[m HEAD@{125}: checkout: moving from dev to dev
+[33m1ae95c1[m HEAD@{126}: reset: moving to HEAD
+[33m1ae95c1[m HEAD@{127}: reset: moving to HEAD
+[33m1ae95c1[m HEAD@{128}: reset: moving to HEAD
+[33m1ae95c1[m HEAD@{129}: commit: chore: update .gitignore to exclude build and env files
+[33me090f87[m HEAD@{130}: commit: cleanup: apply proper .gitignore
+[33m7ff5053[m HEAD@{131}: commit (initial): Initial commit for dev branch
