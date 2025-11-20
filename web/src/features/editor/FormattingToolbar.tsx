@@ -229,13 +229,6 @@ function MapPanel({
           <option value={4}>Dày</option>
         </select>
       </RowItem>
-
-      {/* 6. Nhánh nhiều màu */}
-      {/* <ColorItem
-        label="Nhánh nhiều màu"
-        color={isColored ? '#3b82f6' : '#E5E7EB'}
-        onChange={() => onToggleColoredBranch(!isColored)}
-      /> */}
     </div>
   );
 }
