@@ -26,7 +26,6 @@
 }
 
 .dark {
-  /* Dark Theme Colors */
   --background: #020817;
   --foreground: #f8fafc;
   --card: #020817;
@@ -56,15 +55,15 @@ body {
 
 /* Custom scrollbar for webkit browsers */
 ::-webkit-scrollbar {
-    width: 8px;
+    width: 5px;
 }
 ::-webkit-scrollbar-track {
-    background: #1e293b;
+    background: #f4f4f4;
 }
 ::-webkit-scrollbar-thumb {
-    background: #4b5563;
+    background: #e5e5e5;
     border-radius: 4px;
 }
 ::-webkit-scrollbar-thumb:hover {
-    background: #6b7280;
+    background: #dbdbdb;
 }
