@@ -1,5 +1,5 @@
 import { Sun, Moon, Share2, Undo, Redo, Save, PanelRight } from 'lucide-react';
-import UserAvatarMenu from '../auth/UserAvatarMenu'; // Sửa: Dùng đường dẫn tương đối
+import UserAvatarMenu from '../auth/UserAvatarMenu'; 
 
 type EditorToolbarProps = {
   name: string;
