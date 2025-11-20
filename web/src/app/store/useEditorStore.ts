@@ -1,36 +1,35 @@
 import { create } from "zustand";
 import { isEqual } from "lodash";
 
-// =================================================================================
+// ================
 // Định nghĩa Fonts
-// [MERGE] Lấy danh sách fonts mới từ feature/tt
-// =================================================================================
+// ================
 export const fonts = [
-  { name: "Roboto", value: "Roboto, sans-serif" },
-  { name: "Droid Serif", value: "Droid Serif, serif" },
-  { name: "Inter", value: "Inter, sans-serif" },
-  { name: "Montserrat", value: "Montserrat, sans-serif" },
-  { name: "Lobster", value: "Lobster, cursive" },
-  { name: "Pacifico", value: "Pacifico, cursive" },
-  { name: "Roboto Mono", value: "Roboto Mono, monospace" },
-  { name: "Arial", value: "Arial, sans-serif" },
-  { name: "Times New Roman", value: "Times New Roman, serif" },
-  { name: "Courier New", value: "Courier New, monospace" },
-  { name: "Verdana", value: "Verdana, sans-serif" },
+  { name: "Roboto", value: "Roboto, sans-serif" },
+  { name: "Droid Serif", value: "Droid Serif, serif" },
+  { name: "Inter", value: "Inter, sans-serif" },
+  { name: "Montserrat", value: "Montserrat, sans-serif" },
+  { name: "Lobster", value: "Lobster, cursive" },
+  { name: "Pacifico", value: "Pacifico, cursive" },
+  { name: "Roboto Mono", value: "Roboto Mono, monospace" },
+  { name: "Arial", value: "Arial, sans-serif" },
+  { name: "Times New Roman", value: "Times New Roman, serif" },
+  { name: "Courier New", value: "Courier New, monospace" },
+  { name: "Verdana", value: "Verdana, sans-serif" },
 ];
 
 
-// =================================================================================
-// Định nghĩa Themes (Giữ nguyên)
-// =================================================================================
+// =================
+// Định nghĩa Themes
+// =================
 export type ColorThemeStyle = {
-  fill: string;
-  color: string;
-  stroke: string;
-  textColor: string; 
-  fontSize?: number;
-  fontWeight?: "normal" | "bold";
-  textDecoration?: "none" | "underline" | "line-through";
+  fill: string;
+  color: string;
+  stroke: string;
+  textColor: string; 
+  fontSize?: number;
+  fontWeight?: "normal" | "bold";
+  textDecoration?: "none" | "underline" | "line-through";
 };
 
 export type ColorTheme = {
@@ -57,10 +56,9 @@ export const colorThemes: Record<string, ColorTheme> = {
   },
 };
 
-// =================================================================================
-// Định nghĩa Types (Cấu trúc "Phẳng" nội bộ của FE)
-// [MERGE] Hợp nhất NodeData từ feature/tt và logic GĐ 1-10
-// =================================================================================
+// ================
+// Định nghĩa Types
+// ================
 export type GlobalStructure = 'mindmap' | 'logic' | 'org';
 export type LocalStructure = 'default' | 'logic' | 'org';
 export type QuickStyleId = 'default' | 'important-dark' | 'important-light' | 'strikethrough';
@@ -118,9 +116,9 @@ type Snapshot = { nodes: NodeData[]; edges: EdgeData[] };
 
 const MAX_HISTORY = 100;
 
-// =================================================================================
-// Style Helpers (Nội bộ FE - Giữ nguyên logic)
-// =================================================================================
+// =============
+// Style Helpers
+// =============
 
 // Style mặc định
 export const DEFAULT_NODE_STYLE: Partial<NodeData> = {
@@ -151,32 +149,32 @@ export const DEFAULT_NODE_STYLE: Partial<NodeData> = {
  * Tính toán style cuối cùng của một node (Logic không đổi)
  */
 export function getNodeComputedStyle(
-  node: NodeData | null,
-  theme: ColorTheme,
-  globalFont: string
+  node: NodeData | null,
+  theme: ColorTheme,
+  globalFont: string
 ): NodeData {
-  const baseStyle: Partial<NodeData> = {
-    ...DEFAULT_NODE_STYLE,
-    fontFamily: globalFont // 1. Áp dụng Global Font
-  };
+  const baseStyle: Partial<NodeData> = {
+    ...DEFAULT_NODE_STYLE,
+    fontFamily: globalFont // 1. Áp dụng Global Font
+  };
 
-  if (!node) return baseStyle as NodeData;
+  if (!node) return baseStyle as NodeData;
 
-  // 2. Lấy style từ Theme (Root, QuickStyle, hoặc Default)
-  let themeStyle: Partial<ColorThemeStyle> = {};
-  if (node.id === 'root') {
-    themeStyle = theme.root;
-  } else if (node.quickStyleId && theme.quickStyles[node.quickStyleId]) {
-    themeStyle = theme.quickStyles[node.quickStyleId];
-  } else {
-    themeStyle = theme.quickStyles.default;
-  }
+  // 2. Lấy style từ Theme (Root, QuickStyle, hoặc Default)
+  let themeStyle: Partial<ColorThemeStyle> = {};
+  if (node.id === 'root') {
+    themeStyle = theme.root;
+  } else if (node.quickStyleId && theme.quickStyles[node.quickStyleId]) {
+    themeStyle = theme.quickStyles[node.quickStyleId];
+  } else {
+    themeStyle = theme.quickStyles.default;
+  }
 
-  // 3. Hợp nhất: Default <- Theme
-  const merged: Partial<NodeData> = {
-    ...baseStyle,
-    ...(themeStyle as Partial<NodeData>),
-  };
+  // 3. Hợp nhất: Default <- Theme
+  const merged: Partial<NodeData> = {
+    ...baseStyle,
+    ...(themeStyle as Partial<NodeData>),
+  };
 
   // 4. Áp dụng style tùy chỉnh (ghi đè)
   (
@@ -210,7 +208,7 @@ export function getNodeComputedStyle(
   merged.side = node.side;
   merged.collapsed = node.collapsed;
 
-  return merged as NodeData;
+  return merged as NodeData;
 }
 
 
@@ -251,14 +249,14 @@ export function applyNodeDefaults(
 }
 
 
-// =================================================================================
-// Định nghĩa State (Logic Undo/Redo không đổi)
-// =================================================================================
+// =========
+// Định nghĩa State
+// =========
 type State = {
-  nodes: NodeData[];
-  edges: EdgeData[];
-  history: Snapshot[];
-  future: Snapshot[];
+  nodes: NodeData[];
+  edges: EdgeData[];
+  history: Snapshot[];
+  future: Snapshot[];
 
   // Cài đặt toàn cục
   globalStructure: GlobalStructure;
@@ -278,10 +276,10 @@ type State = {
 };
 
 export const useEditorStore = create<State>((set, get) => ({
-  nodes: [],
-  edges: [],
-  history: [],
-  future: [],
+  nodes: [],
+  edges: [],
+  history: [],
+  future: [],
 
   // Cài đặt toàn cục
   globalStructure: 'mindmap',
@@ -295,9 +293,9 @@ export const useEditorStore = create<State>((set, get) => ({
     set({ nodes: n, edges: e });
   },
 
-  push: (n, e) => {
-    const currentState: Snapshot = { nodes: n, edges: e };
-    const lastHistoryState = get().history.at(-1);
+  push: (n, e) => {
+    const currentState: Snapshot = { nodes: n, edges: e };
+    const lastHistoryState = get().history.at(-1);
 
     if (!lastHistoryState || !isEqual(lastHistoryState, currentState)) {
       const nextHistory = [...get().history, currentState].slice(-MAX_HISTORY);
@@ -305,12 +303,12 @@ export const useEditorStore = create<State>((set, get) => ({
     }
   },
 
-  undo: () => {
-    const h = get().history.slice();
-    if (h.length <= 1) return null;
+  undo: () => {
+    const h = get().history.slice();
+    if (h.length <= 1) return null;
 
-    const current = h.pop()!;
-    const prev = h.at(-1)!;
+    const current = h.pop()!;
+    const prev = h.at(-1)!;
 
     set({
       history: h,
@@ -321,9 +319,9 @@ export const useEditorStore = create<State>((set, get) => ({
     return prev;
   },
 
-  redo: () => {
-    const f = get().future.slice();
-    if (!f.length) return null;
+  redo: () => {
+    const f = get().future.slice();
+    if (!f.length) return null;
 
     const next = f.shift()!;
     set({
@@ -335,7 +333,7 @@ export const useEditorStore = create<State>((set, get) => ({
     return next;
   },
 
-  clear: () => set({ history: [], future: [] }),
-  
-  set: (p) => set(p),
+  clear: () => set({ history: [], future: [] }),
+  
+  set: (p) => set(p),
 }));

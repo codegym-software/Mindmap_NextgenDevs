@@ -26,8 +26,9 @@ import {
 // Props
 // =================================================================================
 type FormattingToolbarProps = {
-  selectedId: string | null;
-  currentNode: NodeData | null;
+  // [SỬA] Thay đổi từ string sang mảng string
+  selectedIds: string[]; 
+  currentNode: NodeData | null; // Vẫn là node đầu tiên được chọn
   currentBackgroundColor: string;
   globalStructure: GlobalStructure;
   activeColorThemeId: keyof typeof colorThemes;
@@ -37,9 +38,11 @@ type FormattingToolbarProps = {
   onSetGlobalFont: (font: string) => void;
   onSetBranchLineWidth: (width: number) => void;
   onToggleColoredBranch: (state: boolean) => void;
+  onSetGlobalBranchColor: (color: string) => void;
   onSetActiveColorTheme: (themeName: keyof typeof colorThemes) => void;
 
-  onUpdateNode: (id: string, updates: Partial<NodeData>) => void;
+  // [SỬA] Bỏ tham số 'id'
+  onUpdateNode: (updates: Partial<NodeData>) => void; 
   onApplyQuickStyle: (styleId: QuickStyleId) => void;
   onCopyStyle: () => void;
   onPasteStyle: () => void;
@@ -57,7 +60,7 @@ const BUTTON_ACTIVE_BG = "bg-blue-500 text-white";
 // Main Component
 // =================================================================================
 export default function FormattingToolbar({
-  selectedId,
+  selectedIds, // [SỬA]
   currentNode,
   currentBackgroundColor,
   globalStructure,
@@ -67,19 +70,36 @@ export default function FormattingToolbar({
   onSetGlobalFont,
   onSetBranchLineWidth,
   onToggleColoredBranch,
+  onSetGlobalBranchColor,
   onSetActiveColorTheme,
-  onUpdateNode,
+  onUpdateNode, // [SỬA]
   onApplyQuickStyle,
   onCopyStyle,
   onPasteStyle,
   onResetStyle,
 }: FormattingToolbarProps) {
-  const [activeTab, setActiveTab] = useState<'style' | 'map'>('style');
+  const [activeTab, setActiveTab] = useState<'style' | 'map'>('map');
   const activeTheme = colorThemes[activeColorThemeId];
-  const isDisabled = !selectedId;
+  
+  // [SỬA] Logic cấm/tắt tab Style
+  const isDisabled = useMemo(() => {
+    if (selectedIds.length === 0) return true;
+    return false;
+  }, [selectedIds]);
+
+  // [SỬA] Auto-switch tabs based on node selection
+  useEffect(() => {
+    if (isDisabled) {
+      // Không có node nào được chọn HOẶC chỉ chọn 'root'
+      setActiveTab('map');
+    } else {
+      // Có ít nhất một node (không phải root) được chọn
+      setActiveTab('style');
+    }
+  }, [isDisabled]); // [SỬA] Dùng isDisabled làm dependency
 
   return (
-    <div className="absolute top-14 right-0 h-[calc(100vh-3.5rem)] w-72 bg-white border-l border-gray-200 shadow-sm z-30 flex flex-col text-gray-700">
+    <div className="absolute top-11 right-0 h-[calc(100vh-2.75rem)] w-72 bg-white border-l border-gray-200 shadow-sm z-30 flex flex-col text-gray-700"> {/* Changed top-14 -> top-12 AND h-[calc(100vh-3.5rem)] -> h-[calc(100vh-3rem)] */}
       {/* 1. Header (Tabs) */}
       <TabHeader activeTab={activeTab} setActiveTab={setActiveTab} isDisabled={isDisabled} />
 
@@ -87,10 +107,10 @@ export default function FormattingToolbar({
       <div className="flex-1 overflow-y-auto">
         {activeTab === 'style' && (
           <NodeStylePanel
-            selectedId={selectedId}
+            selectedIds={selectedIds} // [SỬA]
             currentNode={currentNode}
             activeTheme={activeTheme}
-            onUpdateNode={onUpdateNode}
+            onUpdateNode={onUpdateNode} // [SỬA]
             onApplyQuickStyle={onApplyQuickStyle}
             onCopyStyle={onCopyStyle}
             onPasteStyle={onPasteStyle}
@@ -108,6 +128,8 @@ export default function FormattingToolbar({
             onSetGlobalFont={onSetGlobalFont}
             onSetBranchLineWidth={onSetBranchLineWidth}
             onToggleColoredBranch={onToggleColoredBranch}
+            // [SỬA] Truyền prop fix lỗi từ bước trước
+            onSetGlobalBranchColor={onSetGlobalBranchColor}
           />
         )}
       </div>
@@ -130,7 +152,7 @@ function TabHeader({ activeTab, setActiveTab, isDisabled }: TabHeaderProps) {
         label="Style"
         isActive={activeTab === 'style'}
         onClick={() => setActiveTab('style')}
-        disabled={isDisabled}
+        disabled={isDisabled} // [SỬA] Logic cấm/tắt đã được cập nhật
       />
       <TabButton
         label="Map"
@@ -154,6 +176,8 @@ type MapPanelProps = {
   onSetGlobalFont: (font: string) => void;
   onSetBranchLineWidth: (width: number) => void;
   onToggleColoredBranch: (state: boolean) => void;
+  // [SỬA] Thêm prop
+  onSetGlobalBranchColor: (color: string) => void;
 };
 function MapPanel({
   globalStructure,
@@ -165,35 +189,37 @@ function MapPanel({
   onSetGlobalFont,
   onSetBranchLineWidth,
   onToggleColoredBranch,
+  // [SỬA] Nhận prop
+  onSetGlobalBranchColor,
 }: MapPanelProps) {
   const currentFont = useEditorStore((s) => s.globalFont);
   const currentLineWidth = useEditorStore((s) => s.branchLineWidth);
   const isColored = useEditorStore((s) => s.isColoredBranch);
+  const globalBranchColor = useEditorStore((s) => s.globalBranchColor);
   const activeTheme = colorThemes[activeColorThemeId];
 
   return (
     <div className="p-4 space-y-4">
-      {/* 1. Cấu trúc */}
+      {/* 2. Cấu trúc */}
       <RowItem label="Cấu trúc">
-  <div className="flex justify-between gap-1 w-full">
-    <StructureButton
-      label={<img src="../icons/mindmap.png" alt="Mindmap" className="w-6 h-6" />}
-      isActive={globalStructure === 'mindmap'}
-      onClick={() => onApplyLayout('mindmap')}
-    />
-    <StructureButton
-      label={<img src="/icons/logic.png" alt="Logic" className="w-6 h-6" />}
-      isActive={globalStructure === 'logic'}
-      onClick={() => onApplyLayout('logic')}
-    />
-    <StructureButton
-      label={<img src="/icons/org.png" alt="Org" className="w-6 h-6" />}
-      isActive={globalStructure === 'org'}
-      onClick={() => onApplyLayout('org')}
-    />
-  </div>
-</RowItem>
-
+        <div className="flex justify-between gap-1 w-full">
+          <StructureButton
+            label={<img src="/icons/mindmap.png" alt="Mindmap" className="w-6 h-6" />}
+            isActive={globalStructure === 'mindmap'}
+            onClick={() => onApplyLayout('mindmap')}
+          />
+          <StructureButton
+            label={<img src="/icons/logic.png" alt="Logic" className="w-6 h-6" />}
+            isActive={globalStructure === 'logic'}
+            onClick={() => onApplyLayout('logic')}
+          />
+          <StructureButton
+            label={<img src="/icons/org.png" alt="Org" className="w-6 h-6" />}
+            isActive={globalStructure === 'org'}
+            onClick={() => onApplyLayout('org')}
+          />
+        </div>
+      </RowItem>
 
 
       {/* 3. Màu nền */}
@@ -221,7 +247,9 @@ function MapPanel({
       <RowItem label="Độ dày nhánh">
         <select
           value={currentLineWidth}
-          onChange={(e) => onSetBranchLineWidth(Number(e.target.value))}
+          onChange={(e) => {
+            onSetBranchLineWidth(Number(e.target.value));
+          }}
           className={`flex-1 p-1.5 ${INPUT_BG} rounded text-sm outline-none border border-transparent focus:border-blue-500 focus:ring-1 focus:ring-blue-500`}
         >
           <option value={1}>Mỏng</option>
@@ -229,13 +257,23 @@ function MapPanel({
           <option value={4}>Dày</option>
         </select>
       </RowItem>
-
-      {/* 6. Nhánh nhiều màu */}
-      {/* <ColorItem
-        label="Nhánh nhiều màu"
-        color={isColored ? '#3b82f6' : '#E5E7EB'}
-        onChange={() => onToggleColoredBranch(!isColored)}
-      /> */}
+      {/* [SỬA] Cập nhật onChange để gọi prop mới */}
+      <ColorItem
+        label="Màu nhánh"
+        color={globalBranchColor}
+        onChange={onSetGlobalBranchColor}
+      >
+        <label className="flex items-center gap-2 cursor-pointer text-sm">
+          <input
+            type="checkbox"
+            checked={isColored}
+            onChange={(e) => onToggleColoredBranch(e.target.checked)}
+            className="rounded border-gray-300 cursor-pointer"
+          />
+          <span>Nhiều màu</span>
+        </label>
+      </ColorItem>
+  
     </div>
   );
 }
@@ -244,17 +282,20 @@ function MapPanel({
 // Tab "Style" (Cài đặt Node)
 // =================================================================================
 type NodeStylePanelProps = {
-  selectedId: string | null;
+  // [SỬA]
+  selectedIds: string[];
   currentNode: NodeData | null;
   activeTheme: ColorTheme;
-  onUpdateNode: (id: string, updates: Partial<NodeData>) => void;
+  // [SỬA]
+  onUpdateNode: (updates: Partial<NodeData>) => void;
   onApplyQuickStyle: (styleId: QuickStyleId) => void;
   onCopyStyle: () => void;
   onPasteStyle: () => void;
   onResetStyle: () => void;
 };
 function NodeStylePanel({
-  selectedId,
+  // [SỬA]
+  selectedIds,
   currentNode,
   activeTheme,
   onUpdateNode,
@@ -264,12 +305,12 @@ function NodeStylePanel({
   onResetStyle,
 }: NodeStylePanelProps) {
   
-  // Tính toán style
+  // Tính toán style (vẫn dựa trên node đầu tiên)
   const style = useMemo(() => {
     return getNodeComputedStyle(currentNode, activeTheme, useEditorStore.getState().globalFont);
   }, [currentNode, activeTheme]);
   
-  // State cục bộ cho "Độ dài"
+  // State cục bộ cho "Độ dài" (vẫn dựa trên node đầu tiên)
   const [localLength, setLocalLength] = useState<number | string>(style.nodeLength || 'fit');
   
   useEffect(() => {
@@ -278,17 +319,18 @@ function NodeStylePanel({
   }, [style.nodeLength]);
 
 
-  // Handler chung
+  // [SỬA] Handler chung
   const handleUpdate = (updates: Partial<NodeData>) => {
-    if (selectedId) {
-      onUpdateNode(selectedId, updates);
+    // onUpdateNode giờ đã xử lý mảng
+    if (selectedIds.length > 0) {
+      onUpdateNode(updates);
     }
   };
 
   return (
     <div className="p-4 space-y-1">
       {/* 1. Kiểu nhanh */}
-      {selectedId !== 'root' && (
+      {selectedIds.length > 0 && !(selectedIds.length === 1 && selectedIds[0] === 'root') && (
         <CollapsiblePanel label="Kiểu nhanh" defaultOpen>
           <div className="grid grid-cols-2 gap-2">
             <QuickStyleButton
@@ -329,9 +371,6 @@ function NodeStylePanel({
           >
             <option value="roundedRect">Bo góc</option>
             <option value="rectangle">Vuông</option>
-            {/* SỬA: Bỏ hình tròn */}
-            {/* <option value="circle">Tròn</option> */}
-            <option value="diamond">Thoi</option>
           </select>
         </RowItem>
         <ColorItem
@@ -348,7 +387,7 @@ function NodeStylePanel({
             value={style.borderWidth}
             onChange={(e) => handleUpdate({ borderWidth: Number(e.target.value) })}
             className={`p-1.5 ${INPUT_BG} rounded text-sm outline-none border border-transparent focus:border-blue-500 focus:ring-1 focus:ring-blue-500`}
-          >
+         >
             <option value={0}>Không</option>
             <option value={2}>Mỏng</option>
             <option value={4}>Dày</option>
@@ -478,29 +517,12 @@ function NodeStylePanel({
             }}
           />
         </div>
-      </CollapsiblePanel>
+     </CollapsiblePanel>
 
-      {/* 4. Cấu trúc (con) */}
-      <CollapsiblePanel label="Cấu trúc nhánh con" defaultOpen>
-        <RowItem label="Bố cục">
-  <div className="flex justify-between gap-1 w-full">
-    <StructureButton
-      label={<img src="/icons/logic.png" alt="Logic layout" className="w-6 h-6" />}
-      isActive={style.localStructure === 'logic'}
-      onClick={() => handleUpdate({ localStructure: 'logic' })}
-    />
-    <StructureButton
-      label={<img src="/icons/org.png" alt="Org layout" className="w-6 h-6" />}
-      isActive={style.localStructure === 'org'}
-      onClick={() => handleUpdate({ localStructure: 'org' })}
-    />
-  </div>
-</RowItem>
-
-      </CollapsiblePanel>
       
+
       {/* 5. Nhánh (con) */}
-      <CollapsiblePanel label="Kiểu nhánh con" defaultOpen>
+      <CollapsiblePanel label="Kiểu nhánh" defaultOpen>
         <ColorItem
           label="Màu nhánh"
           color={style.branchColor || '#666666'}
@@ -532,7 +554,7 @@ function NodeStylePanel({
             <option value="thin">Mỏng</option>
             <option value="normal">Vừa</option>
             <option value="thick">Dày</option>
-          </select>
+         </select>
         </RowItem>
       </CollapsiblePanel>
       
@@ -587,7 +609,7 @@ function StructureButton({ label, isActive, onClick }: StructureButtonProps) {
       onClick={onClick}
       className={`flex-1 flex flex-col items-center justify-center gap-2 p-2 rounded-md border-2
         ${isActive ? 'border-blue-500 bg-blue-50 text-blue-600' : 'border-gray-200 bg-gray-50 hover:bg-gray-100'}
-      `}
+section      `}
     >
       <span className="text-xs font-medium">{label}</span>
     </button>
@@ -599,7 +621,7 @@ function RowItem({ label, children }: { label: string, children: React.ReactNode
   return (
     <div className="flex items-center justify-between gap-4">
       <label className="text-sm font-medium text-gray-500 whitespace-nowrap">{label}</label>
-      {children}
+       {children}
     </div>
   );
 }
