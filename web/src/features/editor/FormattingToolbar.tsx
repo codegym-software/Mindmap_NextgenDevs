@@ -194,7 +194,6 @@ function MapPanel({
 }: MapPanelProps) {
   const currentFont = useEditorStore((s) => s.globalFont);
   const currentLineWidth = useEditorStore((s) => s.branchLineWidth);
-  const isColored = useEditorStore((s) => s.isColoredBranch);
   const globalBranchColor = useEditorStore((s) => s.globalBranchColor);
   const activeTheme = colorThemes[activeColorThemeId];
 
@@ -263,15 +262,6 @@ function MapPanel({
         color={globalBranchColor}
         onChange={onSetGlobalBranchColor}
       >
-        <label className="flex items-center gap-2 cursor-pointer text-sm">
-          <input
-            type="checkbox"
-            checked={isColored}
-            onChange={(e) => onToggleColoredBranch(e.target.checked)}
-            className="rounded border-gray-300 cursor-pointer"
-          />
-          <span>Nhiều màu</span>
-        </label>
       </ColorItem>
   
     </div>

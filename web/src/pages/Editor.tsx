@@ -239,7 +239,6 @@ export default function Editor() {
     globalStructure,
     globalFont,
     branchLineWidth,
-    isColoredBranch,
     activeColorThemeId,
     set: setGlobalStore,
     globalBranchColor,
@@ -283,36 +282,48 @@ export default function Editor() {
   colorThemes[activeColorThemeId as keyof typeof colorThemes];
   const nodeTopology = useMemo(() => {
     const topology = new Map<string, NodeTopology>();
+    const nodeDataMap = new Map(nodes.map(n => [n.id, n]));
     
-    // Xây dựng Adjacency List để duyệt cây nhanh
     const adj = new Map<string, string[]>();
     edges.forEach(e => {
       if (!adj.has(e.from)) adj.set(e.from, []);
       adj.get(e.from)!.push(e.to);
     });
 
-    // Hàm duyệt cây DFS
-    // nodeId: Node đang xét
-    // depth: Độ sâu hiện tại
-    // rootBranchIndex: Chỉ số nhánh của tổ tiên cấp 1 (để xác định màu)
-    const traverse = (nodeId: string, depth: number, rootBranchIndex: number) => {
-      topology.set(nodeId, { depth, branchIndex: rootBranchIndex });
+    const traverse = (nodeId: string, depth: number, rootBranchIndex: number, inheritedColor: string | null) => {
+      const node = nodeDataMap.get(nodeId);
+      let currentBaseColor = inheritedColor;
+
+      // Logic xác định màu tại cấp 1:
+      // Luôn lấy màu toàn cục nếu chưa có màu thừa hưởng (nghĩa là từ root)
+      if (depth === 1 && !currentBaseColor) {
+         currentBaseColor = globalBranchColor;
+      }
+
+      // Nếu node này có màu riêng, nó sẽ đè màu toàn cục/thừa hưởng
+      if (node?.branchColor) {
+        currentBaseColor = node.branchColor;
+      }
+
+      // Fallback an toàn là Đen nếu tất cả đều null
+      const effectiveColor = currentBaseColor || globalBranchColor || '#000000';
+
+      topology.set(nodeId, { 
+        depth, 
+        // [FIX 1] Xóa branchIndex vì không còn trong type NodeTopology
+        branchBaseColor: effectiveColor 
+      });
       
       const children = adj.get(nodeId) || [];
       children.forEach((childId, index) => {
-        // Logic quan trọng:
-        // - Nếu là con trực tiếp của Root (depth 0 -> 1): branchIndex chính là thứ tự index của nó.
-        // - Nếu sâu hơn: kế thừa branchIndex từ cha.
         const nextBranchIndex = (nodeId === 'root') ? index : rootBranchIndex;
-        traverse(childId, depth + 1, nextBranchIndex);
+        traverse(childId, depth + 1, nextBranchIndex, effectiveColor);
       });
     };
 
-    // Bắt đầu duyệt từ Root
-    traverse('root', 0, 0);
-    
+    traverse('root', 0, 0, null);
     return topology;
-  }, [nodes, edges]);
+  }, [nodes, edges, globalBranchColor]);
   const nodeMap = useMemo(() => new Map(nodes.map((n) => [n.id, n])), [nodes]);
   const nodesWithChildren = useMemo(
     () => new Set(edges.map((e) => e.from)),
@@ -476,7 +487,6 @@ export default function Editor() {
             globalStructure: (data.layoutMode as GlobalStructure) || 'mindmap',
             globalFont: data.fontFamily || fonts[0].value,
             branchLineWidth: data.branchLineWidth || 2,
-            isColoredBranch: data.isColoredBranch ?? true,
             globalBranchColor: data.globalBranchColor || '#94A3B8',
             activeColorThemeId: data.activeColorThemeId || 'dawn',
             backgroundColor: data.backgroundColor || '#FAFAFB', 
@@ -1207,8 +1217,13 @@ const handleFitToScreen = useCallback(() => {
     // 2. Lấy TẤT CẢ các key style từ DEFAULT_NODE_STYLE
     const styleKeys = Object.keys(DEFAULT_NODE_STYLE) as Array<keyof typeof DEFAULT_NODE_STYLE>;
 
-    // 3. Sao chép TẤT CẢ các giá trị style từ node cha (parentNode)
+    // 3. Sao chép style từ node cha, NHƯNG LOẠI TRỪ MÀU SẮC để Hierarchy hoạt động
+    // Các thuộc tính màu sẽ được tính toán tự động dựa trên Topology (cấp độ, nhánh)
+    const EXCLUDED_STYLES = ['color', 'borderColor', 'textColor', 'branchColor', 'quickStyleId'];
+
     styleKeys.forEach(key => {
+      if (EXCLUDED_STYLES.includes(key)) return; // [FIX] Không copy màu cứng
+
       // Nếu node cha (dữ liệu thô) có định nghĩa một style cụ thể (không phải undefined),
       // thì node con sẽ kế thừa nó.
       if (parentNode[key] !== undefined) {
@@ -1218,13 +1233,7 @@ const handleFitToScreen = useCallback(() => {
 
     // 4. Xử lý trường hợp đặc biệt: Kế thừa từ ROOT
     if (parentId === 'root') {
-      // Không kế thừa style hình dạng của root (root to, màu khác)
-      // Đặt lại chúng về 'undefined' để chúng lấy từ theme/quickstyle
-      newNodeData.color = undefined;
-      newNodeData.textColor = undefined;
-      newNodeData.shape = undefined;
-      newNodeData.borderColor = undefined;
-      newNodeData.borderWidth = undefined;
+      // Reset thêm các thuộc tính hình học nếu cần, nhưng màu đã được lo ở trên
       newNodeData.fontSize = undefined; 
       newNodeData.fontWeight = undefined;
       newNodeData.textCase = undefined;
@@ -1240,7 +1249,7 @@ const handleFitToScreen = useCallback(() => {
     setGraph(newNodes, newEdges);
     startEditing(newId);
     setTimeout(() => handleLayout(true), 50); 
-  }, [nodes, edges, pushHistory, setGraph, nodeMap, nodeVisuals, startEditing, handleLayout]); // CẬP NHẬT: Thêm nodeMap
+  }, [nodes, edges, pushHistory, setGraph, nodeMap, nodeVisuals, startEditing, handleLayout]);
 
   const handleAddSibling = useCallback((nodeId: string) => {
     if (nodeId === 'root') { 
@@ -1268,8 +1277,13 @@ const handleFitToScreen = useCallback(() => {
     };
 
     const styleKeys = Object.keys(DEFAULT_NODE_STYLE) as Array<keyof typeof DEFAULT_NODE_STYLE>;
+    
+    // [FIX] Tương tự handleAddChild, loại trừ copy màu cứng
+    const EXCLUDED_STYLES = ['color', 'borderColor', 'textColor', 'branchColor', 'quickStyleId'];
 
     styleKeys.forEach(key => {
+      if (EXCLUDED_STYLES.includes(key)) return;
+
       if (siblingNode[key] !== undefined) {
         (newNodeData as any)[key] = siblingNode[key];
       }
@@ -1620,24 +1634,32 @@ const handleFitToScreen = useCallback(() => {
 
   // [MERGE] Giữ lại logic UI mới từ feature/tt
   const handleToggleColoredBranch = (state: boolean) => {
-    pushHistory(useEditorStore.getState().nodes, useEditorStore.getState().edges); // Logic này ảnh hưởng toàn bộ, push ngay
+    pushHistory(useEditorStore.getState().nodes, useEditorStore.getState().edges); 
     if (state) {
       const rootChildren = edges.filter(e => e.from === 'root').map(e => e.to);
       let newNodes = [...nodes];
       rootChildren.forEach((childId, idx) => {
         const color = BRANCH_COLORS_PALETTE[idx % BRANCH_COLORS_PALETTE.length];
         const assignRec = (nodeId: string) => {
-          newNodes = newNodes.map(n => n.id === nodeId ? (n.styleLocked ? n : { ...n, branchColor: color, color: mixWithWhite(color, 0.8), textColor: getContrastColor(mixWithWhite(color, 0.8)) }) : n);
+          // [FIX] Chỉ gán branchColor, để color tự tính dựa trên topology
+          newNodes = newNodes.map(n => n.id === nodeId ? (n.styleLocked ? n : { ...n, branchColor: color }) : n);
           edges.forEach(e => { if (e.from === nodeId) assignRec(e.to); });
         };
         assignRec(childId);
       });
-      setGlobalStore({ isColoredBranch: true });
       setGraph(newNodes, edges);
     } else {
-      const globalColor = useEditorStore.getState().globalBranchColor;
-      let newNodes = nodes.map(n => (n.styleLocked ? n : { ...n, branchColor: undefined, color: mixWithWhite(globalColor, 0.85), textColor: getContrastColor(mixWithWhite(globalColor, 0.85)) }));
-      setGlobalStore({ isColoredBranch: false });
+      // [FIX] Reset về undefined để dùng màu Global + Phân cấp tự động
+      const newNodes = nodes.map(n => {
+        if (n.styleLocked) return n;
+        return { 
+          ...n, 
+          branchColor: undefined, 
+          color: undefined, 
+          textColor: undefined, 
+          borderColor: undefined 
+        };
+      });
       setGraph(newNodes, edges);
     }
     // [GĐ 7 & 9] Kích hoạt lưu và gửi patch
@@ -1648,51 +1670,43 @@ const handleFitToScreen = useCallback(() => {
   // [MERGE] Giữ lại logic UI mới từ feature/tt
   const handleSetBackgroundColor = (color: string) => {
     setBackgroundColor(color);
-    const newNodes = nodes.map(n => {
-      if (n.styleLocked) return n;
-      const fill = mixWithWhite(color, 0.85);
-      const branchFill = color;
-      return { 
-        ...n, 
-        color: n.color || fill, 
-        branchColor: n.branchColor || branchFill,
-        textColor: getContrastColor(fill) 
-      };
-    });
-    pushHistory(useEditorStore.getState().nodes, useEditorStore.getState().edges); // Logic này ảnh hưởng toàn bộ, push ngay
-    setGraph(newNodes, edges);
+    
+    // [FIX] Không loop qua nodes để set color cứng nữa.
+    // Để node tự động tính toán màu dựa trên nền hoặc phân cấp.
+    
+    // Chúng ta vẫn cần push history cho hành động đổi màu nền (vì nó lưu trong GlobalSettings)
+    pushHistory(useEditorStore.getState().nodes, useEditorStore.getState().edges);
+    
     // [GĐ 7 & 9] Kích hoạt lưu và gửi patch
     debouncedPersistData();
     sendPatch('BACKGROUND_CHANGE', { color });
   };
   
-const handleSetGlobalBranchColor = (color: string) => {
+  const handleSetGlobalBranchColor = (color: string) => {
     pushHistory(useEditorStore.getState().nodes, useEditorStore.getState().edges);
-    // 1. Cập nhật màu toàn cục trong store
+    
+    // 1. Cập nhật store
     setGlobalStore({ globalBranchColor: color });
 
-    const { isColoredBranch } = useEditorStore.getState();
-
-    // 2. Nếu KHÔNG ở chế độ nhiều màu, cập nhật lại màu cho các node
-    if (!isColoredBranch) {
-      const newNodes = nodes.map(n => {
-        if (n.styleLocked) return n; // Bỏ qua node đã khóa style
-
-        const fill = mixWithWhite(color, 0.85); // Dùng màu toàn cục mới
-        return {
-          ...n,
-          branchColor: undefined, // Đảm bảo nó kế thừa màu toàn cục
-          color: fill,
-          textColor: getContrastColor(fill)
-        };
-      });
-      setGraph(newNodes, edges);
-    }
-    // (Nếu isColoredBranch = true, không cần làm gì,
-    // vì logic render đã tự đọc globalBranchColor khi cần)
-
+    // 2. Reset overrides để các node nhận màu toàn cục mới và áp dụng Fading
+    const newNodes = nodes.map(n => {
+      if (n.styleLocked) return n; 
+      return { 
+        ...n, 
+        branchColor: undefined, // Reset màu nhánh riêng -> Kế thừa Global
+        color: undefined,       // Reset màu nền cứng -> Để tự động tính Fading
+        borderColor: undefined, // Reset màu viền cứng -> Để tự động tính Fading
+        textColor: undefined    
+      };
+    });
+    
+    setGraph(newNodes, edges);
+    
+    // Lưu lại
+    useEditorStore.setState({ isDirty: true });
+    
+    // Gửi patch
     debouncedPersistData();
-    // Gửi patch cho các user khác
     sendPatch('GLOBAL_BRANCH_COLOR_CHANGE', { color });
   };
 
@@ -2251,17 +2265,7 @@ const handleSetGlobalBranchColor = (color: string) => {
                   points = [ p1.x, p1.y, (p1.x + p4.x) / 2, p1.y, (p1.x + p4.x) / 2, p4.y, p4.x, p4.y ];
                 }
                 let strokeColor = globalBranchColor;
-                if (isColoredBranch) {
-                  if (fromStyle.id === 'root') {
-                    const rootChildren = edges.filter(e => e.from === 'root').map(e => e.to);
-                    const childIndex = rootChildren.indexOf(toStyle.id);
-                    strokeColor = BRANCH_COLORS_PALETTE[childIndex % BRANCH_COLORS_PALETTE.length];
-                  } else {
-                    strokeColor = toStyle.branchColor || globalBranchColor;
-                }
-                } else {
-                  strokeColor = globalBranchColor;
-                }
+                strokeColor = globalBranchColor;
                 const strokeWidth = branchLineWidth || 2;
                 const isBezier = toStyle.branchLineStyle === 'bezier' && globalStructure !== 'org';
                 const lineProps = {
@@ -2459,7 +2463,7 @@ const handleSetGlobalBranchColor = (color: string) => {
               currentBackgroundColor={backgroundColor}
               globalStructure={globalStructure}
               activeColorThemeId={activeColorThemeId}
-              
+
               onApplyLayout={(structure) => {
                 pushHistory(useEditorStore.getState().nodes, useEditorStore.getState().edges);
                 setGlobalStore({ globalStructure: structure });
@@ -2478,7 +2482,7 @@ const handleSetGlobalBranchColor = (color: string) => {
                 pushHistory(useEditorStore.getState().nodes, useEditorStore.getState().edges);
                 useEditorStore.setState({ branchLineWidth: width, isDirty: true });
               }}
-              onToggleColoredBranch={(state) => handleToggleColoredBranch(state)}
+              // Chỉ còn 1 hàm set màu nhánh
               onSetGlobalBranchColor={handleSetGlobalBranchColor}
               onSetActiveColorTheme={(themeName) => {
                 pushHistory(useEditorStore.getState().nodes, useEditorStore.getState().edges);
@@ -2491,6 +2495,9 @@ const handleSetGlobalBranchColor = (color: string) => {
               onCopyStyle={handleCopyStyle}
               onPasteStyle={handlePasteStyle}
               onResetStyle={handleResetStyle}
+              
+              // Dummy props để không lỗi nếu interface chưa kịp xóa
+              onToggleColoredBranch={() => {}}
             />
           )}
         </div>

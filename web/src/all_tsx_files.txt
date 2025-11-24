@@ -279,6 +279,10 @@ export const useAuthStore = create<AuthState>((set) => ({
 ==== D:\Ver2_MM\mindmap-project copy 2\web\src\app\store\useEditorStore.ts ====
 import { create } from "zustand";
 import { isEqual } from "lodash";
+import { 
+  getBranchColorByDepth, 
+  getContrastingTextColor
+} from "../../utils/colorUtils";
 
 // ================
 // Äá»‹nh nghÄ©a Fonts
@@ -296,7 +300,6 @@ export const fonts = [
   { name: "Courier New", value: "Courier New, monospace" },
   { name: "Verdana", value: "Verdana, sans-serif" },
 ];
-
 
 // =================
 // Äá»‹nh nghÄ©a Themes
@@ -316,23 +319,30 @@ export type ColorTheme = {
   quickStyles: {
     'important-dark': ColorThemeStyle;
     'important-light': ColorThemeStyle;
-    strikethrough: ColorThemeStyle;
-    default: ColorThemeStyle;
+    'strikethrough': ColorThemeStyle;
+    'default': ColorThemeStyle;
   },
-  root: Partial<ColorThemeStyle>; // Style riÃªng cho node gá»‘c
+  root: Partial<ColorThemeStyle>; 
 };
 
+// [Cáº¬P NHáº¬T] Theme máº·c Ä‘á»‹nh Ä‘Æ¡n giáº£n hÆ¡n cho cháº¿ Ä‘á»™ Äen/Tráº¯ng
 export const colorThemes: Record<string, ColorTheme> = {
   dawn: {
     background: "#ffffffff", 
     quickStyles: {
-      'important-dark': { fill: "#420a27ff", color:"#970074ff", stroke: "#97266D", textColor: "#ffffffff", fontSize:18, fontWeight: "bold" },
-      'important-light': { fill: "#FBB6CE", color:"#b60ac0ff", stroke: "#ED89A7", textColor: "#ffffffff" }, // Sá»¬A: Äá»•i mÃ£ hex
-      strikethrough: { fill: "#FFFFFF", color:"#ffffffff", stroke: "#CBD5E0", textColor: "#A0AEC0", textDecoration: "line-through" },
-      default: { fill: "#FFFFFF", color:"#ffffffff", stroke: "#CBD5E0", textColor: "#4A5568" },
+      'important-dark': { fill: "#000000", color:"#000000", stroke: "#000000", textColor: "#FFFFFF", fontSize:18, fontWeight: "bold" },
+      'important-light': { fill: "#E5E5E5", color:"#E5E5E5", stroke: "#A3A3A3", textColor: "#000000" }, 
+      'strikethrough': { fill: "#FFFFFF", color:"#FFFFFF", stroke: "#CBD5E0", textColor: "#A0AEC0", textDecoration: "line-through" },
+      'default': { fill: "#FFFFFF", color:"#FFFFFF", stroke: "#000000", textColor: "#000000" },
     },
-    root: { fill: "#6366F1", stroke: "#4338CA", textColor: "#650505ff" },
+    // Root máº·c Ä‘á»‹nh lÃ  Äen, chá»¯ Tráº¯ng
+    root: { fill: "#000000", stroke: "#000000", textColor: "#FFFFFF" },
   },
+};
+
+export type NodeTopology = {
+  depth: number;
+  branchBaseColor: string; 
 };
 
 // ================
@@ -352,7 +362,7 @@ export type NodeData = {
   collapsed?: boolean;
   quickStyleId?: QuickStyleId;
 
-  // Style thuá»™c tÃ­nh (cÃ³ thá»ƒ undefined)
+  // Style thuá»™c tÃ­nh
   shape?: 'rectangle' | 'roundedRect'; 
   color?: string; 
   hyperlink?: string;
@@ -372,7 +382,7 @@ export type NodeData = {
   textCase?: 'normal' | 'uppercase' | 'lowercase';
   nodeLength?: 'fit' | number;
 
-  // Branch (Style cho nhÃ¡nh con)
+  // Branch
   localStructure?: LocalStructure;
   branchColor?: string;
   branchLineStyle?: 'bezier' | 'sharp';
@@ -390,11 +400,10 @@ const MAX_HISTORY = 100;
 // Style Helpers
 // =============
 
-// Style máº·c Ä‘á»‹nh
 export const DEFAULT_NODE_STYLE: Partial<NodeData> = {
   shape: 'roundedRect',
   color: '#FFFFFF',
-  borderColor: '#CBD5E0',
+  borderColor: '#000000', // Viá»n Ä‘en máº·c Ä‘á»‹nh
   borderWidth: 2,
   borderStyle: 'solid',
   fontFamily: fonts[0].value,
@@ -403,9 +412,9 @@ export const DEFAULT_NODE_STYLE: Partial<NodeData> = {
   fontStyle: 'normal',
   textDecoration: 'none',
   textAlign: 'center',
-  textColor: '#4A5568',
+  textColor: '#000000', // Chá»¯ Ä‘en máº·c Ä‘á»‹nh
   textCase: 'normal',
-  nodeLength: 'fit', // Sá»¬A: Äá»•i 230 thÃ nh 'fit'
+  nodeLength: 'fit',
   branchColor: undefined,
   branchLineStyle: 'bezier',
   branchLineEnd: 'none',
@@ -414,83 +423,92 @@ export const DEFAULT_NODE_STYLE: Partial<NodeData> = {
   quickStyleId: 'default',
 };
 
-/**
- * TÃ­nh toÃ¡n style cuá»‘i cÃ¹ng cá»§a má»™t node
- */
 export function getNodeComputedStyle(
   node: NodeData | null,
   theme: ColorTheme,
-  globalFont: string
+  globalFont: string,
+  topology?: NodeTopology 
 ): NodeData {
   const baseStyle: Partial<NodeData> = {
     ...DEFAULT_NODE_STYLE,
-    fontFamily: globalFont // 1. Ãp dá»¥ng Global Font
+    fontFamily: globalFont,
+    color: theme.root.fill || '#FFFFFF', 
+    borderColor: '#000000',
+    textColor: '#000000'
   };
 
   if (!node) return baseStyle as NodeData;
 
-  // 2. Láº¥y style tá»« Theme (Root, QuickStyle, hoáº·c Default)
-  let themeStyle: Partial<ColorThemeStyle> = {};
-  if (node.id === 'root') {
-    themeStyle = theme.root;
-  } else if (node.quickStyleId && theme.quickStyles[node.quickStyleId]) {
-    themeStyle = theme.quickStyles[node.quickStyleId];
-  } else {
-    themeStyle = theme.quickStyles.default;
+  // 2. [THEME] Ãp dá»¥ng PhÃ¢n cáº¥p MÃ u sáº¯c (Hierarchical Color)
+  if (topology) {
+    const { depth, branchBaseColor } = topology;
+
+    if (node.id === 'root') {
+       baseStyle.color = theme.root.fill || '#000000';
+       baseStyle.textColor = theme.root.textColor || '#FFFFFF';
+       baseStyle.borderColor = theme.root.stroke || '#000000';
+       baseStyle.borderWidth = 3;
+       baseStyle.fontSize = 24;
+       baseStyle.fontWeight = 'bold';
+    } else {
+       const smartColors = getBranchColorByDepth(branchBaseColor, depth);
+       
+       baseStyle.color = smartColors.bg;
+       baseStyle.borderColor = smartColors.border;
+       baseStyle.textColor = getContrastingTextColor(smartColors.bg);
+       
+       if (depth >= 6) baseStyle.borderWidth = 2;
+    }
   }
 
-  // 3. Há»£p nháº¥t: Default <- Theme
-  const merged: Partial<NodeData> = {
-    ...baseStyle,
-    ...(themeStyle as Partial<NodeData>),
-  };
+  // 3. [QUICK STYLE]
+  if (node.quickStyleId && theme.quickStyles[node.quickStyleId]) {
+    const qs = theme.quickStyles[node.quickStyleId];
+    baseStyle.color = qs.fill;
+    baseStyle.borderColor = qs.stroke;
+    baseStyle.textColor = qs.textColor;
+    if (qs.fontWeight) baseStyle.fontWeight = qs.fontWeight;
+  }
 
-  // 4. Ãp dá»¥ng style tÃ¹y chá»‰nh (ghi Ä‘Ã¨)
-  // Chá»‰ ghi Ä‘Ã¨ cÃ¡c giÃ¡ trá»‹ Ä‘Ã£ Ä‘Æ°á»£c xÃ¡c Ä‘á»‹nh cá»¥ thá»ƒ trÃªn node
-  (Object.keys(DEFAULT_NODE_STYLE) as Array<keyof typeof DEFAULT_NODE_STYLE>).forEach(key => {
+  // 4. [OVERRIDE]
+  const computed: Partial<NodeData> = { ...baseStyle };
+  const OVERRIDABLE_KEYS: (keyof NodeData)[] = [
+    'shape', 'color', 'borderColor', 'borderWidth', 'borderStyle',
+    'fontFamily', 'fontSize', 'fontWeight', 'fontStyle', 'textDecoration', 
+    'textAlign', 'textColor', 'textCase', 'nodeLength',
+    'branchLineStyle', 'branchLineEnd', 'branchLineThickness'
+  ];
+
+  OVERRIDABLE_KEYS.forEach(key => {
     if (node[key] !== undefined) {
-      (merged as any)[key] = node[key];
+      (computed as any)[key] = node[key];
     }
   });
-  
-  // Sá»¬A: Ghi Ä‘Ã¨ font toÃ n cá»¥c Náº¾U node cÃ³ font tÃ¹y chá»‰nh
+
+  if (node.color !== undefined && node.textColor === undefined) {
+    computed.textColor = getContrastingTextColor(node.color);
+  }
+
+  computed.id = node.id;
+  computed.nodeText = node.nodeText;
+  computed.x = node.x;
+  computed.y = node.y;
+  computed.parentId = node.parentId;
+  computed.side = node.side;
+  computed.collapsed = node.collapsed;
+  computed.hyperlink = node.hyperlink;
+  computed.styleLocked = node.styleLocked;
+
+  // [Äá»’NG Bá»˜ MÃ€U DÃ‚Y]
+  computed.branchColor = node.branchColor ?? (topology ? topology.branchBaseColor : undefined);
+
   if (node.fontFamily) {
-    merged.fontFamily = node.fontFamily;
+    computed.fontFamily = node.fontFamily;
   }
 
-  // Node gá»‘c luÃ´n cÃ³ style Ä‘áº·c biá»‡t
-  if (node.id === 'root') {
-    merged.fontSize = (merged.fontSize || 16) + 8;
-    merged.fontWeight = 'bold';
-    merged.nodeLength = 300; 
-    merged.textColor = theme.root.textColor || '#4a0505ff'; 
-    merged.textCase = 'uppercase';
-  }
-
-  (Object.keys(DEFAULT_NODE_STYLE) as Array<keyof typeof DEFAULT_NODE_STYLE>).forEach(key => {
-    if (node[key] !== undefined) {
-      (merged as any)[key] = node[key];
-    }
-  });
-  
-  
-
-  // GÃ¡n láº¡i cÃ¡c thuá»™c tÃ­nh khÃ´ng pháº£i style
-  merged.id = node.id;
-  merged.nodeText = node.nodeText;
-  merged.x = node.x;
-  merged.y = node.y;
-  merged.parentId = node.parentId;
-  merged.side = node.side;
-  merged.collapsed = node.collapsed;
-  merged.hyperlink = node.hyperlink; // Sá»¬A: ThÃªm hyperlink
-  merged.styleLocked = node.styleLocked; // Sá»¬A: ThÃªm styleLocked
-
-  return merged as NodeData;
+  return computed as NodeData;
 }
 
-
-// HÃ m reset
 export function applyNodeDefaults(node: NodeData, theme: ColorTheme): Partial<NodeData> {
   const themeStyle = (node.id === 'root')
     ? theme.root
@@ -499,7 +517,6 @@ export function applyNodeDefaults(node: NodeData, theme: ColorTheme): Partial<No
   return {
     ...DEFAULT_NODE_STYLE,
     ...(themeStyle as Partial<NodeData>),
-    // Äáº·t láº¡i cÃ¡c giÃ¡ trá»‹ cÃ³ thá»ƒ tÃ¹y chá»‰nh vá» undefined
     quickStyleId: 'default',
     shape: undefined,
     color: undefined,
@@ -514,17 +531,16 @@ export function applyNodeDefaults(node: NodeData, theme: ColorTheme): Partial<No
     textAlign: undefined,
     textColor: undefined,
     textCase: undefined,
-    nodeLength: undefined, // Sá»¬A: Reset cáº£ nodeLength
+    nodeLength: undefined, 
     localStructure: undefined,
     branchColor: undefined,
     branchLineStyle: undefined,
     branchLineEnd: undefined,
     branchLineThickness: undefined,
-    styleLocked: undefined, // Sá»¬A: ThÃªm styleLocked
-    hyperlink: undefined, // Sá»¬A: ThÃªm hyperlink
+    styleLocked: undefined, 
+    hyperlink: undefined, 
   };
 }
-
 
 // =========
 // Äá»‹nh nghÄ©a State
@@ -535,21 +551,18 @@ type State = {
   history: Snapshot[];
   future: Snapshot[];
 
-  // CÃ i Ä‘áº·t toÃ n cá»¥c
   globalStructure: GlobalStructure;
   globalFont: string;
   branchLineWidth: number;
-  isColoredBranch: boolean;
+  // [Cáº¬P NHáº¬T] Loáº¡i bá» isColoredBranch
   activeColorThemeId: string;
   globalBranchColor: string; 
-  backgroundColor: string; // [Má»šI] ThÃªm mÃ u ná»n
+  backgroundColor: string; 
 
-  // [Má»šI] Quáº£n lÃ½ tráº¡ng thÃ¡i editor
-  isDirty: boolean; // Theo dÃµi thay Ä‘á»•i
-  currentMindmapId: string | null; // ID cá»§a map Ä‘ang má»Ÿ
-  currentMindmapName: string; // TÃªn cá»§a map Ä‘ang má»Ÿ
+  isDirty: boolean; 
+  currentMindmapId: string | null; 
+  currentMindmapName: string; 
 
-  setIsDirty: (isDirty: boolean) => void; 
   setGraph: (n: NodeData[], e: EdgeData[]) => void;
   push: (n: NodeData[], e: EdgeData[]) => void;
   undo: () => Snapshot | null;
@@ -565,21 +578,20 @@ export const useEditorStore = create<State>((set, get) => ({
   history: [],
   future: [],
 
-  // CÃ i Ä‘áº·t toÃ n cá»¥c
   globalStructure: 'mindmap',
   globalFont: fonts[0].value,
   branchLineWidth: 2,
-  isColoredBranch: true,
   activeColorThemeId: 'dawn',
-  globalBranchColor: '#94A3B8', 
+  // [Cáº¬P NHáº¬T] Máº·c Ä‘á»‹nh lÃ  Äen cho giao diá»‡n Äen/Tráº¯ng
+  globalBranchColor: '#000000', 
   backgroundColor: '#FAFAFB', 
+
   isDirty: false,
   currentMindmapId: null,
   currentMindmapName: 'Äang táº£i...',
 
-  setIsDirty: (status) => set({ isDirty: status }),
   setGraph: (n, e) => {
-    set({ nodes: n, edges: e, isDirty: true });
+    set({ nodes: n, edges: e });
   },
 
   push: (n, e) => {
@@ -588,7 +600,7 @@ export const useEditorStore = create<State>((set, get) => ({
 
     if (!lastHistoryState || !isEqual(lastHistoryState, currentState)) {
       const nextHistory = [...get().history, currentState].slice(-MAX_HISTORY);
-      set({ history: nextHistory, future: [], isDirty: true });
+      set({ history: nextHistory, future: [] });
     }
   },
 
@@ -604,7 +616,7 @@ export const useEditorStore = create<State>((set, get) => ({
       future: [current, ...get().future],
       nodes: prev.nodes,
       edges: prev.edges,
-      isDirty: true,
+      isDirty: true, 
     });
     return prev;
   },
@@ -619,7 +631,7 @@ export const useEditorStore = create<State>((set, get) => ({
       future: f,
       nodes: next.nodes,
       edges: next.edges,
-      isDirty: true,
+      isDirty: true, 
     });
     return next;
   },
@@ -2757,7 +2769,6 @@ function MapPanel({
 }: MapPanelProps) {
   const currentFont = useEditorStore((s) => s.globalFont);
   const currentLineWidth = useEditorStore((s) => s.branchLineWidth);
-  const isColored = useEditorStore((s) => s.isColoredBranch);
   const globalBranchColor = useEditorStore((s) => s.globalBranchColor);
   const activeTheme = colorThemes[activeColorThemeId];
 
@@ -2826,15 +2837,6 @@ function MapPanel({
         color={globalBranchColor}
         onChange={onSetGlobalBranchColor}
       >
-        <label className="flex items-center gap-2 cursor-pointer text-sm">
-          <input
-            type="checkbox"
-            checked={isColored}
-            onChange={(e) => onToggleColoredBranch(e.target.checked)}
-            className="rounded border-gray-300 cursor-pointer"
-          />
-          <span>Nhiá»u mÃ u</span>
-        </label>
       </ColorItem>
   
     </div>
@@ -3861,6 +3863,7 @@ import {
   applyNodeDefaults,
   DEFAULT_NODE_STYLE,
   NodeData as FeNodeData, 
+  NodeTopology
 } from '../app/store/useEditorStore';
 import { mindmapsApi, FeMindmapDoc } from '../services/mindmapsApi';
 import { useAuth } from '../hooks/useAuth';
@@ -4064,7 +4067,6 @@ export default function Editor() {
     globalStructure,
     globalFont,
     branchLineWidth,
-    isColoredBranch,
     activeColorThemeId,
     set: setGlobalStore,
     globalBranchColor,
@@ -4106,6 +4108,50 @@ export default function Editor() {
 
   const activeTheme =
   colorThemes[activeColorThemeId as keyof typeof colorThemes];
+  const nodeTopology = useMemo(() => {
+    const topology = new Map<string, NodeTopology>();
+    const nodeDataMap = new Map(nodes.map(n => [n.id, n]));
+    
+    const adj = new Map<string, string[]>();
+    edges.forEach(e => {
+      if (!adj.has(e.from)) adj.set(e.from, []);
+      adj.get(e.from)!.push(e.to);
+    });
+
+    const traverse = (nodeId: string, depth: number, rootBranchIndex: number, inheritedColor: string | null) => {
+      const node = nodeDataMap.get(nodeId);
+      let currentBaseColor = inheritedColor;
+
+      // Logic xÃ¡c Ä‘á»‹nh mÃ u táº¡i cáº¥p 1:
+      // LuÃ´n láº¥y mÃ u toÃ n cá»¥c náº¿u chÆ°a cÃ³ mÃ u thá»«a hÆ°á»Ÿng (nghÄ©a lÃ  tá»« root)
+      if (depth === 1 && !currentBaseColor) {
+         currentBaseColor = globalBranchColor;
+      }
+
+      // Náº¿u node nÃ y cÃ³ mÃ u riÃªng, nÃ³ sáº½ Ä‘Ã¨ mÃ u toÃ n cá»¥c/thá»«a hÆ°á»Ÿng
+      if (node?.branchColor) {
+        currentBaseColor = node.branchColor;
+      }
+
+      // Fallback an toÃ n lÃ  Äen náº¿u táº¥t cáº£ Ä‘á»u null
+      const effectiveColor = currentBaseColor || globalBranchColor || '#000000';
+
+      topology.set(nodeId, { 
+        depth, 
+        // [FIX 1] XÃ³a branchIndex vÃ¬ khÃ´ng cÃ²n trong type NodeTopology
+        branchBaseColor: effectiveColor 
+      });
+      
+      const children = adj.get(nodeId) || [];
+      children.forEach((childId, index) => {
+        const nextBranchIndex = (nodeId === 'root') ? index : rootBranchIndex;
+        traverse(childId, depth + 1, nextBranchIndex, effectiveColor);
+      });
+    };
+
+    traverse('root', 0, 0, null);
+    return topology;
+  }, [nodes, edges, globalBranchColor]);
   const nodeMap = useMemo(() => new Map(nodes.map((n) => [n.id, n])), [nodes]);
   const nodesWithChildren = useMemo(
     () => new Set(edges.map((e) => e.from)),
@@ -4137,10 +4183,17 @@ export default function Editor() {
   const computedNodeStyles = useMemo(() => {
     const map = new Map<string, NodeData>();
     nodes.forEach((node) => {
-      map.set(node.id, getNodeComputedStyle(node, activeTheme, globalFont));
+      // Láº¥y thÃ´ng tin topo cá»§a node hiá»‡n táº¡i
+      const topo = nodeTopology.get(node.id);
+      
+      // Truyá»n topo vÃ o hÃ m tÃ­nh style
+      map.set(
+        node.id, 
+        getNodeComputedStyle(node, activeTheme, globalFont, topo)
+      );
     });
     return map;
-  }, [nodes, activeTheme, globalFont]);
+  }, [nodes, activeTheme, globalFont, nodeTopology]);
 
   const nodeVisuals = useMemo(() => {
     const map = new Map<
@@ -4262,7 +4315,6 @@ export default function Editor() {
             globalStructure: (data.layoutMode as GlobalStructure) || 'mindmap',
             globalFont: data.fontFamily || fonts[0].value,
             branchLineWidth: data.branchLineWidth || 2,
-            isColoredBranch: data.isColoredBranch ?? true,
             globalBranchColor: data.globalBranchColor || '#94A3B8',
             activeColorThemeId: data.activeColorThemeId || 'dawn',
             backgroundColor: data.backgroundColor || '#FAFAFB', 
@@ -5418,12 +5470,10 @@ const handleFitToScreen = useCallback(() => {
         };
         assignRec(childId);
       });
-      setGlobalStore({ isColoredBranch: true });
       setGraph(newNodes, edges);
     } else {
       const globalColor = useEditorStore.getState().globalBranchColor;
       let newNodes = nodes.map(n => (n.styleLocked ? n : { ...n, branchColor: undefined, color: mixWithWhite(globalColor, 0.85), textColor: getContrastColor(mixWithWhite(globalColor, 0.85)) }));
-      setGlobalStore({ isColoredBranch: false });
       setGraph(newNodes, edges);
     }
     // [GÄ 7 & 9] KÃ­ch hoáº¡t lÆ°u vÃ  gá»­i patch
@@ -5452,33 +5502,30 @@ const handleFitToScreen = useCallback(() => {
     sendPatch('BACKGROUND_CHANGE', { color });
   };
   
-const handleSetGlobalBranchColor = (color: string) => {
+  const handleSetGlobalBranchColor = (color: string) => {
     pushHistory(useEditorStore.getState().nodes, useEditorStore.getState().edges);
-    // 1. Cáº­p nháº­t mÃ u toÃ n cá»¥c trong store
+    
+    // 1. Cáº­p nháº­t store
     setGlobalStore({ globalBranchColor: color });
 
-    const { isColoredBranch } = useEditorStore.getState();
-
-    // 2. Náº¿u KHÃ”NG á»Ÿ cháº¿ Ä‘á»™ nhiá»u mÃ u, cáº­p nháº­t láº¡i mÃ u cho cÃ¡c node
-    if (!isColoredBranch) {
-      const newNodes = nodes.map(n => {
-        if (n.styleLocked) return n; // Bá» qua node Ä‘Ã£ khÃ³a style
-
-        const fill = mixWithWhite(color, 0.85); // DÃ¹ng mÃ u toÃ n cá»¥c má»›i
-        return {
-          ...n,
-          branchColor: undefined, // Äáº£m báº£o nÃ³ káº¿ thá»«a mÃ u toÃ n cá»¥c
-          color: fill,
-          textColor: getContrastColor(fill)
-        };
-      });
-      setGraph(newNodes, edges);
-    }
-    // (Náº¿u isColoredBranch = true, khÃ´ng cáº§n lÃ m gÃ¬,
-    // vÃ¬ logic render Ä‘Ã£ tá»± Ä‘á»c globalBranchColor khi cáº§n)
-
-    debouncedPersistData();
-    // Gá»­i patch cho cÃ¡c user khÃ¡c
+    // 2. Reset overrides Ä‘á»ƒ cÃ¡c node nháº­n mÃ u toÃ n cá»¥c má»›i vÃ  Ã¡p dá»¥ng Fading
+    const newNodes = nodes.map(n => {
+      if (n.styleLocked) return n; 
+      return { 
+        ...n, 
+        branchColor: undefined, // Reset mÃ u nhÃ¡nh riÃªng -> Káº¿ thá»«a Global
+        color: undefined,       // Reset mÃ u ná»n cá»©ng -> Äá»ƒ tá»± Ä‘á»™ng tÃ­nh Fading
+        borderColor: undefined, // Reset mÃ u viá»n cá»©ng -> Äá»ƒ tá»± Ä‘á»™ng tÃ­nh Fading
+        textColor: undefined    
+      };
+    });
+    
+    setGraph(newNodes, edges);
+    
+    // LÆ°u láº¡i
+    useEditorStore.setState({ isDirty: true });
+    
+    // Gá»­i patch
     sendPatch('GLOBAL_BRANCH_COLOR_CHANGE', { color });
   };
 
@@ -6037,17 +6084,7 @@ const handleSetGlobalBranchColor = (color: string) => {
                   points = [ p1.x, p1.y, (p1.x + p4.x) / 2, p1.y, (p1.x + p4.x) / 2, p4.y, p4.x, p4.y ];
                 }
                 let strokeColor = globalBranchColor;
-                if (isColoredBranch) {
-                  if (fromStyle.id === 'root') {
-                    const rootChildren = edges.filter(e => e.from === 'root').map(e => e.to);
-                    const childIndex = rootChildren.indexOf(toStyle.id);
-                    strokeColor = BRANCH_COLORS_PALETTE[childIndex % BRANCH_COLORS_PALETTE.length];
-                  } else {
-                    strokeColor = toStyle.branchColor || globalBranchColor;
-                }
-                } else {
-                  strokeColor = globalBranchColor;
-                }
+                strokeColor = globalBranchColor;
                 const strokeWidth = branchLineWidth || 2;
                 const isBezier = toStyle.branchLineStyle === 'bezier' && globalStructure !== 'org';
                 const lineProps = {
@@ -6245,7 +6282,7 @@ const handleSetGlobalBranchColor = (color: string) => {
               currentBackgroundColor={backgroundColor}
               globalStructure={globalStructure}
               activeColorThemeId={activeColorThemeId}
-              
+
               onApplyLayout={(structure) => {
                 pushHistory(useEditorStore.getState().nodes, useEditorStore.getState().edges);
                 setGlobalStore({ globalStructure: structure });
@@ -6264,7 +6301,7 @@ const handleSetGlobalBranchColor = (color: string) => {
                 pushHistory(useEditorStore.getState().nodes, useEditorStore.getState().edges);
                 useEditorStore.setState({ branchLineWidth: width, isDirty: true });
               }}
-              onToggleColoredBranch={(state) => handleToggleColoredBranch(state)}
+              // Chá»‰ cÃ²n 1 hÃ m set mÃ u nhÃ¡nh
               onSetGlobalBranchColor={handleSetGlobalBranchColor}
               onSetActiveColorTheme={(themeName) => {
                 pushHistory(useEditorStore.getState().nodes, useEditorStore.getState().edges);
@@ -6277,6 +6314,9 @@ const handleSetGlobalBranchColor = (color: string) => {
               onCopyStyle={handleCopyStyle}
               onPasteStyle={handlePasteStyle}
               onResetStyle={handleResetStyle}
+              
+              // Dummy props Ä‘á»ƒ khÃ´ng lá»—i náº¿u interface chÆ°a ká»‹p xÃ³a
+              onToggleColoredBranch={() => {}}
             />
           )}
         </div>
@@ -7259,6 +7299,108 @@ export const mindmapsApi = {
   },
 };
 
+==== D:\Ver2_MM\mindmap-project copy 2\web\src\utils\colorUtils.ts ====
+/**
+ * Module tiá»‡n Ã­ch xá»­ lÃ½ mÃ u sáº¯c cho Visualization
+ * Sá»­ dá»¥ng toÃ¡n há»c Native Ä‘á»ƒ tá»‘i Æ°u hiá»‡u nÄƒng, khÃ´ng dÃ¹ng thÆ° viá»‡n ngoÃ i.
+ */
+
+// Chuyá»ƒn Ä‘á»•i Hex sang HSL
+export function hexToHSL(hex: string): { h: number; s: number; l: number } {
+  let result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+  if (!result) return { h: 0, s: 0, l: 100 };
+
+  let r = parseInt(result[1], 16) / 255;
+  let g = parseInt(result[2], 16) / 255;
+  let b = parseInt(result[3], 16) / 255;
+
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
+  let h = 0, s = 0, l = (max + min) / 2;
+
+  if (max !== min) {
+    const d = max - min;
+    s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+    switch (max) {
+      case r: h = (g - b) / d + (g < b ? 6 : 0); break;
+      case g: h = (b - r) / d + 2; break;
+      case b: h = (r - g) / d + 4; break;
+    }
+    h /= 6;
+  }
+
+  return { h: Math.round(h * 360), s: Math.round(s * 100), l: Math.round(l * 100) };
+}
+
+// Chuyá»ƒn Ä‘á»•i HSL sang Hex
+export function hslToHex(h: number, s: number, l: number): string {
+  l /= 100;
+  const a = s * Math.min(l, 1 - l) / 100;
+  const f = (n: number) => {
+    const k = (n + h / 30) % 12;
+    const color = l - a * Math.max(Math.min(k - 3, 9 - k, 1), -1);
+    return Math.round(255 * color).toString(16).padStart(2, '0');
+  };
+  return `#${f(0)}${f(8)}${f(4)}`;
+}
+
+/**
+ * TÃ­nh toÃ¡n mÃ u ná»n thÃ´ng minh dá»±a trÃªn Ä‘á»™ sÃ¢u (Depth-based Lightness).
+ * Sá»­ dá»¥ng ná»™i suy tuyáº¿n tÃ­nh (Lerp) Ä‘á»ƒ lÃ m nháº¡t mÃ u dáº§n Ä‘á»u.
+ */
+export function getBranchColorByDepth(
+  baseHex: string, 
+  depth: number, 
+  cutoffLevel: number = 6
+): { bg: string; border: string } {
+  // 1. Base Color (Gá»‘c)
+  if (depth <= 1) {
+    return { bg: baseHex, border: baseHex };
+  }
+
+  // 2. The White Threshold (Cáº¥p >= 6)
+  if (depth >= cutoffLevel) {
+    // Ná»n tráº¯ng, Viá»n giá»¯ mÃ u gá»‘c cá»§a nhÃ¡nh Ä‘á»ƒ nháº­n diá»‡n
+    return { bg: '#FFFFFF', border: baseHex };
+  }
+
+  // 3. Gradient Fading (Cáº¥p 2 -> 5)
+  const { h, s, l: startL } = hexToHSL(baseHex);
+  const targetL = 96; // Gáº§n tráº¯ng tuyá»‡t Ä‘á»‘i
+  
+  // TÃ­nh toÃ¡n pháº§n trÄƒm tiáº¿n trÃ¬nh (t) tá»« 0 (Level 1) Ä‘áº¿n 1 (Level Cutoff)
+  // depth 1 -> t=0
+  // depth 6 -> t=1
+  const t = (depth - 1) / (cutoffLevel - 1);
+  
+  // CÃ´ng thá»©c Lerp cho Lightness: L_new = L_start + (L_target - L_start) * t
+  const currentL = startL + (targetL - startL) * t;
+
+  const fadedColor = hslToHex(h, s, currentL);
+  
+  // Vá»›i cÃ¡c node nháº¡t, viá»n nÃªn Ä‘áº­m hÆ¡n ná»n má»™t chÃºt hoáº·c dÃ¹ng chÃ­nh mÃ u Ä‘Ã³
+  return { bg: fadedColor, border: fadedColor };
+}
+
+/**
+ * TÃ­nh toÃ¡n Ä‘á»™ tÆ°Æ¡ng pháº£n Ä‘á»ƒ chá»n mÃ u chá»¯ (Äen/Tráº¯ng) chuáº©n WCAG.
+ */
+export function getContrastingTextColor(hex: string): '#000000' | '#FFFFFF' {
+  const { r, g, b } = hexToRgbSimple(hex);
+  // CÃ´ng thá»©c YIQ standard
+  const yiq = ((r * 299) + (g * 587) + (b * 114)) / 1000;
+  return (yiq >= 128) ? '#000000' : '#FFFFFF';
+}
+
+function hexToRgbSimple(hex: string) {
+  const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+  return result ? {
+    r: parseInt(result[1], 16),
+    g: parseInt(result[2], 16),
+    b: parseInt(result[3], 16)
+  } : { r: 0, g: 0, b: 0 };
+}
+
 ==== D:\Ver2_MM\mindmap-project copy 2\web\src\main.tsx ====
 import React from "react";
 import ReactDOM from "react-dom/client";
@@ -7301,3 +7443,5 @@ interface ImportMeta {
   readonly env: ImportMetaEnv;
 }
 
+Hiện có hàm phân cấp màu node nhưng nó có vẻ không hoạt động, tôi muốn nó lúc nào cũng hoạt động, cái chọn màu ở Map chỉ là thay đổi màu toàn cục của trang nên vẫn có phân cấp
+Lưu ý khi gửi code chỉ gửi đoạn cần cập nhật, đánh dấu bắt đầu kết thúc đoạn chỉnh sửa cập nhật

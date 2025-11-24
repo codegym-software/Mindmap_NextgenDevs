@@ -1,19 +1,10 @@
 import { create } from "zustand";
 import { isEqual } from "lodash";
+import { 
+  getBranchColorByDepth, 
+  getContrastingTextColor
+} from "../../utils/colorUtils";
 
-import { getBranchColorByDepth, getContrastingTextColor } from '../../utils/colorUtils';
-
-// Định nghĩa thêm Palette màu mặc định nếu chưa có
-const DEFAULT_PALETTE = [
-  '#EF4444', '#F97316', '#FACC15', '#22C55E', 
-  '#06B6D4', '#3B82F6', '#8B5CF6', '#EC4899'
-];
-
-// Interface cho thông tin Topo (được tính toán ở Editor)
-export type NodeTopology = {
-  depth: number;
-  branchIndex: number; // Index của nhánh Cấp 1 mà node này thuộc về
-};
 // ================
 // Định nghĩa Fonts
 // ================
@@ -30,7 +21,6 @@ export const fonts = [
   { name: "Courier New", value: "Courier New, monospace" },
   { name: "Verdana", value: "Verdana, sans-serif" },
 ];
-
 
 // =================
 // Định nghĩa Themes
@@ -50,23 +40,30 @@ export type ColorTheme = {
   quickStyles: {
     'important-dark': ColorThemeStyle;
     'important-light': ColorThemeStyle;
-    strikethrough: ColorThemeStyle;
-    default: ColorThemeStyle;
+    'strikethrough': ColorThemeStyle;
+    'default': ColorThemeStyle;
   },
-  root: Partial<ColorThemeStyle>; // Style riêng cho node gốc
+  root: Partial<ColorThemeStyle>; 
 };
 
+// [CẬP NHẬT] Theme mặc định đơn giản hơn cho chế độ Đen/Trắng
 export const colorThemes: Record<string, ColorTheme> = {
   dawn: {
     background: "#ffffffff", 
     quickStyles: {
-      'important-dark': { fill: "#420a27ff", color:"#970074ff", stroke: "#97266D", textColor: "#ffffffff", fontSize:18, fontWeight: "bold" },
-      'important-light': { fill: "#FBB6CE", color:"#b60ac0ff", stroke: "#ED89A7", textColor: "#ffffffff" }, // SỬA: Đổi mã hex
-      strikethrough: { fill: "#FFFFFF", color:"#ffffffff", stroke: "#CBD5E0", textColor: "#A0AEC0", textDecoration: "line-through" },
-      default: { fill: "#FFFFFF", color:"#ffffffff", stroke: "#CBD5E0", textColor: "#4A5568" },
+      'important-dark': { fill: "#000000", color:"#000000", stroke: "#000000", textColor: "#FFFFFF", fontSize:18, fontWeight: "bold" },
+      'important-light': { fill: "#E5E5E5", color:"#E5E5E5", stroke: "#A3A3A3", textColor: "#000000" }, 
+      'strikethrough': { fill: "#FFFFFF", color:"#FFFFFF", stroke: "#CBD5E0", textColor: "#A0AEC0", textDecoration: "line-through" },
+      'default': { fill: "#FFFFFF", color:"#FFFFFF", stroke: "#000000", textColor: "#000000" },
     },
-    root: { fill: "#6366F1", stroke: "#4338CA", textColor: "#650505ff" },
+    // Root mặc định là Đen, chữ Trắng
+    root: { fill: "#000000", stroke: "#000000", textColor: "#FFFFFF" },
   },
+};
+
+export type NodeTopology = {
+  depth: number;
+  branchBaseColor: string; 
 };
 
 // ================
@@ -86,7 +83,7 @@ export type NodeData = {
   collapsed?: boolean;
   quickStyleId?: QuickStyleId;
 
-  // Style thuộc tính (có thể undefined)
+  // Style thuộc tính
   shape?: 'rectangle' | 'roundedRect'; 
   color?: string; 
   hyperlink?: string;
@@ -106,7 +103,7 @@ export type NodeData = {
   textCase?: 'normal' | 'uppercase' | 'lowercase';
   nodeLength?: 'fit' | number;
 
-  // Branch (Style cho nhánh con)
+  // Branch
   localStructure?: LocalStructure;
   branchColor?: string;
   branchLineStyle?: 'bezier' | 'sharp';
@@ -124,11 +121,10 @@ const MAX_HISTORY = 100;
 // Style Helpers
 // =============
 
-// Style mặc định
 export const DEFAULT_NODE_STYLE: Partial<NodeData> = {
   shape: 'roundedRect',
   color: '#FFFFFF',
-  borderColor: '#CBD5E0',
+  borderColor: '#000000', // Viền đen mặc định
   borderWidth: 2,
   borderStyle: 'solid',
   fontFamily: fonts[0].value,
@@ -137,9 +133,9 @@ export const DEFAULT_NODE_STYLE: Partial<NodeData> = {
   fontStyle: 'normal',
   textDecoration: 'none',
   textAlign: 'center',
-  textColor: '#4A5568',
+  textColor: '#000000', // Chữ đen mặc định
   textCase: 'normal',
-  nodeLength: 'fit', // SỬA: Đổi 230 thành 'fit'
+  nodeLength: 'fit',
   branchColor: undefined,
   branchLineStyle: 'bezier',
   branchLineEnd: 'none',
@@ -148,97 +144,92 @@ export const DEFAULT_NODE_STYLE: Partial<NodeData> = {
   quickStyleId: 'default',
 };
 
-/**
- * Tính toán style cuối cùng của một node
- */
 export function getNodeComputedStyle(
   node: NodeData | null,
   theme: ColorTheme,
   globalFont: string,
-  topology?: NodeTopology // [MỚI] Tham số topo
+  topology?: NodeTopology 
 ): NodeData {
   const baseStyle: Partial<NodeData> = {
     ...DEFAULT_NODE_STYLE,
-    fontFamily: globalFont 
+    fontFamily: globalFont,
+    color: theme.root.fill || '#FFFFFF', 
+    borderColor: '#000000',
+    textColor: '#000000'
   };
 
   if (!node) return baseStyle as NodeData;
 
-  // 1. Lấy style cơ bản từ Theme
-  let themeStyle: Partial<ColorThemeStyle> = {};
-  if (node.id === 'root') {
-    themeStyle = theme.root;
-  } else if (node.quickStyleId && theme.quickStyles[node.quickStyleId]) {
-    themeStyle = theme.quickStyles[node.quickStyleId];
-  } else {
-    themeStyle = theme.quickStyles.default;
-  }
+  // 2. [THEME] Áp dụng Phân cấp Màu sắc (Hierarchical Color)
+  if (topology) {
+    const { depth, branchBaseColor } = topology;
 
-  // 2. Hợp nhất
-  const merged: Partial<NodeData> = {
-    ...baseStyle,
-    ...(themeStyle as Partial<NodeData>),
-  };
-
-  // 3. [LOGIC MỚI] Áp dụng Smart Color Logic (nếu style chưa bị lock)
-  // Chỉ áp dụng nếu có thông tin topology và không phải root
-  if (topology && node.id !== 'root' && !node.styleLocked) {
-    const { depth, branchIndex } = topology;
-    
-    // a. Xác định Base Color (Màu gốc của nhánh)
-    // Dùng Palette từ theme hoặc mặc định
-    // Nếu node có branchColor riêng (do người dùng chỉnh nhánh cha), có thể ưu tiên dùng nó (nâng cao)
-    // Ở đây ta dùng Palette xoay vòng theo branchIndex
-    const palette = DEFAULT_PALETTE; // Hoặc lấy từ theme.palette nếu có
-    const baseHueColor = palette[branchIndex % palette.length];
-
-    // b. Tính toán Lightness và Cutoff theo độ sâu
-    const smartColors = getBranchColorByDepth(baseHueColor, depth);
-
-    merged.color = smartColors.bg;
-    merged.borderColor = smartColors.border;
-    
-    // c. Tự động tương phản chữ
-    merged.textColor = getContrastingTextColor(smartColors.bg);
-    
-    // d. Điều chỉnh viền cho các node sâu (Cutoff)
-    if (depth >= 6) {
-       merged.borderWidth = 2; // Viền dày hơn chút để rõ màu nhánh
+    if (node.id === 'root') {
+       baseStyle.color = theme.root.fill || '#000000';
+       baseStyle.textColor = theme.root.textColor || '#FFFFFF';
+       baseStyle.borderColor = theme.root.stroke || '#000000';
+       baseStyle.borderWidth = 3;
+       baseStyle.fontSize = 24;
+       baseStyle.fontWeight = 'bold';
+    } else {
+       const smartColors = getBranchColorByDepth(branchBaseColor, depth);
+       
+       baseStyle.color = smartColors.bg;
+       baseStyle.borderColor = smartColors.border;
+       baseStyle.textColor = getContrastingTextColor(smartColors.bg);
+       
+       if (depth >= 6) baseStyle.borderWidth = 2;
     }
   }
 
-  // 4. Áp dụng style tùy chỉnh (ghi đè) từ chính Node (như cũ)
-  (Object.keys(DEFAULT_NODE_STYLE) as Array<keyof typeof DEFAULT_NODE_STYLE>).forEach(key => {
+  // 3. [QUICK STYLE]
+  if (node.quickStyleId && theme.quickStyles[node.quickStyleId]) {
+    const qs = theme.quickStyles[node.quickStyleId];
+    baseStyle.color = qs.fill;
+    baseStyle.borderColor = qs.stroke;
+    baseStyle.textColor = qs.textColor;
+    if (qs.fontWeight) baseStyle.fontWeight = qs.fontWeight;
+  }
+
+  // 4. [OVERRIDE]
+  const computed: Partial<NodeData> = { ...baseStyle };
+  const OVERRIDABLE_KEYS: (keyof NodeData)[] = [
+    'shape', 'color', 'borderColor', 'borderWidth', 'borderStyle',
+    'fontFamily', 'fontSize', 'fontWeight', 'fontStyle', 'textDecoration', 
+    'textAlign', 'textColor', 'textCase', 'nodeLength',
+    'branchLineStyle', 'branchLineEnd', 'branchLineThickness'
+  ];
+
+  OVERRIDABLE_KEYS.forEach(key => {
     if (node[key] !== undefined) {
-      (merged as any)[key] = node[key];
+      (computed as any)[key] = node[key];
     }
   });
 
-  // Root override (như cũ)
-  if (node.id === 'root') {
-    merged.fontSize = (merged.fontSize || 16) + 8;
-    merged.fontWeight = 'bold';
-    merged.nodeLength = 300;
-    merged.textColor = '#000000'; 
-    merged.textCase = 'uppercase';
+  if (node.color !== undefined && node.textColor === undefined) {
+    computed.textColor = getContrastingTextColor(node.color);
   }
-  
-  // ... Gán lại các thuộc tính khác (id, text, x, y...)
-  merged.id = node.id;
-  merged.nodeText = node.nodeText;
-  merged.x = node.x;
-  merged.y = node.y;
-  merged.parentId = node.parentId;
-  merged.side = node.side;
-  merged.collapsed = node.collapsed;
-  merged.hyperlink = node.hyperlink;
-  merged.styleLocked = node.styleLocked;
 
-  return merged as NodeData;
+  computed.id = node.id;
+  computed.nodeText = node.nodeText;
+  computed.x = node.x;
+  computed.y = node.y;
+  computed.parentId = node.parentId;
+  computed.side = node.side;
+  computed.collapsed = node.collapsed;
+  computed.hyperlink = node.hyperlink;
+  computed.styleLocked = node.styleLocked;
+
+  // [ĐỒNG BỘ MÀU DÂY]
+  computed.branchColor = node.branchColor ?? (topology ? topology.branchBaseColor : undefined);
+
+  if (node.fontFamily) {
+    computed.fontFamily = node.fontFamily;
+  }
+
+  return computed as NodeData;
 }
 
-
-// Hàm reset
 export function applyNodeDefaults(node: NodeData, theme: ColorTheme): Partial<NodeData> {
   const themeStyle = (node.id === 'root')
     ? theme.root
@@ -247,7 +238,6 @@ export function applyNodeDefaults(node: NodeData, theme: ColorTheme): Partial<No
   return {
     ...DEFAULT_NODE_STYLE,
     ...(themeStyle as Partial<NodeData>),
-    // Đặt lại các giá trị có thể tùy chỉnh về undefined
     quickStyleId: 'default',
     shape: undefined,
     color: undefined,
@@ -262,17 +252,16 @@ export function applyNodeDefaults(node: NodeData, theme: ColorTheme): Partial<No
     textAlign: undefined,
     textColor: undefined,
     textCase: undefined,
-    nodeLength: undefined, // SỬA: Reset cả nodeLength
+    nodeLength: undefined, 
     localStructure: undefined,
     branchColor: undefined,
     branchLineStyle: undefined,
     branchLineEnd: undefined,
     branchLineThickness: undefined,
-    styleLocked: undefined, // SỬA: Thêm styleLocked
-    hyperlink: undefined, // SỬA: Thêm hyperlink
+    styleLocked: undefined, 
+    hyperlink: undefined, 
   };
 }
-
 
 // =========
 // Định nghĩa State
@@ -283,21 +272,18 @@ type State = {
   history: Snapshot[];
   future: Snapshot[];
 
-  // Cài đặt toàn cục
   globalStructure: GlobalStructure;
   globalFont: string;
   branchLineWidth: number;
-  isColoredBranch: boolean;
+  // [CẬP NHẬT] Loại bỏ isColoredBranch
   activeColorThemeId: string;
   globalBranchColor: string; 
-  backgroundColor: string; // [MỚI] Thêm màu nền
+  backgroundColor: string; 
 
-  // [MỚI] Quản lý trạng thái editor
-  isDirty: boolean; // Theo dõi thay đổi
-  currentMindmapId: string | null; // ID của map đang mở
-  currentMindmapName: string; // Tên của map đang mở
+  isDirty: boolean; 
+  currentMindmapId: string | null; 
+  currentMindmapName: string; 
 
-  setIsDirty: (isDirty: boolean) => void; 
   setGraph: (n: NodeData[], e: EdgeData[]) => void;
   push: (n: NodeData[], e: EdgeData[]) => void;
   undo: () => Snapshot | null;
@@ -313,21 +299,20 @@ export const useEditorStore = create<State>((set, get) => ({
   history: [],
   future: [],
 
-  // Cài đặt toàn cục
   globalStructure: 'mindmap',
   globalFont: fonts[0].value,
   branchLineWidth: 2,
-  isColoredBranch: true,
   activeColorThemeId: 'dawn',
-  globalBranchColor: '#94A3B8', 
+  // [CẬP NHẬT] Mặc định là Đen cho giao diện Đen/Trắng
+  globalBranchColor: '#000000', 
   backgroundColor: '#FAFAFB', 
+
   isDirty: false,
   currentMindmapId: null,
   currentMindmapName: 'Đang tải...',
 
-  setIsDirty: (status) => set({ isDirty: status }),
   setGraph: (n, e) => {
-    set({ nodes: n, edges: e, isDirty: true });
+    set({ nodes: n, edges: e });
   },
 
   push: (n, e) => {
@@ -336,7 +321,7 @@ export const useEditorStore = create<State>((set, get) => ({
 
     if (!lastHistoryState || !isEqual(lastHistoryState, currentState)) {
       const nextHistory = [...get().history, currentState].slice(-MAX_HISTORY);
-      set({ history: nextHistory, future: [], isDirty: true });
+      set({ history: nextHistory, future: [] });
     }
   },
 
@@ -352,7 +337,7 @@ export const useEditorStore = create<State>((set, get) => ({
       future: [current, ...get().future],
       nodes: prev.nodes,
       edges: prev.edges,
-      isDirty: true,
+      isDirty: true, 
     });
     return prev;
   },
@@ -367,7 +352,7 @@ export const useEditorStore = create<State>((set, get) => ({
       future: f,
       nodes: next.nodes,
       edges: next.edges,
-      isDirty: true,
+      isDirty: true, 
     });
     return next;
   },
