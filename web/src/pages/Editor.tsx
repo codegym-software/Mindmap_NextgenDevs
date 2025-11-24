@@ -52,6 +52,8 @@ import {
   normalizeContentFEtoBE,
 } from '../services/dataMapper';
 
+import { v4 as uuidv4 } from 'uuid';
+
 type BroadcastPatch = {
   type: string;
   payload: any; // Dữ liệu là JSON, do FE gửi và FE nhận
@@ -1191,7 +1193,7 @@ const handleFitToScreen = useCallback(() => {
 
     const parentComputedStyle = parentVisual.style; // Dùng để lấy vị trí, "bên" (side)
 
-    const newId = "n" + Date.now();
+    const newId = uuidv4();
 
     // 1. Bắt đầu với các thuộc tính cơ bản
     const newNodeData: NodeData = { 
