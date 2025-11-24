@@ -242,8 +242,7 @@ export function normalizeNodeBEtoFE(beNode: BeNodeData): FeNodeData {
  * Tự động lấy cài đặt global từ `useEditorStore`
  */
 export function normalizeContentFEtoBE(
-  feNodes: FeNodeData[],
-  feEdges: FeEdgeData[],
+feNodes: FeNodeData[], feEdges: FeEdgeData[], p0: { layoutMode: string; theme: string; },
 ): BeMindmapContent {
   const beNodes = feNodes.map(normalizeNodeFEtoBE);
 

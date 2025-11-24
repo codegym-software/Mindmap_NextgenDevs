@@ -80,6 +80,7 @@ export type NodeData = {
   side?: 'left' | 'right';
   collapsed?: boolean;
   quickStyleId?: QuickStyleId;
+  hyperlink?: String;
 
   // Style thuộc tính (phẳng)
   // [MERGE] Thêm lại 'diamond' và 'ellipse'

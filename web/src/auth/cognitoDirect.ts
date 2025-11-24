@@ -46,11 +46,7 @@ export const signUp = (email: string, password: string): Promise<{ user: Cognito
  });
 };
 
-<<<<<<< HEAD
-// 3. Wrapper cho hàm Xác nhận Đăng ký (Confirm Sign Up)
-=======
 // 3. Wrapper cho hàm Xác nhận Đăng ký (Confirm Sign Up) (Không thay đổi)
->>>>>>> 9eb2fb566c10e078f7f98f3bede492555e5b73ae
 export const confirmSignUp = (username: string, code: string): Promise<string> => {
  return new Promise((resolve, reject) => {
   const cognitoUser = new CognitoUser({
@@ -118,11 +114,6 @@ export const getCurrentUserSession = (): Promise<CognitoUserSession> => {
    if (session && session.isValid()) {
     resolve(session);
    } else {
-<<<<<<< HEAD
-    // Thử làm mới token nếu session không hợp lệ
-    // Cần kiểm tra session và refreshToken tồn tại trước khi dùng
-=======
->>>>>>> 9eb2fb566c10e078f7f98f3bede492555e5b73ae
     const refreshToken = session?.getRefreshToken();
     if (!refreshToken) {
      return reject(new Error("No refresh token available for session refresh."));
