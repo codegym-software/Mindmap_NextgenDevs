@@ -47,14 +47,11 @@ export function useRealtime({
   const reconnectTimeoutRef = useRef<any>(null);
   const [isConnected, setIsConnected] = useState(false);
 
-  // [FIX QUAN TRỌNG]: Dùng useRef để lưu trữ giá trị mới nhất của các biến/hàm
-  // giúp useEffect kết nối KHÔNG bị chạy lại khi các biến này thay đổi.
-  const latestProps = useRef({ isOwner, user, onLayoutRequest, onSetRootCollapse });
-
-  // Cập nhật ref mỗi khi props thay đổi
+  // Dùng ref để lưu props mới nhất, tránh re-connect liên tục
+  const latestProps = useRef({ isOwner, onLayoutRequest, onSetRootCollapse });
   useEffect(() => {
-    latestProps.current = { isOwner, user, onLayoutRequest, onSetRootCollapse };
-  }, [isOwner, user, onLayoutRequest, onSetRootCollapse]);
+    latestProps.current = { isOwner, onLayoutRequest, onSetRootCollapse };
+  }, [isOwner, onLayoutRequest, onSetRootCollapse]);
   
   const sendPatch = useCallback((type: string, payload: any) => {
     if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
@@ -78,7 +75,6 @@ export function useRealtime({
   ).current;
 
   useEffect(() => {
-    // Chỉ kết nối khi đủ điều kiện
     if (!mindmapId || !isAuthed || isGuest || !isDataLoaded) {
       return;
     }
@@ -91,7 +87,6 @@ export function useRealtime({
         const token = await getAccessToken();
         if (!token || !isMounted) return;
 
-        // URL WebSocket
         const wsUrl = `ws://localhost:8081/ws/mindmap/${mindmapId}?token=${token}`;
         const ws = new WebSocket(wsUrl);
         wsRef.current = ws;
@@ -107,21 +102,18 @@ export function useRealtime({
             const message: BroadcastPatch = JSON.parse(event.data);
             const { type, payload, senderId } = message;
 
-            // Lấy giá trị mới nhất từ Ref (không gây re-render/re-connect)
-            const { user: currentUser, isOwner: currentIsOwner, onLayoutRequest: currentLayoutRequest, onSetRootCollapse: currentSetRootCollapse } = latestProps.current;
+            // Lấy props mới nhất từ ref
+            const { isOwner: currentIsOwner, onLayoutRequest: currentLayoutRequest, onSetRootCollapse: currentSetRootCollapse } = latestProps.current;
 
-            // Check sender
-            if (currentUser?.sub === senderId || currentUser?.id === senderId) return;
+            if (user?.sub === senderId || user?.id === senderId) return;
 
-            // Lấy state store mới nhất
             const { nodes: currentNodes, edges: currentEdges } = useEditorStore.getState();
 
             switch (type) {
               case 'USER_JOINED':
                 addToast(`User ${payload.userId.substring(0, 6)}... đã tham gia.`, 'info');
                 if (currentIsOwner) {
-                    console.log("👑 Sending Snapshot...");
-                    // Gửi snapshot thủ công qua socket instance hiện tại để đảm bảo
+                    // Gửi snapshot qua socket instance hiện tại
                     if (ws.readyState === WebSocket.OPEN) {
                         ws.send(JSON.stringify({ 
                             type: 'FULL_SYNC', 
@@ -132,20 +124,23 @@ export function useRealtime({
                 break;
 
               case 'FULL_SYNC': 
-                console.log("🔄 Syncing data...");
+                console.log("🔄 Received FULL_SYNC snapshot. Updating store...");
                 setGraph(payload.nodes, payload.edges);
                 setTimeout(() => currentLayoutRequest(true), 50);
-                addToast('Đồng bộ dữ liệu thành công.', 'success');
+                addToast('Đã đồng bộ dữ liệu mới nhất.', 'success');
                 break;
 
               case 'USER_LEFT':
                 removePeer(senderId);
+                addToast(`User... đã rời đi.`, 'info');
                 break;
 
               case 'CURSOR_MOVE':
                   updatePeer(senderId, { 
-                      x: payload.x, y: payload.y, 
-                      name: payload.name, color: payload.color 
+                      x: payload.x, 
+                      y: payload.y, 
+                      name: payload.name, 
+                      color: payload.color 
                   });
                   break;
               
@@ -170,7 +165,10 @@ export function useRealtime({
 
               case 'NODE_CREATE': {
                 const { node: feNode, edge: feEdge } = payload;
-                setGraph([...currentNodes, feNode], [...currentEdges, feEdge]);
+                // [FIX LỖI QUAN TRỌNG]: Chỉ thêm edge nếu nó tồn tại (khác null)
+                const nextEdges = feEdge ? [...currentEdges, feEdge] : currentEdges;
+                
+                setGraph([...currentNodes, feNode], nextEdges);
                 setTimeout(() => currentLayoutRequest(true), 0);
                 break;
               }
@@ -306,7 +304,6 @@ export function useRealtime({
           setIsConnected(false);
 
           if (isMounted) {
-             // Reconnect logic
              const timeout = Math.min(1000 * (2 ** retryCount), 10000);
              retryCount++;
              reconnectTimeoutRef.current = setTimeout(connect, timeout);
@@ -329,9 +326,7 @@ export function useRealtime({
           clearTimeout(reconnectTimeoutRef.current);
       }
     };
-    // [QUAN TRỌNG] Dependency array chỉ chứa các biến tĩnh hoặc ít thay đổi
-    // Loại bỏ onLayoutRequest, onSetRootCollapse, isOwner, user khỏi đây
-  }, [mindmapId, isAuthed, isGuest, isDataLoaded, getAccessToken, addToast, setGraph, updatePeer, removePeer]); 
+  }, [mindmapId, isAuthed, isGuest, isDataLoaded, getAccessToken, addToast, setGraph, updatePeer, removePeer]);
 
   return { sendPatch, sendCursor, isConnected };
 }

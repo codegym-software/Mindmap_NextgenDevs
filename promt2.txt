@@ -1,3 +1,223 @@
-Editor.tsx:541 WebSocket connected to mindmap: 6914096d1fbd450d526d5980
-localStorage
-Storage {mm_theme: 'light', mm_sidebar_pinned: '0', mm_tokens: '{"access_token":"eyJraWQiOiJBK2lzVmp4ZFh3Y290WVZ1V….7FhZf52otICkEgpwP8UmCw","expires_at":1762956812}', length: 3}mm_sidebar_pinned: "0"mm_theme: "light"mm_tokens: "{\"access_token\":\"eyJraWQiOiJBK2lzVmp4ZFh3Y290WVZ1VDE5cjRNT1NhZ3V3Nmdsa1lhckNcL3pLRmJpYz0iLCJhbGciOiJSUzI1NiJ9.eyJzdWIiOiIxOWNlNTQ0OC1kMGExLTcwZjktNzY0Yy1lYmVlMTRmMmIwOGQiLCJjb2duaXRvOmdyb3VwcyI6WyJhcC1zb3V0aGVhc3QtMl90MzBPV1dpemdfR29vZ2xlIl0sImlzcyI6Imh0dHBzOlwvXC9jb2duaXRvLWlkcC5hcC1zb3V0aGVhc3QtMi5hbWF6b25hd3MuY29tXC9hcC1zb3V0aGVhc3QtMl90MzBPV1dpemciLCJ2ZXJzaW9uIjoyLCJjbGllbnRfaWQiOiI3c284cW5vaTdwZ25lNmJxMGtxMnBwaGFybSIsIm9yaWdpbl9qdGkiOiI0M2FhZTk0ZS1kYTBmLTQyNDgtOTcwZi1lOGUyM2U4NDEwMmUiLCJ0b2tlbl91c2UiOiJhY2Nlc3MiLCJzY29wZSI6Im9wZW5pZCBwcm9maWxlIGVtYWlsIiwiYXV0aF90aW1lIjoxNzYyOTIwODEyLCJleHAiOjE3NjI5NTY4MTIsImlhdCI6MTc2MjkyMDgxMiwianRpIjoiMTRkYWY0YmYtYjdhNy00N2NkLWE4MTAtNDZjYjA4MmI3MjhlIiwidXNlcm5hbWUiOiJnb29nbGVfMTEwMzg0MDAzNDYzNDg5OTk5NTUzIn0.gAsdD6nLeREjOJDYurq5vNprk-7aKd7G4r8etQ6RSSLYv6wQ3gadSbp7-WqR-gQOxnsagaY41H7AV7h_zYuSiOZQ1vWkXJdh0MQ3NY3AHtfnbaKzWoD_hKMu1aJQfqgd2cJlbWulJaQ-2D3JgfD30pp-vb5Wwl0Rngd9HGu_aMSGh2LTrNw0yTPH7HJhDhq-cRvgcFZRkjD0-pbR7pE9nVKD9Gm1-v59UixodPbWO4rVDoDA5-fdB9YEB79uvEl1HBOS8VqYf_hsMkdsiRqvMPEafuV85oYR4udOuENP1U2_82cSww1iJNd0o0dQkj6Hpn6eN51ii3kxV3CtuxYEXg\",\"id_token\":\"eyJraWQiOiJ0MzR4QTh1blNFTEp6QUhNWE11MW0yVUtwbGNXUzRNaFk5MjJoZm9kVVJvPSIsImFsZyI6IlJTMjU2In0.eyJhdF9oYXNoIjoiUzRwMWJ3Q21Fc1NSQWhBTEhFTktkZyIsInN1YiI6IjE5Y2U1NDQ4LWQwYTEtNzBmOS03NjRjLWViZWUxNGYyYjA4ZCIsImNvZ25pdG86Z3JvdXBzIjpbImFwLXNvdXRoZWFzdC0yX3QzME9XV2l6Z19Hb29nbGUiXSwiZW1haWxfdmVyaWZpZWQiOmZhbHNlLCJpc3MiOiJodHRwczpcL1wvY29nbml0by1pZHAuYXAtc291dGhlYXN0LTIuYW1hem9uYXdzLmNvbVwvYXAtc291dGhlYXN0LTJfdDMwT1dXaXpnIiwiY29nbml0bzp1c2VybmFtZSI6Imdvb2dsZV8xMTAzODQwMDM0NjM0ODk5OTk1NTMiLCJvcmlnaW5fanRpIjoiNDNhYWU5NGUtZGEwZi00MjQ4LTk3MGYtZThlMjNlODQxMDJlIiwiYXVkIjoiN3NvOHFub2k3cGduZTZicTBrcTJwcGhhcm0iLCJpZGVudGl0aWVzIjpbeyJkYXRlQ3JlYXRlZCI6IjE3NTkxMzkzMDkzMzEiLCJ1c2VySWQiOiIxMTAzODQwMDM0NjM0ODk5OTk1NTMiLCJwcm92aWRlck5hbWUiOiJHb29nbGUiLCJwcm92aWRlclR5cGUiOiJHb29nbGUiLCJpc3N1ZXIiOm51bGwsInByaW1hcnkiOiJ0cnVlIn1dLCJ0b2tlbl91c2UiOiJpZCIsImF1dGhfdGltZSI6MTc2MjkyMDgxMiwiZXhwIjoxNzYyOTI0NDEyLCJpYXQiOjE3NjI5MjA4MTIsImp0aSI6IjA1N2U4ZWRlLTA1NDctNDIxZS04MWE2LTZiN2RiM2EyYzM5MyIsImVtYWlsIjoiaHVhbnYzNTk2QGdtYWlsLmNvbSJ9.rvwwR6RFpufRYVA3Pp1HUKqbRH23C2m3nfLwGLLBngwuRKZ6tTrLnye_SEJZ2Wcz9z4KyNHm2F4W9IwKLo11tVA-CVeBnpBKE977ZnpKV_9BisKH9efs9yc9xXZ8x_Y5jMgT06VWHmgDO3fKAj72kNw3-9NsFUZJk0CyIqqm8Oe4wq8gneea70HNcwcs44O37SL3oQYiNJ5YgIGCCXcNlXwfDlm95iQMtQfmeN0dBGU4W4ESY3rAWoKY5S1_VNk4lYiz1oK-JwzadxUXZPe2TCMaGevo3dG5KeOfr7Bk5IFKsiky5hgcb2qEYCqSiuVyr9hMbN7uGagGpadG1qszAg\",\"refresh_token\":\"eyJjdHkiOiJKV1QiLCJlbmMiOiJBMjU2R0NNIiwiYWxnIjoiUlNBLU9BRVAifQ.K3K3_xr16z_Uso30A58cH3IdLKLCdl3_4NPdx7KDVh9TSZZ3OZI7UOYztRISKg9VCh15me5s5MFYPTBrx47jsy-_HQ1y26Dd_CMra7D6GZ-dbjEQUrsUIzNpdfFBmAMtwT0qXzf732_Ecs-TYMOLD43PdRGVxVxxaD04ByB1nHlmv08dXeOcieBQbjK7YbDoy0HYHDh1G_xD0OTeF6aAVs06iZxm5ZmZg9OReH6_a013C_kPQ4NdzirspwiXZ5ABkoUUVcAL2MDHcTNq3aIimWzDJ6SsMgLbKeBq4WK5JO17KxPnCbDS3sSEzCVo7CLZYCOxZmIzeoe_njB1_-eYvA.bsTGFuqj6z_IAWdg.yUbYCFQ3r50hQEGJqrvu4DmXFQTNsrelR1JSCoaIdn_1uuL6VX9R8ZvuIneMI53lQz696CMfnRtz_fLB8ifbKQWjNRMoHppz-el1DBn2n1Hi-UP0kFwo2qGzGoIi2YOdPis4zpqQv2kRwbpp28flhHgSbboJWDeOVG4Z073lSOycVUOUyrP9x6yyh0BWIY5nufU3rwbQ2ymu2OHyDw9aqRmrkdWDXbQ0Qsm1vjxZcMofm62DGQ_kTmU6i-TYzxMzIXCu80BzWpisnWQBNuxbEnTLKmps8PEAgd0qKbnejEoFEd6p0rjukl5E6LJ6zmNAwm1i39gfy-0SVE3YzDeQjbD1a7FQfwd41Cf44cfoTZCSzawbgSkpZfcpa4GaVLYLIa7xwFAyofIRdlWj-h_BOwKBpLkbC7Leyxfs113EI2I9-cfEOBDWpS0C2SSg0rN7gcI1MEpJswrfJZs_o8MEZWgu_gL_byFFb7IEq8bVyBP5-6XQJc3jDLrYLMvtgc5XEmuAIk6Vouv4pqvFFUHnBavsTmkjY3kC6Fpf6ThXdisHZbp568okpgk2MYcln_rxxWqrByKSfGqeDNERt1J0pWEqgyChYaPw_tOJQj6spMid0-ePnGjhqrE7g1gRI91tJSH0iDlDEVmfODWAZfE4EMNUPy9tuACPvAqvr-BNLa13vL9ladv3arx0ObFUrxMiC0slv3aSupanemTzaGfBri3xB1i__YO0lmFqJwBVyacA9rlm3iXDcLnF_Tt6OVSd94bWa8F3z1dYNpgxKAyKEUO5m05JAzzTHg5J8JiPlkRn6Toyo0yH9G_3VWXCLCZMZVXLpNW9zJ924pF53VtbVLIH4ziDCP6VqOv4K3bFSCa4k0zmBdnfZjfERyG9Oj_JO6N2Y4zdeqTMY7-ueylxxw4B308rCXG1AuC3musdGzQDYkcKKv2B128r6kuz53yQULhpT5reLYjrFpAbIWZrJZhz-a-x0GaLMsSmcDSHrOZ7F3rmHYZha1dbdZ8JDvijq_R69ozG9k2_s4FJF_a_hivinPAxL2DcLEII_tUq0AGu24K5vQ-jKMtreMKCAaou-05DyLIZC5FfThq_5-oslmvM7_tBy11bgL7CXDYGZs_LfZ-FUJMOVfsrZMp-w4CUnGruYIq_PlZPgHIlg--cNnVC3uy4k0l4S8XHJ2xVtZ1JbVzgvT-1_Yds0hACfksf5je4oq0o7morfcXfEDz6nhMY58NM5vgXZAHenuWj9w.7FhZf52otICkEgpwP8UmCw\",\"expires_at\":1762956812}"length: 3[[Prototype]]: Storage
+* Hiện tại thì tôi đang test thì, tôi chỉnh Bên A sang bên B thì bị thế này, mà chỉnh bên B thì bên A cũng bị ngược lại *
+
+chunk-GMMWARBA.js?v=30ce3ece:21150 Download the React DevTools for a better development experience: https://reactjs.org/link/react-devtools
+useRealtime.ts:100 🟢 WebSocket connected: 692531abbd8d544c19e0d200
+Editor.tsx:341 🚫 Not owner, skipping REST auto-save (Real-time patches sent instead)
+Editor.tsx:157 Uncaught TypeError: Cannot read properties of null (reading 'from')
+    at Editor.tsx:157:22
+    at Array.forEach (<anonymous>)
+    at Editor.tsx:156:11
+    at updateMemo (chunk-GMMWARBA.js?v=30ce3ece:11799:27)
+    at Object.useMemo (chunk-GMMWARBA.js?v=30ce3ece:12315:24)
+    at useMemo (chunk-H2BVA2C6.js?v=30ce3ece:1094:29)
+    at Editor (Editor.tsx:153:24)
+    at renderWithHooks (chunk-GMMWARBA.js?v=30ce3ece:11137:26)
+    at updateFunctionComponent (chunk-GMMWARBA.js?v=30ce3ece:14171:28)
+    at beginWork (chunk-GMMWARBA.js?v=30ce3ece:15513:22)
+(anonymous) @ Editor.tsx:157
+(anonymous) @ Editor.tsx:156
+updateMemo @ chunk-GMMWARBA.js?v=30ce3ece:11799
+useMemo @ chunk-GMMWARBA.js?v=30ce3ece:12315
+useMemo @ chunk-H2BVA2C6.js?v=30ce3ece:1094
+Editor @ Editor.tsx:153
+renderWithHooks @ chunk-GMMWARBA.js?v=30ce3ece:11137
+updateFunctionComponent @ chunk-GMMWARBA.js?v=30ce3ece:14171
+beginWork @ chunk-GMMWARBA.js?v=30ce3ece:15513
+callCallback2 @ chunk-GMMWARBA.js?v=30ce3ece:3221
+invokeGuardedCallbackDev @ chunk-GMMWARBA.js?v=30ce3ece:3246
+invokeGuardedCallback @ chunk-GMMWARBA.js?v=30ce3ece:3280
+beginWork$1 @ chunk-GMMWARBA.js?v=30ce3ece:19359
+performUnitOfWork @ chunk-GMMWARBA.js?v=30ce3ece:18792
+workLoopSync @ chunk-GMMWARBA.js?v=30ce3ece:18731
+renderRootSync @ chunk-GMMWARBA.js?v=30ce3ece:18710
+performSyncWorkOnRoot @ chunk-GMMWARBA.js?v=30ce3ece:18468
+flushSyncCallbacks @ chunk-GMMWARBA.js?v=30ce3ece:8707
+(anonymous) @ chunk-GMMWARBA.js?v=30ce3ece:18218
+react-konva.js?v=30ce3ece:27408 Error handled by React Router default ErrorBoundary: TypeError: Cannot read properties of null (reading 'from')
+    at Editor.tsx:157:22
+    at Array.forEach (<anonymous>)
+    at Editor.tsx:156:11
+    at updateMemo (chunk-GMMWARBA.js?v=30ce3ece:11799:27)
+    at Object.useMemo (chunk-GMMWARBA.js?v=30ce3ece:12315:24)
+    at useMemo (chunk-H2BVA2C6.js?v=30ce3ece:1094:29)
+    at Editor (Editor.tsx:153:24)
+    at renderWithHooks (chunk-GMMWARBA.js?v=30ce3ece:11137:26)
+    at updateFunctionComponent (chunk-GMMWARBA.js?v=30ce3ece:14171:28)
+    at beginWork (chunk-GMMWARBA.js?v=30ce3ece:15513:22)
+console.error @ react-konva.js?v=30ce3ece:27408
+DefaultErrorComponent @ react-router-dom.js?v=30ce3ece:4031
+renderWithHooks @ chunk-GMMWARBA.js?v=30ce3ece:11137
+mountIndeterminateComponent @ chunk-GMMWARBA.js?v=30ce3ece:14515
+beginWork @ chunk-GMMWARBA.js?v=30ce3ece:15503
+beginWork$1 @ chunk-GMMWARBA.js?v=30ce3ece:19347
+performUnitOfWork @ chunk-GMMWARBA.js?v=30ce3ece:18792
+workLoopSync @ chunk-GMMWARBA.js?v=30ce3ece:18731
+renderRootSync @ chunk-GMMWARBA.js?v=30ce3ece:18710
+performSyncWorkOnRoot @ chunk-GMMWARBA.js?v=30ce3ece:18468
+flushSyncCallbacks @ chunk-GMMWARBA.js?v=30ce3ece:8707
+(anonymous) @ chunk-GMMWARBA.js?v=30ce3ece:18218
+react-konva.js?v=30ce3ece:27408 Error handled by React Router default ErrorBoundary: TypeError: Cannot read properties of null (reading 'from')
+    at Editor.tsx:157:22
+    at Array.forEach (<anonymous>)
+    at Editor.tsx:156:11
+    at updateMemo (chunk-GMMWARBA.js?v=30ce3ece:11799:27)
+    at Object.useMemo (chunk-GMMWARBA.js?v=30ce3ece:12315:24)
+    at useMemo (chunk-H2BVA2C6.js?v=30ce3ece:1094:29)
+    at Editor (Editor.tsx:153:24)
+    at renderWithHooks (chunk-GMMWARBA.js?v=30ce3ece:11137:26)
+    at updateFunctionComponent (chunk-GMMWARBA.js?v=30ce3ece:14171:28)
+    at beginWork (chunk-GMMWARBA.js?v=30ce3ece:15513:22)
+console.error @ react-konva.js?v=30ce3ece:27408
+DefaultErrorComponent @ react-router-dom.js?v=30ce3ece:4031
+renderWithHooks @ chunk-GMMWARBA.js?v=30ce3ece:11137
+mountIndeterminateComponent @ chunk-GMMWARBA.js?v=30ce3ece:14565
+beginWork @ chunk-GMMWARBA.js?v=30ce3ece:15503
+beginWork$1 @ chunk-GMMWARBA.js?v=30ce3ece:19347
+performUnitOfWork @ chunk-GMMWARBA.js?v=30ce3ece:18792
+workLoopSync @ chunk-GMMWARBA.js?v=30ce3ece:18731
+renderRootSync @ chunk-GMMWARBA.js?v=30ce3ece:18710
+performSyncWorkOnRoot @ chunk-GMMWARBA.js?v=30ce3ece:18468
+flushSyncCallbacks @ chunk-GMMWARBA.js?v=30ce3ece:8707
+(anonymous) @ chunk-GMMWARBA.js?v=30ce3ece:18218
+Editor.tsx:157 Uncaught TypeError: Cannot read properties of null (reading 'from')
+    at Editor.tsx:157:22
+    at Array.forEach (<anonymous>)
+    at Editor.tsx:156:11
+    at updateMemo (chunk-GMMWARBA.js?v=30ce3ece:11799:27)
+    at Object.useMemo (chunk-GMMWARBA.js?v=30ce3ece:12315:24)
+    at useMemo (chunk-H2BVA2C6.js?v=30ce3ece:1094:29)
+    at Editor (Editor.tsx:153:24)
+    at renderWithHooks (chunk-GMMWARBA.js?v=30ce3ece:11137:26)
+    at updateFunctionComponent (chunk-GMMWARBA.js?v=30ce3ece:14171:28)
+    at beginWork (chunk-GMMWARBA.js?v=30ce3ece:15513:22)
+(anonymous) @ Editor.tsx:157
+(anonymous) @ Editor.tsx:156
+updateMemo @ chunk-GMMWARBA.js?v=30ce3ece:11799
+useMemo @ chunk-GMMWARBA.js?v=30ce3ece:12315
+useMemo @ chunk-H2BVA2C6.js?v=30ce3ece:1094
+Editor @ Editor.tsx:153
+renderWithHooks @ chunk-GMMWARBA.js?v=30ce3ece:11137
+updateFunctionComponent @ chunk-GMMWARBA.js?v=30ce3ece:14171
+beginWork @ chunk-GMMWARBA.js?v=30ce3ece:15513
+callCallback2 @ chunk-GMMWARBA.js?v=30ce3ece:3221
+invokeGuardedCallbackDev @ chunk-GMMWARBA.js?v=30ce3ece:3246
+invokeGuardedCallback @ chunk-GMMWARBA.js?v=30ce3ece:3280
+beginWork$1 @ chunk-GMMWARBA.js?v=30ce3ece:19359
+performUnitOfWork @ chunk-GMMWARBA.js?v=30ce3ece:18792
+workLoopSync @ chunk-GMMWARBA.js?v=30ce3ece:18731
+renderRootSync @ chunk-GMMWARBA.js?v=30ce3ece:18710
+recoverFromConcurrentError @ chunk-GMMWARBA.js?v=30ce3ece:18327
+performSyncWorkOnRoot @ chunk-GMMWARBA.js?v=30ce3ece:18473
+flushSyncCallbacks @ chunk-GMMWARBA.js?v=30ce3ece:8707
+(anonymous) @ chunk-GMMWARBA.js?v=30ce3ece:18218
+react-konva.js?v=30ce3ece:27408 Error handled by React Router default ErrorBoundary: TypeError: Cannot read properties of null (reading 'from')
+    at Editor.tsx:157:22
+    at Array.forEach (<anonymous>)
+    at Editor.tsx:156:11
+    at updateMemo (chunk-GMMWARBA.js?v=30ce3ece:11799:27)
+    at Object.useMemo (chunk-GMMWARBA.js?v=30ce3ece:12315:24)
+    at useMemo (chunk-H2BVA2C6.js?v=30ce3ece:1094:29)
+    at Editor (Editor.tsx:153:24)
+    at renderWithHooks (chunk-GMMWARBA.js?v=30ce3ece:11137:26)
+    at updateFunctionComponent (chunk-GMMWARBA.js?v=30ce3ece:14171:28)
+    at beginWork (chunk-GMMWARBA.js?v=30ce3ece:15513:22)
+console.error @ react-konva.js?v=30ce3ece:27408
+DefaultErrorComponent @ react-router-dom.js?v=30ce3ece:4031
+renderWithHooks @ chunk-GMMWARBA.js?v=30ce3ece:11137
+mountIndeterminateComponent @ chunk-GMMWARBA.js?v=30ce3ece:14515
+beginWork @ chunk-GMMWARBA.js?v=30ce3ece:15503
+beginWork$1 @ chunk-GMMWARBA.js?v=30ce3ece:19347
+performUnitOfWork @ chunk-GMMWARBA.js?v=30ce3ece:18792
+workLoopSync @ chunk-GMMWARBA.js?v=30ce3ece:18731
+renderRootSync @ chunk-GMMWARBA.js?v=30ce3ece:18710
+recoverFromConcurrentError @ chunk-GMMWARBA.js?v=30ce3ece:18327
+performSyncWorkOnRoot @ chunk-GMMWARBA.js?v=30ce3ece:18473
+flushSyncCallbacks @ chunk-GMMWARBA.js?v=30ce3ece:8707
+(anonymous) @ chunk-GMMWARBA.js?v=30ce3ece:18218
+react-konva.js?v=30ce3ece:27408 Error handled by React Router default ErrorBoundary: TypeError: Cannot read properties of null (reading 'from')
+    at Editor.tsx:157:22
+    at Array.forEach (<anonymous>)
+    at Editor.tsx:156:11
+    at updateMemo (chunk-GMMWARBA.js?v=30ce3ece:11799:27)
+    at Object.useMemo (chunk-GMMWARBA.js?v=30ce3ece:12315:24)
+    at useMemo (chunk-H2BVA2C6.js?v=30ce3ece:1094:29)
+    at Editor (Editor.tsx:153:24)
+    at renderWithHooks (chunk-GMMWARBA.js?v=30ce3ece:11137:26)
+    at updateFunctionComponent (chunk-GMMWARBA.js?v=30ce3ece:14171:28)
+    at beginWork (chunk-GMMWARBA.js?v=30ce3ece:15513:22)
+console.error @ react-konva.js?v=30ce3ece:27408
+DefaultErrorComponent @ react-router-dom.js?v=30ce3ece:4031
+renderWithHooks @ chunk-GMMWARBA.js?v=30ce3ece:11137
+mountIndeterminateComponent @ chunk-GMMWARBA.js?v=30ce3ece:14565
+beginWork @ chunk-GMMWARBA.js?v=30ce3ece:15503
+beginWork$1 @ chunk-GMMWARBA.js?v=30ce3ece:19347
+performUnitOfWork @ chunk-GMMWARBA.js?v=30ce3ece:18792
+workLoopSync @ chunk-GMMWARBA.js?v=30ce3ece:18731
+renderRootSync @ chunk-GMMWARBA.js?v=30ce3ece:18710
+recoverFromConcurrentError @ chunk-GMMWARBA.js?v=30ce3ece:18327
+performSyncWorkOnRoot @ chunk-GMMWARBA.js?v=30ce3ece:18473
+flushSyncCallbacks @ chunk-GMMWARBA.js?v=30ce3ece:8707
+(anonymous) @ chunk-GMMWARBA.js?v=30ce3ece:18218
+react-konva.js?v=30ce3ece:27408 The above error occurred in the <Editor> component:
+
+    at Editor (http://localhost:3000/src/pages/Editor.tsx?t=1764045706324:62:18)
+    at RenderedRoute (http://localhost:3000/node_modules/.vite/deps/react-router-dom.js?v=30ce3ece:4089:5)
+    at RenderErrorBoundary (http://localhost:3000/node_modules/.vite/deps/react-router-dom.js?v=30ce3ece:4049:5)
+    at DataRoutes (http://localhost:3000/node_modules/.vite/deps/react-router-dom.js?v=30ce3ece:5240:5)
+    at Router (http://localhost:3000/node_modules/.vite/deps/react-router-dom.js?v=30ce3ece:4502:15)
+    at RouterProvider (http://localhost:3000/node_modules/.vite/deps/react-router-dom.js?v=30ce3ece:5054:5)
+    at NotificationProvider (http://localhost:3000/src/app/providers/NotificationProvider.tsx:6:40)
+    at AuthProvider (http://localhost:3000/src/app/providers/AuthProvider.tsx:37:32)
+    at ThemeProvider (http://localhost:3000/src/app/providers/ThemeProvider.tsx:6:33)
+
+React will try to recreate this component tree from scratch using the error boundary you provided, RenderErrorBoundary.
+console.error @ react-konva.js?v=30ce3ece:27408
+logCapturedError @ chunk-GMMWARBA.js?v=30ce3ece:13621
+callback @ chunk-GMMWARBA.js?v=30ce3ece:13667
+callCallback @ chunk-GMMWARBA.js?v=30ce3ece:10837
+commitUpdateQueue @ chunk-GMMWARBA.js?v=30ce3ece:10854
+commitLayoutEffectOnFiber @ chunk-GMMWARBA.js?v=30ce3ece:16664
+commitLayoutMountEffects_complete @ chunk-GMMWARBA.js?v=30ce3ece:17571
+commitLayoutEffects_begin @ chunk-GMMWARBA.js?v=30ce3ece:17560
+commitLayoutEffects @ chunk-GMMWARBA.js?v=30ce3ece:17511
+commitRootImpl @ chunk-GMMWARBA.js?v=30ce3ece:18947
+commitRoot @ chunk-GMMWARBA.js?v=30ce3ece:18871
+performSyncWorkOnRoot @ chunk-GMMWARBA.js?v=30ce3ece:18489
+flushSyncCallbacks @ chunk-GMMWARBA.js?v=30ce3ece:8707
+(anonymous) @ chunk-GMMWARBA.js?v=30ce3ece:18218
+react-konva.js?v=30ce3ece:27408 React Router caught the following error during render TypeError: Cannot read properties of null (reading 'from')
+    at Editor.tsx:157:22
+    at Array.forEach (<anonymous>)
+    at Editor.tsx:156:11
+    at updateMemo (chunk-GMMWARBA.js?v=30ce3ece:11799:27)
+    at Object.useMemo (chunk-GMMWARBA.js?v=30ce3ece:12315:24)
+    at useMemo (chunk-H2BVA2C6.js?v=30ce3ece:1094:29)
+    at Editor (Editor.tsx:153:24)
+    at renderWithHooks (chunk-GMMWARBA.js?v=30ce3ece:11137:26)
+    at updateFunctionComponent (chunk-GMMWARBA.js?v=30ce3ece:14171:28)
+    at beginWork (chunk-GMMWARBA.js?v=30ce3ece:15513:22) {componentStack: '\n    at Editor (http://localhost:3000/src/pages/Ed…st:3000/src/app/providers/ThemeProvider.tsx:6:33)'}
+console.error @ react-konva.js?v=30ce3ece:27408
+componentDidCatch @ react-router-dom.js?v=30ce3ece:4076
+callback @ chunk-GMMWARBA.js?v=30ce3ece:13673
+callCallback @ chunk-GMMWARBA.js?v=30ce3ece:10837
+commitUpdateQueue @ chunk-GMMWARBA.js?v=30ce3ece:10854
+commitLayoutEffectOnFiber @ chunk-GMMWARBA.js?v=30ce3ece:16664
+commitLayoutMountEffects_complete @ chunk-GMMWARBA.js?v=30ce3ece:17571
+commitLayoutEffects_begin @ chunk-GMMWARBA.js?v=30ce3ece:17560
+commitLayoutEffects @ chunk-GMMWARBA.js?v=30ce3ece:17511
+commitRootImpl @ chunk-GMMWARBA.js?v=30ce3ece:18947
+commitRoot @ chunk-GMMWARBA.js?v=30ce3ece:18871
+performSyncWorkOnRoot @ chunk-GMMWARBA.js?v=30ce3ece:18489
+flushSyncCallbacks @ chunk-GMMWARBA.js?v=30ce3ece:8707
+(anonymous) @ chunk-GMMWARBA.js?v=30ce3ece:18218
+Editor.tsx:367 Uncaught TypeError: Cannot read properties of null (reading 'from')
+    at Editor.tsx:367:43
+    at Array.forEach (<anonymous>)
+    at Editor.tsx:366:15
+    at useRealtime.ts:174:34
+(anonymous) @ Editor.tsx:367
+(anonymous) @ Editor.tsx:366
+(anonymous) @ useRealtime.ts:174
+setTimeout
+ws.onmessage @ useRealtime.ts:174
+useRealtime.ts:304 🔴 WS Disconnected
