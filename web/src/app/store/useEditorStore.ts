@@ -33,6 +33,7 @@ export type ColorThemeStyle = {
   fontSize?: number;
   fontWeight?: "normal" | "bold";
   textDecoration?: "none" | "underline" | "line-through";
+  textcase?: "normal" | "uppercase" | "lowercase";
 };
 
 export type ColorTheme = {
@@ -51,13 +52,13 @@ export const colorThemes: Record<string, ColorTheme> = {
   dawn: {
     background: "#ffffffff", 
     quickStyles: {
-      'important-dark': { fill: "#000000", color:"#000000", stroke: "#000000", textColor: "#FFFFFF", fontSize:18, fontWeight: "bold" },
-      'important-light': { fill: "#E5E5E5", color:"#E5E5E5", stroke: "#A3A3A3", textColor: "#000000" }, 
-      'strikethrough': { fill: "#FFFFFF", color:"#FFFFFF", stroke: "#CBD5E0", textColor: "#A0AEC0", textDecoration: "line-through" },
-      'default': { fill: "#FFFFFF", color:"#FFFFFF", stroke: "#000000", textColor: "#000000" },
-    },
+      'important-dark': { fill: "#90074dff", color:"#970074ff", stroke: "#97266D", textColor: "#ffffffff", fontWeight: "bold" },
+      'important-light': { fill: "#df1a5fff", color:"#b60ac0ff", stroke: "#ED89A7", textColor: "#ffffffff" },
+      strikethrough: { fill: "#FFFFFF", color:"#ffffffff", stroke: "#CBD5E0", textColor: "#A0AEC0", textDecoration: "line-through" },
+      default: { fill: "#FFFFFF", color:"#ffffffff", stroke: "#CBD5E0", textColor: "#4A5568" },
+    },
     // Root mặc định là Đen, chữ Trắng
-    root: { fill: "#000000", stroke: "#000000", textColor: "#FFFFFF" },
+    root: { fill: "#ffffffff", stroke: "#343434ff", textColor: "#ae1e1eff"},
   },
 };
 
@@ -124,7 +125,7 @@ const MAX_HISTORY = 100;
 export const DEFAULT_NODE_STYLE: Partial<NodeData> = {
   shape: 'roundedRect',
   color: '#FFFFFF',
-  borderColor: '#000000', // Viền đen mặc định
+  borderColor: '#000000', 
   borderWidth: 2,
   borderStyle: 'solid',
   fontFamily: fonts[0].value,
@@ -133,9 +134,8 @@ export const DEFAULT_NODE_STYLE: Partial<NodeData> = {
   fontStyle: 'normal',
   textDecoration: 'none',
   textAlign: 'center',
-  textColor: '#000000', // Chữ đen mặc định
-  textCase: 'normal',
-  nodeLength: 'fit',
+  textColor: '#000000ff', 
+  nodeLength: 150,
   branchColor: undefined,
   branchLineStyle: 'bezier',
   branchLineEnd: 'none',
@@ -155,12 +155,11 @@ export function getNodeComputedStyle(
     fontFamily: globalFont,
     color: theme.root.fill || '#FFFFFF', 
     borderColor: '#000000',
-    textColor: '#000000'
+    textColor: '#000000',
   };
 
   if (!node) return baseStyle as NodeData;
 
-  // 2. [THEME] Áp dụng Phân cấp Màu sắc (Hierarchical Color)
   if (topology) {
     const { depth, branchBaseColor } = topology;
 
@@ -168,9 +167,10 @@ export function getNodeComputedStyle(
        baseStyle.color = theme.root.fill || '#000000';
        baseStyle.textColor = theme.root.textColor || '#FFFFFF';
        baseStyle.borderColor = theme.root.stroke || '#000000';
-       baseStyle.borderWidth = 3;
-       baseStyle.fontSize = 24;
+       baseStyle.borderWidth = 4;
+       baseStyle.fontSize = 28;
        baseStyle.fontWeight = 'bold';
+       baseStyle.textCase = 'uppercase';
     } else {
        const smartColors = getBranchColorByDepth(branchBaseColor, depth);
        
@@ -183,12 +183,15 @@ export function getNodeComputedStyle(
   }
 
   // 3. [QUICK STYLE]
-  if (node.quickStyleId && theme.quickStyles[node.quickStyleId]) {
+  if (node.quickStyleId && node.quickStyleId !== 'default' && theme.quickStyles[node.quickStyleId]) {
     const qs = theme.quickStyles[node.quickStyleId];
     baseStyle.color = qs.fill;
     baseStyle.borderColor = qs.stroke;
     baseStyle.textColor = qs.textColor;
     if (qs.fontWeight) baseStyle.fontWeight = qs.fontWeight;
+    if (qs.textDecoration) baseStyle.textDecoration = qs.textDecoration;
+    if (qs.fontSize) baseStyle.fontSize = qs.fontSize;
+    if (qs.textcase) baseStyle.textCase = qs.textcase;
   }
 
   // 4. [OVERRIDE]
@@ -200,7 +203,13 @@ export function getNodeComputedStyle(
     'branchLineStyle', 'branchLineEnd', 'branchLineThickness'
   ];
 
+  const isRoot = node.id === 'root';
   OVERRIDABLE_KEYS.forEach(key => {
+    // To preserve the root's identity, some properties are not overridable.
+    if (isRoot && ['fontSize', 'fontWeight', 'textCase', 'borderWidth', 'color', 'textColor', 'borderColor'].includes(key)) {
+      return;
+    }
+
     if (node[key] !== undefined) {
       (computed as any)[key] = node[key];
     }
@@ -275,7 +284,6 @@ type State = {
   globalStructure: GlobalStructure;
   globalFont: string;
   branchLineWidth: number;
-  // [CẬP NHẬT] Loại bỏ isColoredBranch
   activeColorThemeId: string;
   globalBranchColor: string; 
   backgroundColor: string; 
@@ -303,8 +311,7 @@ export const useEditorStore = create<State>((set, get) => ({
   globalFont: fonts[0].value,
   branchLineWidth: 2,
   activeColorThemeId: 'dawn',
-  // [CẬP NHẬT] Mặc định là Đen cho giao diện Đen/Trắng
-  globalBranchColor: '#000000', 
+  globalBranchColor: '#94A3B8', 
   backgroundColor: '#FAFAFB', 
 
   isDirty: false,

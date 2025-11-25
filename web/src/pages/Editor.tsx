@@ -70,9 +70,8 @@ const PADDING_X = 20,
   PADDING_Y = 12;
 const LINE_HEIGHT_MULTIPLIER = 1.3;
 
-// [MERGE] Giữ lại logic UI mới (branch colors) từ feature/tt
 const BRANCH_COLORS_PALETTE = [
-  '#EF4444', '#F97316', '#FACC15', '#22C55E',
+  '#475569','#EF4444', '#F97316', '#FACC15', '#22C55E',
   '#06B6D4', '#3B82F6', '#8B5CF6', '#EC4899',
 ];
 
@@ -105,10 +104,6 @@ function getContrastColor(hex: string) {
 // Component
 // =================================================================================
 
-/**
- * [MERGE GĐ 3] Cấy ghép hàm loadGuestDoc (đã sửa)
- * Đọc chuẩn BE, dịch sang FE
- */
 export function loadGuestDoc(id: string): FeMindmapDoc | null {
   try {
     const raw = localStorage.getItem(GUEST_BUCKET);
@@ -132,10 +127,6 @@ export function loadGuestDoc(id: string): FeMindmapDoc | null {
   }
 }
 
-/**
- * [MERGE GĐ 3] Cấy ghép hàm saveGuestDoc (đã sửa)
- * Nhận chuẩn FE, dịch sang BE
- */
 function saveGuestDoc(
   id: string,
   name: string,
@@ -153,10 +144,6 @@ function saveGuestDoc(
   }
 }
 
-/**
- * [MERGE] Giữ lại hàm calculateNodeBox từ feature/tt
- * (Đây là logic layout/UI)
- */
 function calculateNodeBox(node: NodeData, style: NodeData) {
   const { fontSize, nodeLength, nodeText, textCase, shape } = style;
   const borderWidth = style.borderWidth || 0;
@@ -183,7 +170,7 @@ function calculateNodeBox(node: NodeData, style: NodeData) {
     w = Math.max(w, 80);
     wrappedLines = processedText.split('\n');
   } else {
-    w = Number(nodeLength) || 150;
+    w = Number(nodeLength) || 250;
     const contentWidth = w - PADDING_X * 2 - borderWidth * 2;
     const lines = processedText.split('\n');
     lines.forEach((line: string) => {
@@ -245,7 +232,7 @@ export default function Editor() {
     isDirty
   } = useEditorStore();
 
-  // State nội bộ (Lấy từ feature/tt, bao gồm logic UI mới)
+  // State nội bộ
   const [name, setName] = useState('Loading...');
   const [isDataLoaded, setIsDataLoaded] = useState(false);
   const [isFormattingToolbarOpen, setFormattingToolbarOpen] = useState(false); // UI Mới
@@ -295,12 +282,12 @@ export default function Editor() {
       let currentBaseColor = inheritedColor;
 
       // Logic xác định màu tại cấp 1:
-      // Luôn lấy màu toàn cục nếu chưa có màu thừa hưởng (nghĩa là từ root)
+      // Lấy màu toàn cục nếu chưa có màu thừa hưởng (là từ root)
       if (depth === 1 && !currentBaseColor) {
          currentBaseColor = globalBranchColor;
       }
 
-      // Nếu node này có màu riêng, nó sẽ đè màu toàn cục/thừa hưởng
+      // Nếu node có màu riêng, nó sẽ đè màu toàn cục/thừa hưởng
       if (node?.branchColor) {
         currentBaseColor = node.branchColor;
       }
@@ -310,7 +297,6 @@ export default function Editor() {
 
       topology.set(nodeId, { 
         depth, 
-        // [FIX 1] Xóa branchIndex vì không còn trong type NodeTopology
         branchBaseColor: effectiveColor 
       });
       
@@ -337,11 +323,11 @@ export default function Editor() {
     visible: false,
   });
   const selectionStartPos = useRef({ x: 0, y: 0 });
-  const isSelecting = useRef(false); // Thêm cờ này để biết đang kéo chọn vùng
+  const isSelecting = useRef(false); //cờ để biết đang kéo chọn vùng
 
   const selectedIdsSet = useMemo(() => new Set(selectedNodeIds), [selectedNodeIds]);
 
-  // Lấy node đầu tiên trong danh sách chọn để hiển thị style trên toolbar
+  // Chọn node đầu tiên trong danh sách chọn để hiển thị style trên toolbar
   const firstSelectedId = useMemo(() => selectedNodeIds[0], [selectedNodeIds]);
   const currentNode = useMemo(() => {
     if (!firstSelectedId) return null;
@@ -351,7 +337,7 @@ export default function Editor() {
   const setMindmapsStore = useMindmapsStore(s => s.set);
   const mindmapItems = useMindmapsStore(s => s.items);
 
-  // Logic tính toán (Không thay đổi)
+  // Logic tính toán
   const computedNodeStyles = useMemo(() => {
     const map = new Map<string, NodeData>();
     nodes.forEach((node) => {
@@ -382,7 +368,6 @@ export default function Editor() {
     return map;
   }, [nodes, computedNodeStyles]);
 
-  // [MERGE] Logic UI mới từ feature/tt (rootChildSides)
   const rootChildSides = useMemo(() => {
     const sides = { left: false, right: false };
     if (!nodesWithChildren.has('root')) return sides;
@@ -405,7 +390,6 @@ export default function Editor() {
   const debouncedPushHistory = useDebouncedCallback(() => {
     const { nodes, edges } = useEditorStore.getState();
     pushHistory(useEditorStore.getState().nodes, useEditorStore.getState().edges);
-    // console.log("v0.5: Đã lưu vào Undo stack");
   }, 500);
 
   // 2. Luồng Lưu trữ (5s)
@@ -590,7 +574,6 @@ export default function Editor() {
         const token = await getAccessToken();
         if (!token || !isMounted) return;
 
-        // TODO: Thay 'localhost:8081' bằng biến VITE_WS_URL
         const wsUrl = `ws://localhost:8081/ws/mindmap/${id}?token=${token}`;
         
         const ws = new WebSocket(wsUrl);
@@ -604,18 +587,15 @@ export default function Editor() {
         };
         ws.onerror = (err) => console.error('WebSocket error:', err);
 
-        // === [GĐ 9] LOGIC NHẬN PATCH ===
+        // === LOGIC NHẬN PATCH ===
         ws.onmessage = (event) => {
           try {
             const message: BroadcastPatch = JSON.parse(event.data);
             const { type, payload } = message;
 
-            // Lấy state MỚI NHẤT từ store (RẤT QUAN TRỌNG)
+            // Lấy state MỚI NHẤT từ store
             const { nodes: currentNodes, edges: currentEdges } =
               useEditorStore.getState();
-
-            // QUAN TRỌNG: Chỉ gọi setGraph, KHÔNG gọi debouncedPushHistory
-
             switch (type) {
               case 'USER_JOINED':
                 addToast(`User ${payload.userId.substring(0, 6)}... đã tham gia.`, 'info');
@@ -623,7 +603,6 @@ export default function Editor() {
               case 'USER_LEFT':
                 addToast(`User ${payload.userId.substring(0, 6)}... đã rời đi.`, 'info');
                 break;
-              
               case 'NODE_MOVE': {
                 const { id: nodeId, x, y } = payload;
                 const newNodes = currentNodes.map((n) =>
@@ -729,7 +708,6 @@ export default function Editor() {
               }
               case 'ROOT_TOGGLE_COLLAPSE': {
                 const { side } = payload;
-                // [FIX TS ERROR] Thêm type guard
                 if (side === 'left' || side === 'right') {
                setRootCollapse(prev => ({ ...prev, [side as 'left' | 'right']: !prev[side as 'left' | 'right'] }));
                 } else {
@@ -749,9 +727,7 @@ export default function Editor() {
         addToast("Lỗi xác thực WebSocket.", "error");
       }
     };
-
     connect();
-
     // Hàm cleanup
     return () => {
       isMounted = false;
@@ -762,14 +738,10 @@ export default function Editor() {
       wsRef.current = null;
     };
   }, [id, isAuthed, isGuest, isDataLoaded, getAccessToken, addToast, setGraph]);
-  // (Bỏ pushHistory khỏi deps)
 
   // ================================================
   // Style & Layout Logic
-  // [MERGE] Giữ nguyên logic 5 bước của feature/tt
   // ================================================
-
-  
 
   const handleLayout = useCallback(
     (keepCamera: boolean = false) => {
@@ -958,33 +930,26 @@ export default function Editor() {
       const finalNodesMap = new Map(newNodes.map(n => [n.id, n]));
       const allEdges = useEditorStore.getState().edges;
 
-      // 2. Tìm tất cả các node gốc (không có cha) NGOẠI TRỪ 'root'
       const floatingRoots = newNodes.filter(
         n => (n.parentId === undefined || n.parentId === null) && n.id !== 'root'
       );
 
-      // 3. Tạo một map các cạnh để tìm con (chỉ cần làm 1 lần)
       const adjMap = new Map<string, string[]>();
       allEdges.forEach(e => {
         if (!adjMap.has(e.from)) adjMap.set(e.from, []);
         adjMap.get(e.from)!.push(e.to);
       });
 
-      // 4. Duyệt qua từng "đảo"
       for (const floatingRoot of floatingRoots) {
         const islandNodes = new Map<string, NodeData>();
         const islandEdges: EdgeData[] = [];
-        const q: NodeData[] = [floatingRoot]; // Hàng đợi cho BFS
-
-        // 5. Tìm tất cả con cháu của đảo này (BFS)
+        const q: NodeData[] = [floatingRoot]; 
         while (q.length > 0) {
           const current = q.shift()!;
           if (!islandNodes.has(current.id)) {
             islandNodes.set(current.id, current);
-            
             const childrenIds = adjMap.get(current.id) || [];
             childrenIds.forEach(childId => {
-              // Lấy node từ map (đã được layout chính cập nhật)
               const childNode = finalNodesMap.get(childId); 
               if (childNode) {
                 q.push(childNode);
@@ -994,9 +959,8 @@ export default function Editor() {
           }
         }
 
-        if (islandNodes.size <= 1) continue; // Không có con, bỏ qua
+        if (islandNodes.size <= 1) continue; 
 
-        // 6. Tạo 1 graph Dagre *riêng* cho hòn đảo này
         const g = new dagre.graphlib.Graph();
         const islandLayoutDir = 'LR';
         g.setGraph({ rankdir: islandLayoutDir, nodesep: 50, ranksep: 100 });
@@ -1012,17 +976,13 @@ export default function Editor() {
         });
         islandEdges.forEach((edge) => g.setEdge(edge.from, edge.to));
         
-        // 7. Chạy layout cục bộ
         dagre.layout(g);
 
-        // 8. Tính toán độ dời (offset)
-        // Vị trí "neo" là vị trí hiện tại của node nổi (do người dùng kéo)
         const anchorPos = finalNodesMap.get(floatingRoot.id)!; 
         const dagreRootPos = g.node(floatingRoot.id);
         const offsetX = anchorPos.x - dagreRootPos.x;
         const offsetY = anchorPos.y - dagreRootPos.y;
 
-        // 9. Áp dụng vị trí mới (đã dời) cho tất cả con cháu
         islandNodes.forEach((node, id) => {
           const dagrePos = g.node(id);
           if (dagrePos) {
@@ -1031,22 +991,19 @@ export default function Editor() {
               ...existingNode,
               x: dagrePos.x + offsetX,
               y: dagrePos.y + offsetY,
-              // Gán "side" để đường kẻ vẽ đúng
               side: (islandLayoutDir === 'LR' ? (dagrePos.x < 0 ? 'left' : 'right') : 'right') as 'left' | 'right', 
             };
-            finalNodesMap.set(id, updatedNode); // Cập nhật lại map
+            finalNodesMap.set(id, updatedNode); 
           }
         });
-      } // Kết thúc vòng lặp for (duyệt các đảo)
+      } 
       
-      // 10. Chuyển map cuối cùng về mảng newNodes
       newNodes = Array.from(finalNodesMap.values());
 
-      // Cập nhật state VÀ reset collapse root (UI mới)
       setGraph(newNodes, edges);
       setRootCollapse({ left: false, right: false });
 
-      // Logic Căn giữa/Zoom (Không đổi)
+      // Logic Căn giữa/Zoom 
       if (newNodes.length === 0) {
         const currentWidth = window.innerWidth;
         const currentHeight = window.innerHeight - 48;
@@ -1093,39 +1050,34 @@ export default function Editor() {
         setPos({ x: newX, y: newY });
       }
     },
-    [nodeVisuals, setGraph, edges] // [GĐ 7] Bỏ 'nodes'
+    [nodeVisuals, setGraph, edges] 
   );
 
-  // [SỬA] THÊM CÁC HÀM XỬ LÝ ZOOM NÀY
-const zoomStep = 1.2; // Tốc độ zoom
+  const zoomStep = 1.2; 
+  const handleZoomIn = useCallback(() => {
+    handleSetZoom(scale * zoomStep);
+  }, [scale]); 
+  const handleZoomOut = useCallback(() => {
+    handleSetZoom(scale / zoomStep);
+  }, [scale]); 
 
-const handleZoomIn = useCallback(() => {
-  // Zoom vào vị trí trung tâm màn hình
-  handleSetZoom(scale * zoomStep);
-}, [scale]); // [SỬA] Thêm scale vào dependency
+  const handleSetZoom = useCallback((newScale: number) => {
+    const stage = stageRef.current;
+    if (!stage) {
+      setScale(newScale);
+      return;
+    }
 
-const handleZoomOut = useCallback(() => {
-  // Zoom ra từ vị trí trung tâm màn hình
-  handleSetZoom(scale / zoomStep);
-}, [scale]); // [SỬA] Thêm scale vào dependency
+    const { width, height } = dimensions;
+    const oldScale = scale;
 
-const handleSetZoom = useCallback((newScale: number) => {
-  const stage = stageRef.current;
-  if (!stage) {
-    setScale(newScale);
-    return;
-  }
+    // Lấy vị trí trung tâm màn hình
+    const center = { x: width / 2, y: height / 2 };
 
-  const { width, height } = dimensions;
-  const oldScale = scale;
-
-  // Lấy vị trí trung tâm màn hình
-  const center = { x: width / 2, y: height / 2 };
-
-  // Tính toán điểm thế giới (world point) mà trung tâm màn hình đang trỏ tới
-  const mousePointTo = {
-    x: (center.x - pos.x) / oldScale,
-    y: (center.y - pos.y) / oldScale,
+    // Tính toán world point mà trung tâm màn hình đang trỏ tới
+    const mousePointTo = {
+      x: (center.x - pos.x) / oldScale,
+      y: (center.y - pos.y) / oldScale,
   };
 
   // Đặt scale mới
@@ -1139,13 +1091,8 @@ const handleSetZoom = useCallback((newScale: number) => {
 }, [scale, pos.x, pos.y, dimensions.width, dimensions.height]);
 
 const handleFitToScreen = useCallback(() => {
-  // Gọi handleLayout(false) sẽ tự động căn giữa và zoom
   handleLayout(false); 
 }, [handleLayout]); 
-
-  // ================================================
-  // Node Actions [CẬP NHẬT GĐ 7 + 9]
-  // ================================================
 
   const startEditing = useCallback((nodeId: string) => {
     setSelectedNodeIds([nodeId]);
@@ -1162,7 +1109,7 @@ const handleFitToScreen = useCallback(() => {
     if (!isDataLoaded || !justStoppedEditingRef.current) return;
     justStoppedEditingRef.current = false;
     setTimeout(() => {
-      handleLayout(true); // true = keepCamera
+      handleLayout(true); 
     }, 0);
   }, [nodes, isDataLoaded, handleLayout]);
 
@@ -1189,51 +1136,42 @@ const handleFitToScreen = useCallback(() => {
     },
     [
       editingNodeId, nodes, edges, setGraph, 
-      debouncedPushHistory, debouncedPersistData, sendPatch, // GĐ 7 & 9
+      debouncedPushHistory, debouncedPersistData, sendPatch, 
     ]
   );
 
   const handleAddChild = useCallback((parentId: string) => {
-    const parentNode = nodeMap.get(parentId); // Lấy dữ liệu THÔ của node cha
-    const parentVisual = nodeVisuals.get(parentId); // Lấy dữ liệu HÌNH ẢNH của node cha
+    const parentNode = nodeMap.get(parentId); 
+    const parentVisual = nodeVisuals.get(parentId); 
     
     if (!parentNode || !parentVisual) return;
 
-    const parentComputedStyle = parentVisual.style; // Dùng để lấy vị trí, "bên" (side)
+    const parentComputedStyle = parentVisual.style; 
 
     const newId = "n" + Date.now();
 
-    // 1. Bắt đầu với các thuộc tính cơ bản
     const newNodeData: NodeData = { 
       id: newId, 
       nodeText: "Nội dung",
-      // Lấy vị trí và "bên" (side) từ style đã tính toán của cha
       x: parentComputedStyle.x + 40,
       y: parentComputedStyle.y + 20,
       parentId,
       side: parentComputedStyle.side, 
     };
 
-    // 2. Lấy TẤT CẢ các key style từ DEFAULT_NODE_STYLE
     const styleKeys = Object.keys(DEFAULT_NODE_STYLE) as Array<keyof typeof DEFAULT_NODE_STYLE>;
 
-    // 3. Sao chép style từ node cha, NHƯNG LOẠI TRỪ MÀU SẮC để Hierarchy hoạt động
-    // Các thuộc tính màu sẽ được tính toán tự động dựa trên Topology (cấp độ, nhánh)
     const EXCLUDED_STYLES = ['color', 'borderColor', 'textColor', 'branchColor', 'quickStyleId'];
 
     styleKeys.forEach(key => {
-      if (EXCLUDED_STYLES.includes(key)) return; // [FIX] Không copy màu cứng
+      if (EXCLUDED_STYLES.includes(key)) return; 
 
-      // Nếu node cha (dữ liệu thô) có định nghĩa một style cụ thể (không phải undefined),
-      // thì node con sẽ kế thừa nó.
       if (parentNode[key] !== undefined) {
         (newNodeData as any)[key] = parentNode[key];
       }
     });
 
-    // 4. Xử lý trường hợp đặc biệt: Kế thừa từ ROOT
     if (parentId === 'root') {
-      // Reset thêm các thuộc tính hình học nếu cần, nhưng màu đã được lo ở trên
       newNodeData.fontSize = undefined; 
       newNodeData.fontWeight = undefined;
       newNodeData.textCase = undefined;
@@ -1253,7 +1191,7 @@ const handleFitToScreen = useCallback(() => {
 
   const handleAddSibling = useCallback((nodeId: string) => {
     if (nodeId === 'root') { 
-      handleAddChild('root'); // Trường hợp đặc biệt: thêm "anh em" cho root -> thêm con
+      handleAddChild('root'); 
       return; 
     }
 
@@ -1278,7 +1216,6 @@ const handleFitToScreen = useCallback(() => {
 
     const styleKeys = Object.keys(DEFAULT_NODE_STYLE) as Array<keyof typeof DEFAULT_NODE_STYLE>;
     
-    // [FIX] Tương tự handleAddChild, loại trừ copy màu cứng
     const EXCLUDED_STYLES = ['color', 'borderColor', 'textColor', 'branchColor', 'quickStyleId'];
 
     styleKeys.forEach(key => {
@@ -1302,7 +1239,7 @@ const handleFitToScreen = useCallback(() => {
   }, [nodes, edges, pushHistory, setGraph, nodeMap, nodeVisuals, startEditing, handleLayout, handleAddChild]);
 
   const handleDeleteNode = useCallback(
-    () => { // Bỏ tham số nodeId
+    () => { 
       if (selectedNodeIds.length === 0) return;
 
       const idsToDelete = selectedNodeIds.filter(id => id !== 'root');
@@ -1323,21 +1260,20 @@ const handleFitToScreen = useCallback(() => {
         findChildren(id);
       });
 
-      // Chọn cha của node ĐẦU TIÊN bị xóa
       const parentId = nodes.find((n) => n.id === idsToDelete[0])?.parentId ?? 'root';
       const newNodes = nodes.filter((n) => !nodesToDelete.has(n.id));
       const newEdges = edges.filter(
         (e) => !nodesToDelete.has(e.from) && !nodesToDelete.has(e.to)
       );
       setGraph(newNodes, newEdges);
-      setSelectedNodeIds([parentId]); // Chọn node cha
+      setSelectedNodeIds([parentId]); 
       setTimeout(() => handleLayout(true), 50);
       debouncedPushHistory();
       debouncedPersistData();
       sendPatch('NODE_DELETE', { nodeIds: Array.from(nodesToDelete) });
     },
     [
-      nodes, edges, setGraph, selectedNodeIds, handleLayout, // Cập nhật dependency
+      nodes, edges, setGraph, selectedNodeIds, handleLayout, 
       debouncedPushHistory, debouncedPersistData, sendPatch,
     ]
   );
@@ -1348,7 +1284,6 @@ const handleFitToScreen = useCallback(() => {
     let newNodes = [...nodes];
     const idSet = selectedIdsSet;
 
-    // [MERGE] Giữ lại logic `styleLocked` từ feature/tt
     const STYLE_KEYS: Array<keyof NodeData> = [
       'shape', 'color', 'borderColor', 'borderWidth', 'borderStyle',
       'fontFamily', 'fontSize', 'fontWeight', 'fontStyle', 'textDecoration', 'textAlign', 'textColor', 'textCase', 'nodeLength',
@@ -1358,17 +1293,14 @@ const handleFitToScreen = useCallback(() => {
 
     if (updates.branchColor !== undefined) {
       const updateBranchColorRecursive = (nodeId: string, color: string) => {
-        // Chỉ áp dụng cho node đang được chọn
         if (idSet.has(nodeId)) {
           newNodes = newNodes.map(n => n.id === nodeId ? { ...n, branchColor: color } : n);
         }
         edges.forEach(e => { if (e.from === nodeId) updateBranchColorRecursive(e.to, color); });
       };
-      // Lặp qua tất cả node được chọn
       selectedNodeIds.forEach(id => updateBranchColorRecursive(id, updates.branchColor as string));
     }
     
-    // Áp dụng update cho tất cả node được chọn
     newNodes = newNodes.map(n => idSet.has(n.id) ? { ...n, ...updates } : n);
     
     if (isStyleUpdate) {
@@ -1376,7 +1308,6 @@ const handleFitToScreen = useCallback(() => {
         newNodes = newNodes.map(n => n.id === nodeId ? { ...n, styleLocked: true } : n);
         edges.forEach(e => { if (e.from === nodeId) lockRec(e.to); });
       };
-      // Lặp qua tất cả node được chọn
       selectedNodeIds.forEach(id => lockRec(id));
     }
 
@@ -1386,7 +1317,6 @@ const handleFitToScreen = useCallback(() => {
     }
     debouncedPushHistory();
     debouncedPersistData();
-    // Gửi patch cho TỪNG node
     selectedNodeIds.forEach(id => {
       sendPatch('NODE_STYLE_UPDATE', { id, updates });
     });
@@ -1401,17 +1331,12 @@ const handleFitToScreen = useCallback(() => {
         }
       }
       if (e.key === 'Tab') {
-        e.preventDefault(); // LUÔN LUÔN chặn trình duyệt "nhảy"
+        e.preventDefault(); 
 
-        // Chỉ thêm node con nếu:
-        // 1. Không đang edit (editingNodeId là null)
-        // 2. Chỉ có 1 node được chọn
         if (!editingNodeId && selectedNodeIds.length === 1) {
           handleAddChild(selectedNodeIds[0]);
         }
-        // Nếu đang edit, hoặc chọn nhiều node, hoặc không chọn node nào,
-        // phím Tab sẽ không làm gì cả (vì đã preventDefault).
-        return; // Kết thúc xử lý cho phím Tab
+        return; 
       }
       if (editingNodeId) return;
       if (
@@ -1420,29 +1345,26 @@ const handleFitToScreen = useCallback(() => {
       )
         return;
 
-      // [SỬA 1] Di chuyển Undo/Redo lên TRƯỚC khi kiểm tra selectedNodeId
-      // để đảm bảo chúng hoạt động toàn cục.
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
         e.preventDefault();
         undo();
-        return; // Thoát sớm
+        return; 
       }
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y') {
         e.preventDefault();
         redo();
-        return; // Thoát sớm
+        return; 
       }
 
       if (selectedNodeIds.length !== 1) {
-        // Ngoại trừ phím Delete
         if (e.key === 'Delete' || e.key === 'Backspace') {
           e.preventDefault();
-          handleDeleteNode(); // Gọi hàm không tham số
+          handleDeleteNode(); 
         }
         return;
       }
       
-      const singleSelectedId = selectedNodeIds[0]; // Đây là node duy nhất đang được chọn
+      const singleSelectedId = selectedNodeIds[0]; 
 
       if (e.key === 'Tab') {
         e.preventDefault();
@@ -1452,7 +1374,7 @@ const handleFitToScreen = useCallback(() => {
         handleAddSibling(singleSelectedId);
       } else if (e.key === 'Delete' || e.key === 'Backspace') {
         e.preventDefault();
-        handleDeleteNode(); // Gọi hàm không tham số
+        handleDeleteNode(); 
       } else if (e.key === 'F2') {
         e.preventDefault();
         startEditing(singleSelectedId);
@@ -1470,20 +1392,18 @@ const handleFitToScreen = useCallback(() => {
       }
     },
     [
-      editingNodeId, selectedNodeIds, handleAddChild, // Cập nhật dependency
+      editingNodeId, selectedNodeIds, handleAddChild, 
       handleAddSibling, handleDeleteNode, undo, redo, startEditing,
     ]
   );
 
   const handleToolbarAddChild = useCallback(() => {
-    // Chỉ hoạt động nếu 1 node (và chỉ 1) đang được chọn
     if (selectedNodeIds.length === 1) { 
       handleAddChild(selectedNodeIds[0]);
     }
-  }, [selectedNodeIds, handleAddChild]); // handleAddChild đã được bọc trong useCallback
+  }, [selectedNodeIds, handleAddChild]); 
 
   const handleToolbarAddSibling = useCallback(() => {
-    // Chỉ hoạt động nếu 1 node (và chỉ 1) đang được chọn
     if (selectedNodeIds.length === 1) { 
       handleAddSibling(selectedNodeIds[0]);
     }
@@ -1494,17 +1414,10 @@ const handleFitToScreen = useCallback(() => {
   const nodeId = selectedNodeIds[0];
   const node = nodeMap.get(nodeId);
   if (!node) return;
-
-  
-
-  // Lấy hyperlink hiện tại (nếu có) từ node.
-  // Cần đảm bảo `node.hyperlink` tồn tại trong kiểu NodeData của bạn.
   const currentUrl = (node as any).hyperlink || "";
   const url = window.prompt("Nhập URL cho liên kết (để trống để xóa):", currentUrl);
   
-  if (url !== null) { // User clicked OK (null nghĩa là Cancel)
-    // Chúng ta gọi handleUpdateNode, nó đã được refactor để xử lý nhiều node
-    // nhưng ở đây nó sẽ chỉ áp dụng cho 1 node đang được chọn
+  if (url !== null) { 
     handleUpdateNode({ hyperlink: url || undefined });
   }
   }, [selectedNodeIds, nodeMap, handleUpdateNode]);
@@ -1513,10 +1426,6 @@ const handleFitToScreen = useCallback(() => {
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [handleKeyDown]);
-
-  // ================================================
-  // Drag & Drop [CẬP NHẬT GĐ 7 + 9]
-  // ================================================
 
   const handleDragStart = (nodeId: string) => {
     pushHistory(useEditorStore.getState().nodes, useEditorStore.getState().edges); // GĐ 7
@@ -1555,7 +1464,6 @@ const handleFitToScreen = useCallback(() => {
     const finalY = e.target.y();
 
     if (dropTargetId && dropTargetId !== draggedNodeId) {
-      // Reparent
       const draggedNode = nodes.find((n) => n.id === draggedNodeId);
       if (!draggedNode) return;
       let isDroppingOnChild = false;
@@ -1599,12 +1507,10 @@ const handleFitToScreen = useCallback(() => {
           : n
       );
       setGraph(newNodes, newEdges);
-      // [GĐ 9] Gửi patch
       sendPatch('NODE_REPARENT', {
         nodeId: draggedNodeId, newParentId, x: finalX, y: finalY, side: parentSide,
       });
     } else {
-      // Kéo
       const newNodes = nodes.map((n) => {
         if (n.id === draggedNodeId) {
           if (n.parentId) {
@@ -1617,22 +1523,13 @@ const handleFitToScreen = useCallback(() => {
         return n;
       });
       setGraph(newNodes, edges);
-      // [GĐ 9] Gửi patch
       sendPatch('NODE_MOVE', { id: draggedNodeId, x: finalX, y: finalY });
     }
     setDropTargetId(null);
-    setTimeout(() => handleLayout(true), 50); // Giữ camera
-    // [GĐ 7] Gọi debouncer
-    // [SỬA 2] Xóa debouncedPushHistory. Đã push ở handleDragStart.
-    // debouncedPushHistory();
+    setTimeout(() => handleLayout(true), 50); 
     debouncedPersistData();
   };
 
-  // ================================================
-  // Handlers cho Toolbar [CẬP NHẬT GĐ 7 + 9]
-  // ================================================
-
-  // [MERGE] Giữ lại logic UI mới từ feature/tt
   const handleToggleColoredBranch = (state: boolean) => {
     pushHistory(useEditorStore.getState().nodes, useEditorStore.getState().edges); 
     if (state) {
@@ -1641,7 +1538,6 @@ const handleFitToScreen = useCallback(() => {
       rootChildren.forEach((childId, idx) => {
         const color = BRANCH_COLORS_PALETTE[idx % BRANCH_COLORS_PALETTE.length];
         const assignRec = (nodeId: string) => {
-          // [FIX] Chỉ gán branchColor, để color tự tính dựa trên topology
           newNodes = newNodes.map(n => n.id === nodeId ? (n.styleLocked ? n : { ...n, branchColor: color }) : n);
           edges.forEach(e => { if (e.from === nodeId) assignRec(e.to); });
         };
@@ -1649,7 +1545,6 @@ const handleFitToScreen = useCallback(() => {
       });
       setGraph(newNodes, edges);
     } else {
-      // [FIX] Reset về undefined để dùng màu Global + Phân cấp tự động
       const newNodes = nodes.map(n => {
         if (n.styleLocked) return n;
         return { 
@@ -1662,49 +1557,35 @@ const handleFitToScreen = useCallback(() => {
       });
       setGraph(newNodes, edges);
     }
-    // [GĐ 7 & 9] Kích hoạt lưu và gửi patch
     debouncedPersistData();
     sendPatch('LINE_COLOR_TOGGLE', { state });
   };
 
-  // [MERGE] Giữ lại logic UI mới từ feature/tt
   const handleSetBackgroundColor = (color: string) => {
     setBackgroundColor(color);
-    
-    // [FIX] Không loop qua nodes để set color cứng nữa.
-    // Để node tự động tính toán màu dựa trên nền hoặc phân cấp.
-    
-    // Chúng ta vẫn cần push history cho hành động đổi màu nền (vì nó lưu trong GlobalSettings)
     pushHistory(useEditorStore.getState().nodes, useEditorStore.getState().edges);
-    
-    // [GĐ 7 & 9] Kích hoạt lưu và gửi patch
     debouncedPersistData();
     sendPatch('BACKGROUND_CHANGE', { color });
   };
   
   const handleSetGlobalBranchColor = (color: string) => {
     pushHistory(useEditorStore.getState().nodes, useEditorStore.getState().edges);
-    
-    // 1. Cập nhật store
     setGlobalStore({ globalBranchColor: color });
 
-    // 2. Reset overrides để các node nhận màu toàn cục mới và áp dụng Fading
     const newNodes = nodes.map(n => {
       if (n.styleLocked) return n; 
       return { 
         ...n, 
-        branchColor: undefined, // Reset màu nhánh riêng -> Kế thừa Global
-        color: undefined,       // Reset màu nền cứng -> Để tự động tính Fading
-        borderColor: undefined, // Reset màu viền cứng -> Để tự động tính Fading
+        branchColor: undefined,
+        color: undefined,       
+        borderColor: undefined, 
         textColor: undefined    
       };
     });
     
     setGraph(newNodes, edges);
-    
     // Lưu lại
     useEditorStore.setState({ isDirty: true });
-    
     // Gửi patch
     debouncedPersistData();
     sendPatch('GLOBAL_BRANCH_COLOR_CHANGE', { color });
@@ -1728,9 +1609,8 @@ const handleFitToScreen = useCallback(() => {
     debouncedPersistData();
     
     // Gửi patch cho TỪNG node
-    const tempResetStyle = applyNodeDefaults(nodes[0], activeTheme); // Tạm
+    const tempResetStyle = applyNodeDefaults(nodes[0], activeTheme);
     selectedNodeIds.forEach(id => {
-      // TODO: Cần lấy resetStyle chính xác cho từng node
       sendPatch('NODE_QUICK_STYLE_APPLY', { id: id, styleId, resetStyle: tempResetStyle });
     });
   };
@@ -1757,7 +1637,7 @@ const handleFitToScreen = useCallback(() => {
     setTimeout(() => handleLayout(true), 50);
     debouncedPushHistory();
     debouncedPersistData();
-    sendPatch('NODE_STYLE_PASTE', { id: selectedNodeIds, style: styleClipboard }); // GĐ 9
+    sendPatch('NODE_STYLE_PASTE', { id: selectedNodeIds, style: styleClipboard }); 
   };
 
   const handleResetStyle = () => {
@@ -1771,41 +1651,32 @@ const handleFitToScreen = useCallback(() => {
     setTimeout(() => handleLayout(true), 50);
     debouncedPushHistory();
     debouncedPersistData();
-    sendPatch('NODE_STYLE_RESET', { id: selectedNodeIds, resetStyle }); // GĐ 9
+    sendPatch('NODE_STYLE_RESET', { id: selectedNodeIds, resetStyle }); 
   };
-
-  // ================================================
-  // Logic Collapse [MERGE GĐ 7 + 9]
-  // ================================================
 
   const handleToggleCollapse = useCallback(
     (e: any, nodeId: string, side?: 'left' | 'right') => {
       e.cancelBubble = true;
       
-      // [MERGE] Giữ lại logic UI mới (root collapse) từ feature/tt
       if (nodeId === 'root' && side) {
         setRootCollapse(prev => ({ ...prev, [side]: !prev[side] }));
-        // [GĐ 9] Gửi patch cho Root collapse
         sendPatch('ROOT_TOGGLE_COLLAPSE', { side });
-        // Không push history, không persist (đây là UI state)
       } else if (nodeId !== 'root') {
-        // [MERGE] Giữ lại logic GĐ 7/9 (node con collapse)
         const newNodes = nodes.map(n => 
           n.id === nodeId ? { ...n, collapsed: !n.collapsed } : n
         );
         setGraph(newNodes, edges);
         debouncedPushHistory();
         debouncedPersistData();
-        sendPatch('NODE_TOGGLE_COLLAPSE', { id: nodeId }); // GĐ 9
+        sendPatch('NODE_TOGGLE_COLLAPSE', { id: nodeId }); 
       }
     },
     [
       nodes, edges, setGraph, debouncedPushHistory, 
-      debouncedPersistData, sendPatch, // GĐ 7 & 9
+      debouncedPersistData, sendPatch, 
     ]
   );
 
-  // [MERGE] Giữ lại logic UI mới (isNodeVisible) từ feature/tt
   const isNodeVisible = useCallback((nodeId: string): boolean => {
     const node = nodeMap.get(nodeId);
     if (!node) return false;
@@ -1837,7 +1708,6 @@ const handleFitToScreen = useCallback(() => {
     [edges, visibleNodeIds]
   );
 
-  // [MERGE] Giữ lại logic UI mới (descendantCounts) từ feature/tt
   const descendantCounts = useMemo(() => {
     const counts = new Map<string, number>();
     const rootCounts = { left: 0, right: 0 };
@@ -1881,7 +1751,7 @@ const handleFitToScreen = useCallback(() => {
       if (!visual || !el) return;
       el.style.height = 'auto';
       const unscaledScroll = el.scrollHeight / Math.max(scale, 0.0001);
-      const target = Math.max(visual.box.h, unscaledScroll);
+      const target = Math.max(visual.box.h, unscaledScroll)*0.8;
       el.style.height = `${target}px`;
     };
     resize();
@@ -1916,7 +1786,7 @@ const handleFitToScreen = useCallback(() => {
   }, [editingNodeId, nodeVisuals, nodeMap, scale, pos]);
 
   // ================================================
-  // Render (Hợp nhất JSX của feature/tt với Logic của chúng ta)
+  // Render 
   // ================================================
 
   if (!isDataLoaded) {
@@ -1973,7 +1843,6 @@ const handleFitToScreen = useCallback(() => {
 
         {editingNodeId &&
           (() => {
-            // [MERGE] Giữ lại logic textarea wrapper mới của feature/tt
             const visual = nodeVisuals.get(editingNodeId!);
             const node = nodeMap.get(editingNodeId!);
             if (!visual || !node || !stageRef.current) return null;
@@ -2013,8 +1882,8 @@ const handleFitToScreen = useCallback(() => {
                     } else if (e.key === 'Escape') {
                       stopEditing(false);
                     } else if (e.key === 'Tab') {
-                      e.preventDefault(); // Ngăn Tab nhảy focus
-                      stopEditing(true); // Lưu và kết thúc
+                      e.preventDefault(); 
+                      stopEditing(true); 
                   }
                   }}
                   style={{
@@ -2053,7 +1922,7 @@ const handleFitToScreen = useCallback(() => {
           })()}
 
         <div
-          className="w-full h-full pt-12 relative" // UI Mới (pt-12)
+          className="w-full h-full pt-12 relative" 
           style={{ backgroundColor }}
         >
           <Stage
@@ -2065,12 +1934,12 @@ const handleFitToScreen = useCallback(() => {
             x={pos.x}
             y={pos.y}
             onWheel={(e) => {
-              e.evt.preventDefault(); // Ngăn trang web cuộn
+              e.evt.preventDefault(); 
               const stage = e.target.getStage();
               if (!stage) return;
 
               if (e.evt.ctrlKey) {
-                // === LOGIC ZOOM (Giữ nguyên) ===
+                // === LOGIC ZOOM ===
                 const scaleBy = 1.05;
                 const oldScale = stage.scaleX();
                 const pointerPos = stage.getPointerPosition();
@@ -2088,10 +1957,9 @@ const handleFitToScreen = useCallback(() => {
                   y: pointerPos.y - mousePointTo.y * newScale,
                 });
               } else {
-                // === LOGIC PAN (Thêm mới) ===
-                // Dùng cho cuộn chuột 2 ngón tay trên touchpad
+                // === LOGIC PAN ===
                 setPos({
-                  x: pos.x - e.evt.deltaX, // Dùng dấu trừ để di chuyển đúng hướng
+                  x: pos.x - e.evt.deltaX, 
                   y: pos.y - e.evt.deltaY,
                 });
               }
@@ -2101,21 +1969,15 @@ const handleFitToScreen = useCallback(() => {
               if (!stage) return;
 
               const isPanIntent = (e.evt.ctrlKey && e.evt.button === 0) || e.evt.button === 1;
-
-              // Chỉ xử lý khi click vào nền (Stage)
               if (e.target === stage) {
                 if (isPanIntent) {
                   setIsPanning(true);
                   isSelecting.current = false;
                 } else if (e.evt.button === 0) {
-                  // Click trái bình thường -> Bắt đầu chọn vùng
                   setIsPanning(false);
                   isSelecting.current = true;
-                  
                   const pos = stage.getPointerPosition();
                   if (!pos) return;
-                  
-                  // Lấy vị trí tương đối (un-scaled)
                   const unscaledPos = {
                     x: (pos.x - stage.x()) / stage.scaleX(),
                     y: (pos.y - stage.y()) / stage.scaleY(),
@@ -2129,8 +1991,6 @@ const handleFitToScreen = useCallback(() => {
                     height: 0,
                     visible: true,
                   });
-                  
-                  // Nếu không giữ Shift, bỏ chọn tất cả
                   if (!e.evt.shiftKey) {
                     setSelectedNodeIds([]);
                   }
@@ -2142,11 +2002,8 @@ const handleFitToScreen = useCallback(() => {
               setIsPanning(false);
 
               if (isSelecting.current && selectionRect.visible) {
-                // Đã kéo xong, ẩn hình chữ nhật
                 isSelecting.current = false;
                 setSelectionRect({ ...selectionRect, visible: false });
-
-                // Xác định các node nằm trong vùng chọn
                 const { x, y, width, height } = selectionRect;
                 const rect = {
                   x1: x,
@@ -2157,7 +2014,6 @@ const handleFitToScreen = useCallback(() => {
 
                 const newlySelectedIds = visibleNodes
                   .filter((node) => {
-                    // Chọn nếu tâm node nằm trong hình chữ nhật
                     return (
                       node.x > rect.x1 &&
                       node.x < rect.x2 &&
@@ -2168,10 +2024,8 @@ const handleFitToScreen = useCallback(() => {
                   .map((node) => node.id);
 
                 if (e.evt.shiftKey) {
-                  // Thêm vào danh sách cũ
                   setSelectedNodeIds(prevIds => [...new Set([...prevIds, ...newlySelectedIds])]);
                 } else {
-                  // Thay thế danh sách cũ
                   setSelectedNodeIds(newlySelectedIds);
                 }
               }
@@ -2180,7 +2034,6 @@ const handleFitToScreen = useCallback(() => {
               if (isPanning) {
                 setPos({ x: pos.x + e.evt.movementX, y: pos.y + e.evt.movementY });
               } else if (isSelecting.current) {
-                // Cập nhật kích thước hình chữ nhật chọn
                 const stage = e.target.getStage();
                 if (!stage) return;
                 const pos = stage.getPointerPosition();
@@ -2221,7 +2074,6 @@ const handleFitToScreen = useCallback(() => {
               const newNodes = [...nodes, newNodeData];
               setGraph(newNodes, edges);
               startEditing(newId);
-              // [MERGE GĐ 7+9]
               debouncedPushHistory();
               debouncedPersistData();
               sendPatch('NODE_CREATE', { node: newNodeData, edge: null });
@@ -2234,7 +2086,6 @@ const handleFitToScreen = useCallback(() => {
             }}
           >
             <Layer>
-              {/* [MERGE] Giữ lại logic render Edge của feature/tt */}
               {visibleEdges.map((edge) => {
                 const fromVisual = nodeVisuals.get(edge.from);
                 const toVisual = nodeVisuals.get(edge.to);
@@ -2282,7 +2133,6 @@ const handleFitToScreen = useCallback(() => {
                 return <Line {...lineProps} key={edge.id} />;
               })}
 
-              {/* [MERGE] Giữ lại logic render Node của feature/tt */}
               {visibleNodes.map((node) => {
                 const visual = nodeVisuals.get(node.id);
                 if (!visual) return null;
@@ -2307,7 +2157,6 @@ const handleFitToScreen = useCallback(() => {
                     onClick={(e) => {
                       e.cancelBubble = true;
                       if (e.evt.shiftKey) {
-                        // Giữ Shift: Thêm/bớt
                         setSelectedNodeIds(prevIds => {
                           const newSet = new Set(prevIds);
                           if (newSet.has(node.id)) {
@@ -2318,7 +2167,6 @@ const handleFitToScreen = useCallback(() => {
                           return Array.from(newSet);
                         });
                       } else {
-                        // Click thường: Chỉ chọn node này
                         setSelectedNodeIds([node.id]);
                       }
                     }}
@@ -2345,7 +2193,6 @@ const handleFitToScreen = useCallback(() => {
                       lineHeight={LINE_HEIGHT_MULTIPLIER}
                     />
                     
-                    {/* [MERGE] Giữ lại logic UI mới (root collapse) từ feature/tt */}
                     {node.id === 'root' ? (
                       <>
                         {rootChildSides.left && (
@@ -2392,7 +2239,6 @@ const handleFitToScreen = useCallback(() => {
                         )}
                       </>
                     ) : (
-                      /* [MERGE] Giữ lại logic UI mới (node con collapse) từ feature/tt */
                       hasChildren && (
                         <Group
                           x={(style.side === 'left' ? -w / 2 : w / 2)}
@@ -2418,26 +2264,23 @@ const handleFitToScreen = useCallback(() => {
                     )}
                     {(style as any).hyperlink && (
                     <Group
-                      // Đặt icon ở góc trên bên phải, bên ngoài node
-                      x={w / 2 - 10} // Điều chỉnh vị trí
-                      y={-h / 2 + 10} // Điều chỉnh vị trí
+                      x={w / 2 - 10} 
+                      y={-h / 2 + 10} 
                       onClick={(e) => {
-                        e.cancelBubble = true; // Ngăn không cho click này chọn node
+                        e.cancelBubble = true; 
                         window.open((style as any).hyperlink, '_blank', 'noopener,noreferrer');
                       }}
                       onMouseEnter={(e) => { const stage = e.target.getStage(); if (stage) stage.container().style.cursor = 'pointer'; }}
                       onMouseLeave={(e) => { const stage = e.target.getStage(); if (stage) stage.container().style.cursor = 'default'; }}
                       title={`Mở link: ${(style as any).hyperlink}`}
                     >
-                      {/* Vòng tròn nền nhỏ */}
                       <Circle radius={9} fill="#E0E7FF" stroke="#4F46E5" strokeWidth={1} />
-                      {/* Icon Link (SVG Path) */}
                       <Path 
                         data="M9.25 10.75a.75.75 0 0 0 1.5 0v-1.5h1.5a.75.75 0 0 0 0-1.5h-1.5v-1.5a.75.75 0 0 0-1.5 0v1.5h-1.5a.75.75 0 0 0 0 1.5h1.5v1.5Z M3.75 5.5a2 2 0 0 1 2-2h4.5a2 2 0 0 1 2 2v1a.75.75 0 0 0 1.5 0v-1a3.5 3.5 0 0 0-3.5-3.5h-4.5A3.5 3.5 0 0 0 2.25 5.5v5A3.5 3.5 0 0 0 5.75 14h1a.75.75 0 0 0 0-1.5h-1a2 2 0 0 1-2-2v-5Z"
                         fill="#4F46E5"
                         scale={{ x: 0.8, y: 0.8 }}
-                        offsetX={10} // Căn giữa icon
-                        offsetY={10} // Căn giữa icon
+                        offsetX={10} 
+                        offsetY={10} 
                       />
                     </Group>
                   )}
@@ -2482,7 +2325,6 @@ const handleFitToScreen = useCallback(() => {
                 pushHistory(useEditorStore.getState().nodes, useEditorStore.getState().edges);
                 useEditorStore.setState({ branchLineWidth: width, isDirty: true });
               }}
-              // Chỉ còn 1 hàm set màu nhánh
               onSetGlobalBranchColor={handleSetGlobalBranchColor}
               onSetActiveColorTheme={(themeName) => {
                 pushHistory(useEditorStore.getState().nodes, useEditorStore.getState().edges);
@@ -2496,7 +2338,6 @@ const handleFitToScreen = useCallback(() => {
               onPasteStyle={handlePasteStyle}
               onResetStyle={handleResetStyle}
               
-              // Dummy props để không lỗi nếu interface chưa kịp xóa
               onToggleColoredBranch={() => {}}
             />
           )}

@@ -1,11 +1,3 @@
-/**
- * LỚP PHIÊN DỊCH DỮ LIỆU (DATA MAPPER)
- *
- * [CẬP NHẬT]
- * - Thêm `BeGlobalSettings` để lưu các cài đặt toàn cục (font, màu nền, v.v.)
- * - Cập nhật `normalizeContentFEtoBE` để LẤY cài đặt từ store và lưu vào `globalSettings`.
- * - Cập nhật `normalizeContentBEtoFE` để TRẢ VỀ các cài đặt đã lưu.
- */
 
 // 1. IMPORT TYPES CỦA FRONTEND
 import {
@@ -252,7 +244,6 @@ export function normalizeContentFEtoBE(
     globalStructure,
     globalFont,
     branchLineWidth,
-    isColoredBranch,
     globalBranchColor,
     backgroundColor,
     activeColorThemeId,
@@ -261,7 +252,6 @@ export function normalizeContentFEtoBE(
   const beGlobalSettings: BeGlobalSettings = {
     fontFamily: globalFont,
     branchLineWidth,
-    isColoredBranch,
     globalBranchColor,
     backgroundColor,
     activeColorThemeId,
@@ -290,7 +280,6 @@ export function normalizeContentBEtoFE(
   // [MỚI] Thêm các trường global
   fontFamily?: string;
   branchLineWidth?: number;
-  isColoredBranch?: boolean;
   globalBranchColor?: string;
   backgroundColor?: string;
   activeColorThemeId?: string;
@@ -299,7 +288,6 @@ export function normalizeContentBEtoFE(
   const defaults = {
     fontFamily: fonts[0].value,
     branchLineWidth: 2,
-    isColoredBranch: true,
     globalBranchColor: '#94A3B8',
     activeColorThemeId: 'dawn',
     backgroundColor: colorThemes['dawn'].background,
@@ -319,8 +307,9 @@ export function normalizeContentBEtoFE(
         backgroundColor: '#FFFFFF',
         textColor: '#1E293B',
         borderStyle: 'solid',
-        fontWeight: 'normal',
+        fontWeight: 'bold',
         fontStyle: 'normal',
+        textCase: 'uppercase',
       },
     });
     return {
@@ -328,12 +317,12 @@ export function normalizeContentBEtoFE(
       edges: [],
       layoutMode: 'mindmap',
       theme: 'light',
-      ...defaults, // [MỚI] Trả về mặc định
+      ...defaults, 
     };
   }
 
   const feNodes = beContent.nodes.map(normalizeNodeBEtoFE);
-  const settings = beContent.globalSettings || {}; // [MỚI] Lấy cài đặt đã lưu
+  const settings = beContent.globalSettings || {}; 
 
   return {
     nodes: feNodes,
@@ -344,10 +333,9 @@ export function normalizeContentBEtoFE(
     })),
     layoutMode: beContent.layoutMode || 'mindmap',
     theme: beContent.theme || 'light',
-    // [MỚI] Trả về cài đặt đã lưu, fallback về mặc định
     fontFamily: settings.fontFamily || defaults.fontFamily,
     branchLineWidth: settings.branchLineWidth !== undefined ? settings.branchLineWidth : defaults.branchLineWidth,
-    isColoredBranch: settings.isColoredBranch !== undefined ? settings.isColoredBranch : defaults.isColoredBranch,
+
     globalBranchColor: settings.globalBranchColor || defaults.globalBranchColor,
     activeColorThemeId: settings.activeColorThemeId || defaults.activeColorThemeId,
     backgroundColor: settings.backgroundColor || colorThemes[settings.activeColorThemeId as keyof typeof colorThemes]?.background || defaults.backgroundColor,
@@ -360,7 +348,6 @@ export function normalizeContentBEtoFE(
 // (Không thay đổi)
 // =================================================================================
 
-// Định nghĩa cấu trúc (cũ) của Guest Doc trong localStorage
 type OldFeGuestMapItem = {
   id: string;
   name: string;

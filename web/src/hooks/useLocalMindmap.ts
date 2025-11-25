@@ -84,8 +84,7 @@ export function useLocalMindmap() {
       // 2. Dịch nó sang chuẩn BE (dùng dataMapper)
       const beContent: BeMindmapContent = normalizeContentFEtoBE(
         [feRootNode], // Mảng node FE
-        [], // Mảng edge
-        { layoutMode: 'mindmap', theme: 'light' }
+        [] // Mảng edge
       );
 
       // 3. Lưu chuẩn BE vào localStorage

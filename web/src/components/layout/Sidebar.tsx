@@ -202,7 +202,10 @@ export default function Sidebar() {
               <div className="text-center text-gray-900/40 py-8 text-sm">Không tìm thấy mindmap nào.</div> 
             ) : (
               filteredMindmaps.map((m) => (
-                <div key={m.id} className="group relative w-full text-left p-3 rounded-md hover:bg-gray-100 transition-colors flex items-center justify-between"> {/* Changed */}
+                <div 
+                  key={m.id} 
+                  className={`group relative w-full text-left p-2 rounded-md transition-colors flex items-center justify-between ${m.id === currentMindmapId ? 'bg-gradient-to-r from-blue-50 to-purple-100' : 'hover:bg-gray-100'}`}
+                >
                   {editingId === m.id ? (
                     <input
                       type="text"
@@ -218,7 +221,7 @@ export default function Sidebar() {
                     />
                   ) : (
                     <a href={`/editor/${m.id}`} className="flex-grow min-w-0">
-                      <div className="text-gray-900 font-medium truncate">{m.name}</div> 
+                      <div className="text-sm text-gray-900 font-medium truncate">{m.name}</div> 
                       <div className="text-gray-500 text-xs mt-1"> 
                         {new Date(m.createdAt).toLocaleDateString("vi-VN")}
                       </div>
