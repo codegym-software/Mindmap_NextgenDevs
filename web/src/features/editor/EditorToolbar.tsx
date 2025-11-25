@@ -31,6 +31,7 @@ type EditorToolbarProps = {
   onAddChild: () => void;
   onAddSibling: () => void;
   onSetHyperlink: () => void; 
+  onToggleBoundary: () => void;
 };
 
 const ToolbarButton = ({
@@ -68,7 +69,8 @@ export default function EditorToolbar({
   selectedNodeIds,
   onAddChild,
   onAddSibling,
-  onSetHyperlink
+  onSetHyperlink,
+  onToggleBoundary
 }: EditorToolbarProps) {
   
   const setMindmapsItems = useMindmapsStore(s => s.set);
@@ -76,6 +78,7 @@ export default function EditorToolbar({
 
   const name = useEditorStore(s => s.currentMindmapName);
   const currentMindmapId = useEditorStore(s => s.currentMindmapId); 
+  const { nodes } = useEditorStore();
 
   const setName = (newName: string) => useEditorStore.setState({ currentMindmapName: newName, isDirty: true });
 
@@ -110,6 +113,8 @@ export default function EditorToolbar({
 
   const isSingleNodeFocused = selectedNodeIds.length === 1;
   const isNotRootAndSingle = isSingleNodeFocused && selectedNodeIds[0] !== 'root';
+  const selectedNode = isSingleNodeFocused ? nodes.find(n => n.id === selectedNodeIds[0]) : null;
+
 
   return (
     <div className="fixed top-0 left-0 right-0 h-12 bg-[#F5F5F5] border-b border-gray-200 flex items-center px-4 z-40">
@@ -159,9 +164,10 @@ export default function EditorToolbar({
         </ToolbarButton>
 
         <ToolbarButton
-          onClick={() => alert('Chức năng Boundary (Đường viền) sẽ sớm ra mắt!')}
-          disabled={!isNotRootAndSingle} 
-          title="Tạo đường viền (Sắp ra mắt)"
+          onClick={onToggleBoundary}
+          disabled={!isSingleNodeFocused}
+          title="Tạo hoặc xóa đường viền"
+          className={selectedNode?.boundary ? 'bg-gray-300/80' : ''}
         >
           <BoxSelect size={20} />
         </ToolbarButton>

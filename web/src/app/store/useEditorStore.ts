@@ -110,6 +110,7 @@ export type NodeData = {
   branchLineStyle?: 'bezier' | 'sharp';
   branchLineEnd?: 'none' | 'arrow';
   branchLineThickness?: 'thin' | 'normal' | 'thick';
+  boundary?: boolean;
 };
 
 export type EdgeData = { id: string; from: string; to: string };
@@ -299,6 +300,7 @@ type State = {
   clear: () => void;
   
   set: (p: Partial<State>) => void;
+  toggleNodeBoundary: (nodeId: string) => void;
 };
 
 export const useEditorStore = create<State>((set, get) => ({
@@ -367,4 +369,13 @@ export const useEditorStore = create<State>((set, get) => ({
   clear: () => set({ history: [], future: [] }),
   
   set: (p) => set(p),
+
+  toggleNodeBoundary: (nodeId: string) => {
+    const { nodes, edges } = get();
+    const newNodes = nodes.map((n) =>
+      n.id === nodeId ? { ...n, boundary: !n.boundary } : n
+    );
+    set({ nodes: newNodes, isDirty: true });
+    get().push(newNodes, edges);
+  },
 }));

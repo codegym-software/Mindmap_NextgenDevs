@@ -52,6 +52,7 @@ export type BeNodeData = {
   hyperlink?: string | null;
   notes?: string | null;
   externalReference?: any | null;
+  boundary?: boolean;
 };
 
 export type BeEdgeData = {
@@ -138,6 +139,7 @@ export function normalizeNodeFEtoBE(feNode: FeNodeData): BeNodeData {
     quickStyleId,
     hyperlink,
     styleLocked,
+    boundary,
   } = feNode;
 
   // Tạo object 'style' lồng nhau
@@ -176,6 +178,7 @@ export function normalizeNodeFEtoBE(feNode: FeNodeData): BeNodeData {
     side: side,
     style: beStyle,
     hyperlink: hyperlink,
+    boundary: boundary,
   };
 
   return beNode;
@@ -185,7 +188,7 @@ export function normalizeNodeFEtoBE(feNode: FeNodeData): BeNodeData {
  * Dịch 1 Node: Backend (lồng style) -> Frontend (phẳng)
  */
 export function normalizeNodeBEtoFE(beNode: BeNodeData): FeNodeData {
-  const { id, text, x, y, parentId, collapsed, side, style, hyperlink } = beNode;
+  const { id, text, x, y, parentId, collapsed, side, style, hyperlink, boundary } = beNode;
 
   const safeStyle = style || {};
 
@@ -199,6 +202,7 @@ export function normalizeNodeBEtoFE(beNode: BeNodeData): FeNodeData {
     collapsed: collapsed || false,
     side: side,
     hyperlink: hyperlink || undefined,
+    boundary: boundary || false,
     shape: safeStyle.shape,
     color: safeStyle.backgroundColor,
     borderColor: safeStyle.borderColor,

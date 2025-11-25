@@ -44,6 +44,7 @@ import { useTheme } from '../hooks/useTheme';
 import Spinner from '../components/common/Spinner';
 import { useLocalMindmap } from '../hooks/useLocalMindmap';
 import { useMindmapsStore } from '../app/store/useMindmapsStore';
+import Boundary from '../features/editor/Boundary';
 
 import {
   BeMindmapContent,
@@ -229,8 +230,15 @@ export default function Editor() {
     activeColorThemeId,
     set: setGlobalStore,
     globalBranchColor,
-    isDirty
+    isDirty,
+    toggleNodeBoundary,
   } = useEditorStore();
+
+  const handleToggleBoundary = () => {
+    if (selectedNodeIds.length === 1) {
+      toggleNodeBoundary(selectedNodeIds[0]);
+    }
+  };
 
   // State nội bộ
   const [name, setName] = useState('Loading...');
@@ -1838,6 +1846,7 @@ const handleFitToScreen = useCallback(() => {
           onAddChild={handleToolbarAddChild}
           onAddSibling={handleToolbarAddSibling}
           onSetHyperlink={handleSetHyperlink}
+          onToggleBoundary={handleToggleBoundary}
         />
         <Sidebar />
 
@@ -2086,6 +2095,17 @@ const handleFitToScreen = useCallback(() => {
             }}
           >
             <Layer>
+              {visibleNodes.map((node) =>
+                node.boundary ? (
+                  <Boundary
+                    key={`boundary-${node.id}`}
+                    nodeId={node.id}
+                    nodes={nodes}
+                    edges={edges}
+                    nodeVisuals={nodeVisuals}
+                  />
+                ) : null
+              )}
               {visibleEdges.map((edge) => {
                 const fromVisual = nodeVisuals.get(edge.from);
                 const toVisual = nodeVisuals.get(edge.to);
