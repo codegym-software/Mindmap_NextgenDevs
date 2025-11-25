@@ -2,6 +2,7 @@
 
 package com.example.mindmap.features.mindmap.content;
 
+import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonFormat;
 import lombok.Data;
 
@@ -19,6 +20,11 @@ public class NodeStyle {
         LEFT,
         CENTER,
         RIGHT,
-        JUSTIFY
+        JUSTIFY;
+
+        @JsonCreator
+        public static TextAlign from(String value) {
+            return TextAlign.valueOf(value.toUpperCase());
+        }
     }
 }

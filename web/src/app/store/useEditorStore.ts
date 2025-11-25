@@ -148,6 +148,16 @@ export const DEFAULT_NODE_STYLE: Partial<NodeData> = {
   quickStyleId: 'default',
 };
 
+// Thông tin của người dùng khác đang online
+export type PeerState = {
+  id: string;
+  name: string;
+  color: string;
+  x: number;     // Tọa độ thực (World position)
+  y: number;
+  selectedNodeId?: string; // Node họ đang chọn
+};
+
 /**
  * Tính toán style cuối cùng của một node
  */
@@ -283,6 +293,12 @@ type State = {
   history: Snapshot[];
   future: Snapshot[];
 
+
+  scale: number;
+  pos: { x: number; y: number };
+  setScale: (v: number) => void;
+  setPos: (p: { x: number; y: number }) => void;
+
   // Cài đặt toàn cục
   globalStructure: GlobalStructure;
   globalFont: string;
@@ -296,6 +312,10 @@ type State = {
   isDirty: boolean; // Theo dõi thay đổi
   currentMindmapId: string | null; // ID của map đang mở
   currentMindmapName: string; // Tên của map đang mở
+
+  peers: Record<string, PeerState>; // Dùng Map object cho nhanh: { "userId1": {x,y...}, "userId2":... }
+  updatePeer: (id: string, data: Partial<PeerState>) => void;
+  removePeer: (id: string) => void;
 
   setIsDirty: (isDirty: boolean) => void; 
   setGraph: (n: NodeData[], e: EdgeData[]) => void;
@@ -312,6 +332,27 @@ export const useEditorStore = create<State>((set, get) => ({
   edges: [],
   history: [],
   future: [],
+  peers: {},
+
+  scale: 1,
+  pos: { x: 0, y: 0 },
+
+  setScale: (v) => set({ scale: v }),
+  setPos: (p) => set({ pos: p }),
+
+
+  updatePeer: (id, data) => set((state) => ({
+    peers: {
+      ...state.peers,
+      [id]: { ...(state.peers[id] || {}), ...data, id } // Merge data mới vào cũ
+    }
+  })),
+
+  removePeer: (id) => set((state) => {
+    const newPeers = { ...state.peers };
+    delete newPeers[id];
+    return { peers: newPeers };
+  }),
 
   // Cài đặt toàn cục
   globalStructure: 'mindmap',

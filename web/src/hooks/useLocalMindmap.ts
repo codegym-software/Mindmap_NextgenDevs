@@ -9,6 +9,8 @@ import {
 } from '../services/dataMapper';
 import { NodeData as FeNodeData } from '../app/store/useEditorStore';
 // === KẾT THÚC IMPORT MỚI ===
+import { v4 as uuidv4 } from 'uuid';
+
 
 const KEY = 'mm_guest_maps'; // danh sách guest (dashboard)
 const BUCKET = 'mm_guest_docs'; // nội dung mindmap guest (editor)
@@ -40,7 +42,7 @@ export function useLocalMindmap() {
    */
   const createGuest = useCallback(() => {
     const arr: GuestItem[] = listGuests();
-    const id = 'guest-' + Date.now();
+    const id = 'guest-' + uuidv4();
     const item: GuestItem = {
       id,
       name: 'Mindmap mới',
@@ -85,7 +87,6 @@ export function useLocalMindmap() {
       const beContent: BeMindmapContent = normalizeContentFEtoBE(
         [feRootNode], // Mảng node FE
         [], // Mảng edge
-        { layoutMode: 'mindmap', theme: 'light' }
       );
 
       // 3. Lưu chuẩn BE vào localStorage
