@@ -315,8 +315,8 @@ export default function Editor() {
     null
   );
   const [rootCollapse, setRootCollapse] = useState({ left: false, right: false });
-  const [imageLoadedNodeIdForLayout, setImageLoadedNodeIdForLayout] = useState<string | null>(null); // New state to trigger layout after image load
   const lastEditStopTime = useRef(0);
+  const pendingLayoutRef = useRef(false);
 
   const stageRef = useRef<any>(null);
   const editingInputRef = useRef<HTMLTextAreaElement>(null);
@@ -800,7 +800,30 @@ export default function Editor() {
   // Style & Layout Logic
   // ================================================
 
-  const handleLayout = useCallback(
+  // Helper để so sánh các node có thay đổi vị trí/kích thước không
+const deepEqualNodes = (nodes1: NodeData[], nodes2: NodeData[]): boolean => {
+  if (nodes1.length !== nodes2.length) return false;
+  for (let i = 0; i < nodes1.length; i++) {
+    const n1 = nodes1[i];
+    const n2 = nodes2[i];
+    // Chỉ so sánh các thuộc tính quan trọng cho layout để tránh so sánh sâu không cần thiết
+    if (
+      n1.id !== n2.id ||
+      Math.abs(n1.x - n2.x) > 0.1 || // Dùng ngưỡng nhỏ để tính toán số học dấu phẩy động
+      Math.abs(n1.y - n2.y) > 0.1 ||
+      n1.parentId !== n2.parentId ||
+      n1.side !== n2.side ||
+      n1.collapsed !== n2.collapsed ||
+      n1.imageWidth !== n2.imageWidth || // Include image dimensions
+      n1.imageHeight !== n2.imageHeight
+    ) {
+      return false;
+    }
+  }
+  return true;
+};
+
+const handleLayout = useCallback(
     (keepCamera: boolean = false) => {
       const { globalStructure, nodes, edges } = useEditorStore.getState();
       const layoutType = globalStructure;
@@ -1057,7 +1080,14 @@ export default function Editor() {
       
       newNodes = Array.from(finalNodesMap.values());
 
-      setGraph(newNodes, edges);
+      // Lấy trạng thái hiện tại của nodes từ store
+      const currentNodesInStore = useEditorStore.getState().nodes;
+
+      // Chỉ cập nhật graph nếu có sự thay đổi đáng kể về vị trí/kích thước
+      if (!deepEqualNodes(newNodes, currentNodesInStore)) {
+        setGraph(newNodes, edges);
+      }
+      
       setRootCollapse({ left: false, right: false });
 
       // Logic Căn giữa/Zoom 
@@ -1107,7 +1137,7 @@ export default function Editor() {
         setPos({ x: newX, y: newY });
       }
     },
-    [setGraph, edges] 
+    [nodeVisuals, setGraph, edges] 
   );
 
   const zoomStep = 1.2; 
@@ -1170,13 +1200,7 @@ const handleFitToScreen = useCallback(() => {
     }, 0);
   }, [nodes, isDataLoaded, handleLayout]);
 
-  // useEffect để kích hoạt layout khi ảnh được tải
-  useEffect(() => {
-    if (imageLoadedNodeIdForLayout) {
-      handleLayout(true);
-      setImageLoadedNodeIdForLayout(null); // Reset sau khi kích hoạt layout
-    }
-  }, [imageLoadedNodeIdForLayout, handleLayout]);
+
 
   const stopEditing = useCallback(
     (save: boolean) => {
@@ -1501,8 +1525,9 @@ const handleFitToScreen = useCallback(() => {
     }
   };
 
+  // ...
   const handleImageLoad = useCallback((nodeId: string, width: number, height: number) => {
-    const { nodes, edges } = useEditorStore.getState(); // Lấy state mới nhất trực tiếp
+    const { nodes, edges } = useEditorStore.getState();
     const node = nodes.find(n => n.id === nodeId);
     
     // Chỉ update nếu chưa có kích thước hoặc kích thước thay đổi
@@ -1512,9 +1537,17 @@ const handleFitToScreen = useCallback(() => {
         );
         setGraph(newNodes, edges);
         debouncedPersistData();
-        setImageLoadedNodeIdForLayout(nodeId); // Trigger layout via useEffect
+       
+        pendingLayoutRef.current = true;
     }
-  }, [setGraph, debouncedPersistData, handleLayout]);
+  }, [setGraph, debouncedPersistData]); 
+
+  useEffect(() => {
+    if (pendingLayoutRef.current) {
+      handleLayout(true); 
+      pendingLayoutRef.current = false;
+    }
+  }, [handleLayout]);
 
   const handleDragMove = (e: any, draggedNodeId: string) => {
     const pos = e.target.position();
