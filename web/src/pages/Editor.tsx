@@ -2211,7 +2211,7 @@ const handleFitToScreen = useCallback(() => {
                 let strokeColor = globalBranchColor;
                 strokeColor = globalBranchColor;
                 const strokeWidth = branchLineWidth || 2;
-                const isBezier = toStyle.branchLineStyle === 'bezier' && globalStructure !== 'org';
+                const isBezier = fromStyle.branchLineStyle === 'bezier' && globalStructure !== 'org'; // Changed to fromStyle
                 const lineProps = {
                   points: points,
                   stroke: strokeColor,
@@ -2220,7 +2220,7 @@ const handleFitToScreen = useCallback(() => {
                   lineCap: 'round' as const,
                   lineJoin: 'round' as const,
                 };
-                if (toStyle.branchLineEnd === 'arrow') {
+                if (fromStyle.branchLineEnd === 'arrow') { // Changed to fromStyle
                   return <Arrow {...lineProps} key={edge.id} pointerLength={8} pointerWidth={6} fill={strokeColor} />;
                 }
                 return <Line {...lineProps} key={edge.id} />;
