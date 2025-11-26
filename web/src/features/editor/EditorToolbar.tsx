@@ -3,9 +3,7 @@ import {
   Share2, Undo, Redo, Save, PanelRight, ZoomIn, ZoomOut, ChevronDown,
   AlignHorizontalJustifyCenter, // Node con
   AlignStartVertical,  // Node anh em
-  GitPullRequestDraft,     // Relationship
   BoxSelect,  // Boundary
-  TextSelect, // Summary
 } from 'lucide-react';
 import UserAvatarMenu from '../auth/UserAvatarMenu';
 import { useEditorStore, NodeData } from '../../app/store/useEditorStore'; 
@@ -176,28 +174,12 @@ export default function EditorToolbar({
         <div className="w-px h-6 bg-gray-300 mx-2" />
 
         <ToolbarButton
-          onClick={() => alert('Chức năng Relationship (Liên kết) sẽ sớm ra mắt!')}
-          disabled={!isNotRootAndSingle} 
-          title="Tạo liên kết (Sắp ra mắt)"
-        >
-          <GitPullRequestDraft size={20} />
-        </ToolbarButton>
-
-        <ToolbarButton
           onClick={onToggleBoundary}
           disabled={!isSingleNodeFocused}
           title="Tạo hoặc xóa đường viền"
           className={selectedNode?.boundary ? 'bg-gray-300/80' : ''}
         >
           <BoxSelect size={20} />
-        </ToolbarButton>
-        
-        <ToolbarButton
-          onClick={() => alert('Chức năng Summary (Tóm tắt) sẽ sớm ra mắt!')}
-          disabled={!isNotRootAndSingle} 
-          title="Tạo tóm tắt (Sắp ra mắt)"
-        >
-          <TextSelect size={20} />
         </ToolbarButton>
         
         {/* [THAY ĐỔI] Sử dụng InsertDropdown thay vì nút Hyperlink cũ */}

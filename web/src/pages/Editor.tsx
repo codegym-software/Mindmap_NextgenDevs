@@ -243,25 +243,15 @@ function calculateNodeBox(node: NodeData, style: NodeData) {
 
 const URLImage = ({ src, x, y, width, height, onImageLoad }: any) => {
   const [image] = useImage(src);
-   
+  
   useEffect(() => {
     if (image && onImageLoad) {
       onImageLoad(image.width, image.height);
     }
-  }, [image, onImageLoad]);
+  }, [image, onImageLoad]); 
 
   if (!image) return null;
-   
-  return (
-    <KonvaImage
-      image={image}
-      x={x}
-      y={y}
-      width={width}
-      height={height}
-      cornerRadius={4}
-    />
-  );
+  return <KonvaImage image={image} x={x} y={y} width={width} height={height} cornerRadius={4} />;
 };
 
 export default function Editor() {
@@ -325,6 +315,7 @@ export default function Editor() {
     null
   );
   const [rootCollapse, setRootCollapse] = useState({ left: false, right: false });
+  const [imageLoadedNodeIdForLayout, setImageLoadedNodeIdForLayout] = useState<string | null>(null); // New state to trigger layout after image load
   const lastEditStopTime = useRef(0);
 
   const stageRef = useRef<any>(null);
@@ -1116,7 +1107,7 @@ export default function Editor() {
         setPos({ x: newX, y: newY });
       }
     },
-    [nodeVisuals, setGraph, edges] 
+    [setGraph, edges] 
   );
 
   const zoomStep = 1.2; 
@@ -1178,6 +1169,14 @@ const handleFitToScreen = useCallback(() => {
       handleLayout(true); 
     }, 0);
   }, [nodes, isDataLoaded, handleLayout]);
+
+  // useEffect để kích hoạt layout khi ảnh được tải
+  useEffect(() => {
+    if (imageLoadedNodeIdForLayout) {
+      handleLayout(true);
+      setImageLoadedNodeIdForLayout(null); // Reset sau khi kích hoạt layout
+    }
+  }, [imageLoadedNodeIdForLayout, handleLayout]);
 
   const stopEditing = useCallback(
     (save: boolean) => {
@@ -1502,19 +1501,20 @@ const handleFitToScreen = useCallback(() => {
     }
   };
 
-  // [MỚI] Hàm xử lý khi ảnh load xong để update lại layout chính xác
   const handleImageLoad = useCallback((nodeId: string, width: number, height: number) => {
-    // Cập nhật lại kích thước ảnh thực tế vào node data để tính toán layout chuẩn
-    // Chỉ cập nhật nếu kích thước thay đổi để tránh loop
+    const { nodes, edges } = useEditorStore.getState(); // Lấy state mới nhất trực tiếp
     const node = nodes.find(n => n.id === nodeId);
+    
+    // Chỉ update nếu chưa có kích thước hoặc kích thước thay đổi
     if (node && (node.imageWidth !== width || node.imageHeight !== height)) {
-        // Lưu ý: không gọi setGraph ngay lập tức trong render loop, 
-        // nhưng use-image hook handle việc này khá tốt.
-        // Ở đây ta có thể gọi handleUpdateNode "ngầm" hoặc bỏ qua nếu chấp nhận layout nhảy nhẹ 1 lần.
-        // Để đơn giản: ta chỉ force update layout
-        setTimeout(() => handleLayout(true), 0);
+        const newNodes = nodes.map(n => 
+            n.id === nodeId ? { ...n, imageWidth: width, imageHeight: height } : n
+        );
+        setGraph(newNodes, edges);
+        debouncedPersistData();
+        setImageLoadedNodeIdForLayout(nodeId); // Trigger layout via useEffect
     }
-  }, [nodes, handleLayout]);
+  }, [setGraph, debouncedPersistData, handleLayout]);
 
   const handleDragMove = (e: any, draggedNodeId: string) => {
     const pos = e.target.position();
@@ -2138,7 +2138,7 @@ const handleFitToScreen = useCallback(() => {
             }}
             onDblClick={(e) => {
               const stage = e.target.getStage();
-              if (e.target !== stage || !stage) return;
+              if (e.target !== stage) return;
               const pointerPos = stage.getPointerPosition();
               if (!pointerPos) return;
               const worldX = (pointerPos.x - pos.x) / scale;
