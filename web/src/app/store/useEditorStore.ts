@@ -93,6 +93,11 @@ export type NodeData = {
   borderWidth?: number;
   borderStyle?: 'solid' | 'dashed' | 'dotted';
 
+  //ảnh
+  imageUrl?: string;      
+  imageWidth?: number; 
+  imageHeight?: number;
+
   // Text
   fontFamily?: string;
   fontSize?: number;
@@ -201,7 +206,8 @@ export function getNodeComputedStyle(
     'shape', 'color', 'borderColor', 'borderWidth', 'borderStyle',
     'fontFamily', 'fontSize', 'fontWeight', 'fontStyle', 'textDecoration', 
     'textAlign', 'textColor', 'textCase', 'nodeLength',
-    'branchLineStyle', 'branchLineEnd', 'branchLineThickness'
+    'branchLineStyle', 'branchLineEnd', 'branchLineThickness',
+    'imageUrl', 'imageWidth', 'imageHeight', 'hyperlink'
   ];
 
   const isRoot = node.id === 'root';
@@ -270,6 +276,9 @@ export function applyNodeDefaults(node: NodeData, theme: ColorTheme): Partial<No
     branchLineThickness: undefined,
     styleLocked: undefined, 
     hyperlink: undefined, 
+    imageUrl: undefined,
+    imageWidth: undefined,
+    imageHeight: undefined, 
   };
 }
 

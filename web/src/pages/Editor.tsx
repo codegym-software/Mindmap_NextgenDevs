@@ -16,9 +16,13 @@ import {
   Circle,
   Path,
   Arrow,
+  Image as KonvaImage,
 } from 'react-konva';
 import * as dagre from 'dagre';
+import useImage from 'use-image'; 
 import { useDebouncedCallback } from 'use-debounce';
+
+// Sử dụng alias ../ để import an toàn
 import EditorToolbar from '../features/editor/EditorToolbar';
 import Sidebar from '../components/layout/Sidebar';
 import FormattingToolbar from '../features/editor/FormattingToolbar';
@@ -146,7 +150,8 @@ function saveGuestDoc(
 }
 
 function calculateNodeBox(node: NodeData, style: NodeData) {
-  const { fontSize, nodeLength, nodeText, textCase, shape } = style;
+  // [SỬA LỖI] Thêm imageUrl vào destructuring
+  const { fontSize, nodeLength, nodeText, textCase, shape, imageUrl } = style; 
   const borderWidth = style.borderWidth || 0;
   let processedText = nodeText || '';
   if (textCase === 'uppercase') processedText = processedText.toUpperCase();
@@ -203,8 +208,61 @@ function calculateNodeBox(node: NodeData, style: NodeData) {
     wrappedLines.length * finalLineHeight + PADDING_Y * 2
   );
 
-  return { w, h, textToRender: wrappedLines.join('\n'), finalFontSize };
+  let imageHeight = 0;
+  let imageWidthDisplay = 0;
+   
+  if (imageUrl) {
+    // Nếu có ảnh, node sẽ rộng ra hoặc ảnh fit theo width của node
+    // Mặc định ảnh sẽ fit width của node (trừ padding)
+    imageWidthDisplay = w - (PADDING_X * 2) - (borderWidth * 2);
+    // Giả sử tỉ lệ 16:9 hoặc lấy tỉ lệ thật nếu đã lưu trong node
+    // Ở đây tạm tính chiều cao ảnh khoảng 2/3 chiều rộng hiển thị cho đẹp nếu chưa load xong
+    // Nếu đã có imageHeight từ store (sau khi load) thì dùng
+    imageHeight = imageWidthDisplay * 0.6; 
+    if (style.imageHeight && style.imageWidth) {
+       imageHeight = (style.imageHeight / style.imageWidth) * imageWidthDisplay;
+    }
+  }
+
+  // Nếu có ảnh, chiều cao tổng sẽ bao gồm ảnh + khoảng cách (10px) + text
+  // Nếu textHeight đã bao gồm padding, ta chỉ cần cộng thêm ảnh
+  let totalH = h;
+  if (imageUrl) {
+      totalH = h + imageHeight + 10;
+  }
+
+  return { 
+    w, 
+    h: totalH, // Trả về tổng chiều cao
+    textToRender: wrappedLines.join('\n'), 
+    finalFontSize,
+    imageHeight,        
+    imageWidthDisplay   
+  };
 }
+
+const URLImage = ({ src, x, y, width, height, onImageLoad }: any) => {
+  const [image] = useImage(src);
+   
+  useEffect(() => {
+    if (image && onImageLoad) {
+      onImageLoad(image.width, image.height);
+    }
+  }, [image, onImageLoad]);
+
+  if (!image) return null;
+   
+  return (
+    <KonvaImage
+      image={image}
+      x={x}
+      y={y}
+      width={width}
+      height={height}
+      cornerRadius={4}
+    />
+  );
+};
 
 export default function Editor() {
   const { id } = useParams<{ id?: string }>();
@@ -921,7 +979,7 @@ export default function Editor() {
                 if (idx > 0) childrenWidth += 30;
               });
               w = Math.max(w, childrenWidth);
-         }
+           }
           }
           g.setNode(node.id, { label: node.nodeText, width: w, height: h });
         });
@@ -1086,7 +1144,7 @@ export default function Editor() {
     const mousePointTo = {
       x: (center.x - pos.x) / oldScale,
       y: (center.y - pos.y) / oldScale,
-  };
+    };
 
   // Đặt scale mới
   setScale(newScale);
@@ -1424,7 +1482,7 @@ const handleFitToScreen = useCallback(() => {
   if (!node) return;
   const currentUrl = (node as any).hyperlink || "";
   const url = window.prompt("Nhập URL cho liên kết (để trống để xóa):", currentUrl);
-  
+   
   if (url !== null) { 
     handleUpdateNode({ hyperlink: url || undefined });
   }
@@ -1443,6 +1501,20 @@ const handleFitToScreen = useCallback(() => {
       node.stopDrag();
     }
   };
+
+  // [MỚI] Hàm xử lý khi ảnh load xong để update lại layout chính xác
+  const handleImageLoad = useCallback((nodeId: string, width: number, height: number) => {
+    // Cập nhật lại kích thước ảnh thực tế vào node data để tính toán layout chuẩn
+    // Chỉ cập nhật nếu kích thước thay đổi để tránh loop
+    const node = nodes.find(n => n.id === nodeId);
+    if (node && (node.imageWidth !== width || node.imageHeight !== height)) {
+        // Lưu ý: không gọi setGraph ngay lập tức trong render loop, 
+        // nhưng use-image hook handle việc này khá tốt.
+        // Ở đây ta có thể gọi handleUpdateNode "ngầm" hoặc bỏ qua nếu chấp nhận layout nhảy nhẹ 1 lần.
+        // Để đơn giản: ta chỉ force update layout
+        setTimeout(() => handleLayout(true), 0);
+    }
+  }, [nodes, handleLayout]);
 
   const handleDragMove = (e: any, draggedNodeId: string) => {
     const pos = e.target.position();
@@ -1575,7 +1647,7 @@ const handleFitToScreen = useCallback(() => {
     debouncedPersistData();
     sendPatch('BACKGROUND_CHANGE', { color });
   };
-  
+   
   const handleSetGlobalBranchColor = (color: string) => {
     pushHistory(useEditorStore.getState().nodes, useEditorStore.getState().edges);
     setGlobalStore({ globalBranchColor: color });
@@ -1585,7 +1657,7 @@ const handleFitToScreen = useCallback(() => {
       return { 
         ...n, 
         branchColor: undefined,
-        color: undefined,       
+        color: undefined,        
         borderColor: undefined, 
         textColor: undefined    
       };
@@ -1812,9 +1884,9 @@ const handleFitToScreen = useCallback(() => {
         {fonts
           .map(
             (font) =>
-              `@import url('https://fonts.googleapis.com/css2?family=${
+              `..import url('https://fonts.googleapis.com/css2?family=${
                 font.value.split(',')[0].replace(/ /g, '+')
-              }:wght@400;700&display=swap');`
+              }:wght..400;700&display=swap');`
           )
           .join('\n')}
       </style>
@@ -1846,6 +1918,7 @@ const handleFitToScreen = useCallback(() => {
           onAddChild={handleToolbarAddChild}
           onAddSibling={handleToolbarAddSibling}
           onSetHyperlink={handleSetHyperlink}
+          onUpdateNode={handleUpdateNode}
           onToggleBoundary={handleToggleBoundary}
         />
         <Sidebar />
@@ -1893,7 +1966,7 @@ const handleFitToScreen = useCallback(() => {
                     } else if (e.key === 'Tab') {
                       e.preventDefault(); 
                       stopEditing(true); 
-                  }
+                    }
                   }}
                   style={{
                     position: 'absolute',
@@ -2157,7 +2230,7 @@ const handleFitToScreen = useCallback(() => {
                 const visual = nodeVisuals.get(node.id);
                 if (!visual) return null;
                 const { style, box } = visual;
-                const { w, h, textToRender, finalFontSize } = box;
+                const { w, h, textToRender, finalFontSize, imageHeight, imageWidthDisplay } = box;
                 const isSelected = selectedIdsSet.has(node.id);
                 const isDropTarget = node.id === dropTargetId;
                 const hasChildren = nodesWithChildren.has(node.id);
@@ -2198,10 +2271,27 @@ const handleFitToScreen = useCallback(() => {
                       <Rect {...shapeProps} cornerRadius={style.shape === 'roundedRect' ? 8 : 0} />
                     )}
                     
+                    {/* [MỚI] Hiển thị ảnh trong Node */}
+                    {style.imageUrl && (
+                      <URLImage 
+                        src={style.imageUrl}
+                        x={-w/2 + (style.borderWidth || 0) + PADDING_X} 
+                        y={-h/2 + (style.borderWidth || 0) + PADDING_Y} 
+                        width={imageWidthDisplay}
+                        height={imageHeight}
+                        onImageLoad={(imgW: number, imgH: number) => handleImageLoad(node.id, imgW, imgH)}
+                      />
+                    )}
+
                     <Text
                       visible={editingNodeId !== node.id}
                       text={textToRender || '(...)'}
-                      width={w} height={h} offsetX={w / 2} offsetY={h / 2}
+                      width={w} 
+                      // Nếu có ảnh, text height sẽ là phần còn lại
+                      height={style.imageUrl ? (h - imageHeight - 10) : h} 
+                      offsetX={w / 2} 
+                      // Offset Y cần tính lại: nếu có ảnh, text bị đẩy xuống
+                      offsetY={style.imageUrl ? (h / 2) - imageHeight - 10 : h / 2} 
                       align={style.textAlign}
                       verticalAlign="middle"
                       fill={style.textColor}

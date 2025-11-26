@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   Share2, Undo, Redo, Save, PanelRight, ZoomIn, ZoomOut, ChevronDown,
   AlignHorizontalJustifyCenter, // Node con
@@ -6,11 +6,15 @@ import {
   GitPullRequestDraft,     // Relationship
   BoxSelect,  // Boundary
   TextSelect, // Summary
-  PlusSquare  // Insert
 } from 'lucide-react';
 import UserAvatarMenu from '../auth/UserAvatarMenu';
-import { useEditorStore } from '../../app/store/useEditorStore'; 
+import { useEditorStore, NodeData } from '../../app/store/useEditorStore'; 
 import { useMindmapsStore } from '../../app/store/useMindmapsStore';
+
+// New components
+import InsertDropdown from './InsertDropdown';
+import HyperlinkModal from './modals/HyperlinkModal';
+import ImageModal from './modals/ImageModal';
 
 type EditorToolbarProps = {
   onCommitName: () => void; 
@@ -30,8 +34,9 @@ type EditorToolbarProps = {
   selectedNodeIds: string[];
   onAddChild: () => void;
   onAddSibling: () => void;
-  onSetHyperlink: () => void; 
+  onSetHyperlink?: () => void; // Đánh dấu optional vì đã có logic mới
   onToggleBoundary: () => void;
+  onUpdateNode: (updates: Partial<NodeData>) => void; // [MỚI]
 };
 
 const ToolbarButton = ({
@@ -70,7 +75,8 @@ export default function EditorToolbar({
   onAddChild,
   onAddSibling,
   onSetHyperlink,
-  onToggleBoundary
+  onToggleBoundary,
+  onUpdateNode
 }: EditorToolbarProps) {
   
   const setMindmapsItems = useMindmapsStore(s => s.set);
@@ -79,6 +85,10 @@ export default function EditorToolbar({
   const name = useEditorStore(s => s.currentMindmapName);
   const currentMindmapId = useEditorStore(s => s.currentMindmapId); 
   const { nodes } = useEditorStore();
+
+  // [MỚI] State cho Modals
+  const [isLinkModalOpen, setIsLinkModalOpen] = useState(false);
+  const [isImageModalOpen, setIsImageModalOpen] = useState(false);
 
   const setName = (newName: string) => useEditorStore.setState({ currentMindmapName: newName, isDirty: true });
 
@@ -92,6 +102,7 @@ export default function EditorToolbar({
     }
   };
 
+  // Logic Zoom
   const zoomLevels: number[] = [];
   for (let i = 50; i <= 400; i += 50) {
     zoomLevels.push(i);
@@ -115,8 +126,17 @@ export default function EditorToolbar({
   const isNotRootAndSingle = isSingleNodeFocused && selectedNodeIds[0] !== 'root';
   const selectedNode = isSingleNodeFocused ? nodes.find(n => n.id === selectedNodeIds[0]) : null;
 
+  // Handlers Update Node
+  const handleConfirmLink = (url: string | undefined) => {
+    onUpdateNode({ hyperlink: url });
+  };
+
+  const handleConfirmImage = (url: string) => {
+    onUpdateNode({ imageUrl: url });
+  };
 
   return (
+    <>
     <div className="fixed top-0 left-0 right-0 h-12 bg-[#F5F5F5] border-b border-gray-200 flex items-center px-4 z-40">
 
       {/* 1. PHẦN BÊN TRÁI (Logo, Tên) */}
@@ -180,13 +200,12 @@ export default function EditorToolbar({
           <TextSelect size={20} />
         </ToolbarButton>
         
-        <ToolbarButton
-          onClick={onSetHyperlink} 
-          disabled={!isSingleNodeFocused} 
-          title="Chèn Hyperlink"
-        >
-          <PlusSquare size={20} />
-        </ToolbarButton>
+        {/* [THAY ĐỔI] Sử dụng InsertDropdown thay vì nút Hyperlink cũ */}
+        <InsertDropdown 
+          disabled={!isSingleNodeFocused}
+          onInsertLink={() => setIsLinkModalOpen(true)}
+          onInsertImage={() => setIsImageModalOpen(true)}
+        />
       </div>
 
       {/* 3. PHẦN BÊN PHẢI (Zoom, Undo, Chia sẻ...) */}
@@ -220,7 +239,7 @@ export default function EditorToolbar({
 
         <div className="w-px h-6 bg-gray-300 mx-2" />
 
-        <button
+        <button 
           onClick={onSave}
           disabled={!isDirty} // Ẩn (mờ) khi !isDirty, Hiện khi isDirty
           title={isDirty ? "Lưu thay đổi (Ctrl+S)" : "Chưa có gì thay đổi"}
@@ -238,5 +257,20 @@ export default function EditorToolbar({
         <UserAvatarMenu />
       </div>
     </div>
+
+    {/* Modals */}
+    <HyperlinkModal 
+      isOpen={isLinkModalOpen}
+      onClose={() => setIsLinkModalOpen(false)}
+      currentUrl={selectedNode?.hyperlink}
+      onConfirm={handleConfirmLink}
+    />
+    
+    <ImageModal
+      isOpen={isImageModalOpen}
+      onClose={() => setIsImageModalOpen(false)}
+      onConfirm={handleConfirmImage}
+    />
+    </>
   );
 }
