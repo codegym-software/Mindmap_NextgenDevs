@@ -1,0 +1,1 @@
+Phần undo/redo không khớp realtime, cần chỉnh lại thuật toán cá nhân hoá;

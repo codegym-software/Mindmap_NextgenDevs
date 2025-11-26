@@ -3,6 +3,7 @@ import { Layer, Group, Text, Path, Rect } from 'react-konva';
 import { useEditorStore } from '../../app/store/useEditorStore';
 
 // Icon mũi tên chuột (SVG Path chuẩn)
+// Icon mouse std figma
 const CURSOR_PATH = "M5.65376 12.3673H5.46026L5.31717 12.4976L0.500002 16.8829L0.500002 1.19841L11.7841 12.3673H5.65376Z";
 
 export default function CursorLayer() {
@@ -28,7 +29,7 @@ export default function CursorLayer() {
             shadowColor="black"
             shadowBlur={2}
             shadowOpacity={0.3}
-            rotation={-15} // Nghiêng nhẹ cho giống chuột thật
+            rotation={-17} // Nghiêng nhẹ cho giống chuột thật
           />
           
           {/* 2. Vẽ nhãn tên (Badge) */}
@@ -60,6 +61,7 @@ const Badge = ({ text, color }: { text: string, color: string }) => {
                 opacity={0.9}
             />
             {/* Chữ */}
+            {/* Set front chu*/}
             <Text 
                 text={text} 
                 fill="white" 
