@@ -44,7 +44,7 @@ const Boundary: React.FC<BoundaryProps> = ({ nodeId, nodes, edges, nodeVisuals }
     }
   });
 
-  const padding = 20;
+  const padding = 8;
   const x = minX - padding;
   const y = minY - padding;
   const width = maxX - minX + padding * 2;
