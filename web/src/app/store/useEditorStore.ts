@@ -151,11 +151,11 @@ export const DEFAULT_NODE_STYLE: Partial<NodeData> = {
 // Thông tin của người dùng khác đang online
 export type PeerState = {
   id: string;
-  name: string;
-  color: string;
-  x: number;     // Tọa độ thực (World position)
-  y: number;
-  selectedNodeId?: string; // Node họ đang chọn
+  name: string;  // Tĩnh (nhận từ USER_JOINED/PRESENCE)
+  color: string; // Tĩnh (tính từ ID)
+  x: number;     // Động (nhận từ CURSOR_MOVE)
+  y: number;     // Động
+  lastSeen: number; // Để xử lý Timeout (Ghost cursor) sau này
 };
 
 /**
@@ -314,7 +314,8 @@ type State = {
   currentMindmapName: string; // Tên của map đang mở
 
   peers: Record<string, PeerState>; // Dùng Map object cho nhanh: { "userId1": {x,y...}, "userId2":... }
-  updatePeer: (id: string, data: Partial<PeerState>) => void;
+  updatePeerCursor: (id: string, x: number, y: number) => void;
+  setPeerInfo: (id: string, info: { name: string; color: string }) => void;
   removePeer: (id: string) => void;
 
   setIsDirty: (isDirty: boolean) => void; 
@@ -340,19 +341,39 @@ export const useEditorStore = create<State>((set, get) => ({
   setScale: (v) => set({ scale: v }),
   setPos: (p) => set({ pos: p }),
 
+  // CHỈ cập nhật tọa độ cursor
+  updatePeerCursor: (id, x, y) =>
+    set((state) => {
+      const peer = state.peers[id];
+      if (!peer) return state;
 
-  updatePeer: (id, data) => set((state) => ({
-    peers: {
-      ...state.peers,
-      [id]: { ...(state.peers[id] || {}), ...data, id } // Merge data mới vào cũ
-    }
-  })),
+      return {
+        peers: {
+          ...state.peers,
+          [id]: { ...peer, x, y, lastSeen: Date.now() },
+        },
+      };
+    }),
 
-  removePeer: (id) => set((state) => {
-    const newPeers = { ...state.peers };
-    delete newPeers[id];
-    return { peers: newPeers };
-  }),
+  // Thông tin tĩnh khi user join
+  setPeerInfo: (id, info) =>
+    set((state) => ({
+      peers: {
+        ...state.peers,
+        [id]: {
+          ...(state.peers[id] || { x: 0, y: 0, lastSeen: Date.now() }),
+          id,
+          ...info,
+        },
+      },
+    })),
+
+  // Xoá peer
+  removePeer: (id) =>
+    set((state) => {
+      const { [id]: _, ...rest } = state.peers;
+      return { peers: rest };
+    }),
 
   // Cài đặt toàn cục
   globalStructure: 'mindmap',

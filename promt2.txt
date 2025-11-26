@@ -1,223 +1,711 @@
-* Hiện tại thì tôi đang test thì, tôi chỉnh Bên A sang bên B thì bị thế này, mà chỉnh bên B thì bên A cũng bị ngược lại *
+*Tôi cần bạn gộp hai file này lại với nhau file có tính năng mới nhưng chưa đầy đủ và file của tôi cầnt hêm tính năng mới :*
+* Bạn hãy viết lại thành một file đầy đủ có comment như trong code nhé *
 
-chunk-GMMWARBA.js?v=30ce3ece:21150 Download the React DevTools for a better development experience: https://reactjs.org/link/react-devtools
-useRealtime.ts:100 🟢 WebSocket connected: 692531abbd8d544c19e0d200
-Editor.tsx:341 🚫 Not owner, skipping REST auto-save (Real-time patches sent instead)
-Editor.tsx:157 Uncaught TypeError: Cannot read properties of null (reading 'from')
-    at Editor.tsx:157:22
-    at Array.forEach (<anonymous>)
-    at Editor.tsx:156:11
-    at updateMemo (chunk-GMMWARBA.js?v=30ce3ece:11799:27)
-    at Object.useMemo (chunk-GMMWARBA.js?v=30ce3ece:12315:24)
-    at useMemo (chunk-H2BVA2C6.js?v=30ce3ece:1094:29)
-    at Editor (Editor.tsx:153:24)
-    at renderWithHooks (chunk-GMMWARBA.js?v=30ce3ece:11137:26)
-    at updateFunctionComponent (chunk-GMMWARBA.js?v=30ce3ece:14171:28)
-    at beginWork (chunk-GMMWARBA.js?v=30ce3ece:15513:22)
-(anonymous) @ Editor.tsx:157
-(anonymous) @ Editor.tsx:156
-updateMemo @ chunk-GMMWARBA.js?v=30ce3ece:11799
-useMemo @ chunk-GMMWARBA.js?v=30ce3ece:12315
-useMemo @ chunk-H2BVA2C6.js?v=30ce3ece:1094
-Editor @ Editor.tsx:153
-renderWithHooks @ chunk-GMMWARBA.js?v=30ce3ece:11137
-updateFunctionComponent @ chunk-GMMWARBA.js?v=30ce3ece:14171
-beginWork @ chunk-GMMWARBA.js?v=30ce3ece:15513
-callCallback2 @ chunk-GMMWARBA.js?v=30ce3ece:3221
-invokeGuardedCallbackDev @ chunk-GMMWARBA.js?v=30ce3ece:3246
-invokeGuardedCallback @ chunk-GMMWARBA.js?v=30ce3ece:3280
-beginWork$1 @ chunk-GMMWARBA.js?v=30ce3ece:19359
-performUnitOfWork @ chunk-GMMWARBA.js?v=30ce3ece:18792
-workLoopSync @ chunk-GMMWARBA.js?v=30ce3ece:18731
-renderRootSync @ chunk-GMMWARBA.js?v=30ce3ece:18710
-performSyncWorkOnRoot @ chunk-GMMWARBA.js?v=30ce3ece:18468
-flushSyncCallbacks @ chunk-GMMWARBA.js?v=30ce3ece:8707
-(anonymous) @ chunk-GMMWARBA.js?v=30ce3ece:18218
-react-konva.js?v=30ce3ece:27408 Error handled by React Router default ErrorBoundary: TypeError: Cannot read properties of null (reading 'from')
-    at Editor.tsx:157:22
-    at Array.forEach (<anonymous>)
-    at Editor.tsx:156:11
-    at updateMemo (chunk-GMMWARBA.js?v=30ce3ece:11799:27)
-    at Object.useMemo (chunk-GMMWARBA.js?v=30ce3ece:12315:24)
-    at useMemo (chunk-H2BVA2C6.js?v=30ce3ece:1094:29)
-    at Editor (Editor.tsx:153:24)
-    at renderWithHooks (chunk-GMMWARBA.js?v=30ce3ece:11137:26)
-    at updateFunctionComponent (chunk-GMMWARBA.js?v=30ce3ece:14171:28)
-    at beginWork (chunk-GMMWARBA.js?v=30ce3ece:15513:22)
-console.error @ react-konva.js?v=30ce3ece:27408
-DefaultErrorComponent @ react-router-dom.js?v=30ce3ece:4031
-renderWithHooks @ chunk-GMMWARBA.js?v=30ce3ece:11137
-mountIndeterminateComponent @ chunk-GMMWARBA.js?v=30ce3ece:14515
-beginWork @ chunk-GMMWARBA.js?v=30ce3ece:15503
-beginWork$1 @ chunk-GMMWARBA.js?v=30ce3ece:19347
-performUnitOfWork @ chunk-GMMWARBA.js?v=30ce3ece:18792
-workLoopSync @ chunk-GMMWARBA.js?v=30ce3ece:18731
-renderRootSync @ chunk-GMMWARBA.js?v=30ce3ece:18710
-performSyncWorkOnRoot @ chunk-GMMWARBA.js?v=30ce3ece:18468
-flushSyncCallbacks @ chunk-GMMWARBA.js?v=30ce3ece:8707
-(anonymous) @ chunk-GMMWARBA.js?v=30ce3ece:18218
-react-konva.js?v=30ce3ece:27408 Error handled by React Router default ErrorBoundary: TypeError: Cannot read properties of null (reading 'from')
-    at Editor.tsx:157:22
-    at Array.forEach (<anonymous>)
-    at Editor.tsx:156:11
-    at updateMemo (chunk-GMMWARBA.js?v=30ce3ece:11799:27)
-    at Object.useMemo (chunk-GMMWARBA.js?v=30ce3ece:12315:24)
-    at useMemo (chunk-H2BVA2C6.js?v=30ce3ece:1094:29)
-    at Editor (Editor.tsx:153:24)
-    at renderWithHooks (chunk-GMMWARBA.js?v=30ce3ece:11137:26)
-    at updateFunctionComponent (chunk-GMMWARBA.js?v=30ce3ece:14171:28)
-    at beginWork (chunk-GMMWARBA.js?v=30ce3ece:15513:22)
-console.error @ react-konva.js?v=30ce3ece:27408
-DefaultErrorComponent @ react-router-dom.js?v=30ce3ece:4031
-renderWithHooks @ chunk-GMMWARBA.js?v=30ce3ece:11137
-mountIndeterminateComponent @ chunk-GMMWARBA.js?v=30ce3ece:14565
-beginWork @ chunk-GMMWARBA.js?v=30ce3ece:15503
-beginWork$1 @ chunk-GMMWARBA.js?v=30ce3ece:19347
-performUnitOfWork @ chunk-GMMWARBA.js?v=30ce3ece:18792
-workLoopSync @ chunk-GMMWARBA.js?v=30ce3ece:18731
-renderRootSync @ chunk-GMMWARBA.js?v=30ce3ece:18710
-performSyncWorkOnRoot @ chunk-GMMWARBA.js?v=30ce3ece:18468
-flushSyncCallbacks @ chunk-GMMWARBA.js?v=30ce3ece:8707
-(anonymous) @ chunk-GMMWARBA.js?v=30ce3ece:18218
-Editor.tsx:157 Uncaught TypeError: Cannot read properties of null (reading 'from')
-    at Editor.tsx:157:22
-    at Array.forEach (<anonymous>)
-    at Editor.tsx:156:11
-    at updateMemo (chunk-GMMWARBA.js?v=30ce3ece:11799:27)
-    at Object.useMemo (chunk-GMMWARBA.js?v=30ce3ece:12315:24)
-    at useMemo (chunk-H2BVA2C6.js?v=30ce3ece:1094:29)
-    at Editor (Editor.tsx:153:24)
-    at renderWithHooks (chunk-GMMWARBA.js?v=30ce3ece:11137:26)
-    at updateFunctionComponent (chunk-GMMWARBA.js?v=30ce3ece:14171:28)
-    at beginWork (chunk-GMMWARBA.js?v=30ce3ece:15513:22)
-(anonymous) @ Editor.tsx:157
-(anonymous) @ Editor.tsx:156
-updateMemo @ chunk-GMMWARBA.js?v=30ce3ece:11799
-useMemo @ chunk-GMMWARBA.js?v=30ce3ece:12315
-useMemo @ chunk-H2BVA2C6.js?v=30ce3ece:1094
-Editor @ Editor.tsx:153
-renderWithHooks @ chunk-GMMWARBA.js?v=30ce3ece:11137
-updateFunctionComponent @ chunk-GMMWARBA.js?v=30ce3ece:14171
-beginWork @ chunk-GMMWARBA.js?v=30ce3ece:15513
-callCallback2 @ chunk-GMMWARBA.js?v=30ce3ece:3221
-invokeGuardedCallbackDev @ chunk-GMMWARBA.js?v=30ce3ece:3246
-invokeGuardedCallback @ chunk-GMMWARBA.js?v=30ce3ece:3280
-beginWork$1 @ chunk-GMMWARBA.js?v=30ce3ece:19359
-performUnitOfWork @ chunk-GMMWARBA.js?v=30ce3ece:18792
-workLoopSync @ chunk-GMMWARBA.js?v=30ce3ece:18731
-renderRootSync @ chunk-GMMWARBA.js?v=30ce3ece:18710
-recoverFromConcurrentError @ chunk-GMMWARBA.js?v=30ce3ece:18327
-performSyncWorkOnRoot @ chunk-GMMWARBA.js?v=30ce3ece:18473
-flushSyncCallbacks @ chunk-GMMWARBA.js?v=30ce3ece:8707
-(anonymous) @ chunk-GMMWARBA.js?v=30ce3ece:18218
-react-konva.js?v=30ce3ece:27408 Error handled by React Router default ErrorBoundary: TypeError: Cannot read properties of null (reading 'from')
-    at Editor.tsx:157:22
-    at Array.forEach (<anonymous>)
-    at Editor.tsx:156:11
-    at updateMemo (chunk-GMMWARBA.js?v=30ce3ece:11799:27)
-    at Object.useMemo (chunk-GMMWARBA.js?v=30ce3ece:12315:24)
-    at useMemo (chunk-H2BVA2C6.js?v=30ce3ece:1094:29)
-    at Editor (Editor.tsx:153:24)
-    at renderWithHooks (chunk-GMMWARBA.js?v=30ce3ece:11137:26)
-    at updateFunctionComponent (chunk-GMMWARBA.js?v=30ce3ece:14171:28)
-    at beginWork (chunk-GMMWARBA.js?v=30ce3ece:15513:22)
-console.error @ react-konva.js?v=30ce3ece:27408
-DefaultErrorComponent @ react-router-dom.js?v=30ce3ece:4031
-renderWithHooks @ chunk-GMMWARBA.js?v=30ce3ece:11137
-mountIndeterminateComponent @ chunk-GMMWARBA.js?v=30ce3ece:14515
-beginWork @ chunk-GMMWARBA.js?v=30ce3ece:15503
-beginWork$1 @ chunk-GMMWARBA.js?v=30ce3ece:19347
-performUnitOfWork @ chunk-GMMWARBA.js?v=30ce3ece:18792
-workLoopSync @ chunk-GMMWARBA.js?v=30ce3ece:18731
-renderRootSync @ chunk-GMMWARBA.js?v=30ce3ece:18710
-recoverFromConcurrentError @ chunk-GMMWARBA.js?v=30ce3ece:18327
-performSyncWorkOnRoot @ chunk-GMMWARBA.js?v=30ce3ece:18473
-flushSyncCallbacks @ chunk-GMMWARBA.js?v=30ce3ece:8707
-(anonymous) @ chunk-GMMWARBA.js?v=30ce3ece:18218
-react-konva.js?v=30ce3ece:27408 Error handled by React Router default ErrorBoundary: TypeError: Cannot read properties of null (reading 'from')
-    at Editor.tsx:157:22
-    at Array.forEach (<anonymous>)
-    at Editor.tsx:156:11
-    at updateMemo (chunk-GMMWARBA.js?v=30ce3ece:11799:27)
-    at Object.useMemo (chunk-GMMWARBA.js?v=30ce3ece:12315:24)
-    at useMemo (chunk-H2BVA2C6.js?v=30ce3ece:1094:29)
-    at Editor (Editor.tsx:153:24)
-    at renderWithHooks (chunk-GMMWARBA.js?v=30ce3ece:11137:26)
-    at updateFunctionComponent (chunk-GMMWARBA.js?v=30ce3ece:14171:28)
-    at beginWork (chunk-GMMWARBA.js?v=30ce3ece:15513:22)
-console.error @ react-konva.js?v=30ce3ece:27408
-DefaultErrorComponent @ react-router-dom.js?v=30ce3ece:4031
-renderWithHooks @ chunk-GMMWARBA.js?v=30ce3ece:11137
-mountIndeterminateComponent @ chunk-GMMWARBA.js?v=30ce3ece:14565
-beginWork @ chunk-GMMWARBA.js?v=30ce3ece:15503
-beginWork$1 @ chunk-GMMWARBA.js?v=30ce3ece:19347
-performUnitOfWork @ chunk-GMMWARBA.js?v=30ce3ece:18792
-workLoopSync @ chunk-GMMWARBA.js?v=30ce3ece:18731
-renderRootSync @ chunk-GMMWARBA.js?v=30ce3ece:18710
-recoverFromConcurrentError @ chunk-GMMWARBA.js?v=30ce3ece:18327
-performSyncWorkOnRoot @ chunk-GMMWARBA.js?v=30ce3ece:18473
-flushSyncCallbacks @ chunk-GMMWARBA.js?v=30ce3ece:8707
-(anonymous) @ chunk-GMMWARBA.js?v=30ce3ece:18218
-react-konva.js?v=30ce3ece:27408 The above error occurred in the <Editor> component:
+-file của tôi :
+import { useEffect, useRef, useCallback, useState } from 'react';
+import { useAuth } from './useAuth';
+import { useToast } from './useToast';
+import { EdgeData, useEditorStore } from '../app/store/useEditorStore';
+import { throttle } from 'lodash';
 
-    at Editor (http://localhost:3000/src/pages/Editor.tsx?t=1764045706324:62:18)
-    at RenderedRoute (http://localhost:3000/node_modules/.vite/deps/react-router-dom.js?v=30ce3ece:4089:5)
-    at RenderErrorBoundary (http://localhost:3000/node_modules/.vite/deps/react-router-dom.js?v=30ce3ece:4049:5)
-    at DataRoutes (http://localhost:3000/node_modules/.vite/deps/react-router-dom.js?v=30ce3ece:5240:5)
-    at Router (http://localhost:3000/node_modules/.vite/deps/react-router-dom.js?v=30ce3ece:4502:15)
-    at RouterProvider (http://localhost:3000/node_modules/.vite/deps/react-router-dom.js?v=30ce3ece:5054:5)
-    at NotificationProvider (http://localhost:3000/src/app/providers/NotificationProvider.tsx:6:40)
-    at AuthProvider (http://localhost:3000/src/app/providers/AuthProvider.tsx:37:32)
-    at ThemeProvider (http://localhost:3000/src/app/providers/ThemeProvider.tsx:6:33)
+type BroadcastPatch = {
+  type: string;
+  payload: any;
+  senderId: string;
+};
 
-React will try to recreate this component tree from scratch using the error boundary you provided, RenderErrorBoundary.
-console.error @ react-konva.js?v=30ce3ece:27408
-logCapturedError @ chunk-GMMWARBA.js?v=30ce3ece:13621
-callback @ chunk-GMMWARBA.js?v=30ce3ece:13667
-callCallback @ chunk-GMMWARBA.js?v=30ce3ece:10837
-commitUpdateQueue @ chunk-GMMWARBA.js?v=30ce3ece:10854
-commitLayoutEffectOnFiber @ chunk-GMMWARBA.js?v=30ce3ece:16664
-commitLayoutMountEffects_complete @ chunk-GMMWARBA.js?v=30ce3ece:17571
-commitLayoutEffects_begin @ chunk-GMMWARBA.js?v=30ce3ece:17560
-commitLayoutEffects @ chunk-GMMWARBA.js?v=30ce3ece:17511
-commitRootImpl @ chunk-GMMWARBA.js?v=30ce3ece:18947
-commitRoot @ chunk-GMMWARBA.js?v=30ce3ece:18871
-performSyncWorkOnRoot @ chunk-GMMWARBA.js?v=30ce3ece:18489
-flushSyncCallbacks @ chunk-GMMWARBA.js?v=30ce3ece:8707
-(anonymous) @ chunk-GMMWARBA.js?v=30ce3ece:18218
-react-konva.js?v=30ce3ece:27408 React Router caught the following error during render TypeError: Cannot read properties of null (reading 'from')
-    at Editor.tsx:157:22
-    at Array.forEach (<anonymous>)
-    at Editor.tsx:156:11
-    at updateMemo (chunk-GMMWARBA.js?v=30ce3ece:11799:27)
-    at Object.useMemo (chunk-GMMWARBA.js?v=30ce3ece:12315:24)
-    at useMemo (chunk-H2BVA2C6.js?v=30ce3ece:1094:29)
-    at Editor (Editor.tsx:153:24)
-    at renderWithHooks (chunk-GMMWARBA.js?v=30ce3ece:11137:26)
-    at updateFunctionComponent (chunk-GMMWARBA.js?v=30ce3ece:14171:28)
-    at beginWork (chunk-GMMWARBA.js?v=30ce3ece:15513:22) {componentStack: '\n    at Editor (http://localhost:3000/src/pages/Ed…st:3000/src/app/providers/ThemeProvider.tsx:6:33)'}
-console.error @ react-konva.js?v=30ce3ece:27408
-componentDidCatch @ react-router-dom.js?v=30ce3ece:4076
-callback @ chunk-GMMWARBA.js?v=30ce3ece:13673
-callCallback @ chunk-GMMWARBA.js?v=30ce3ece:10837
-commitUpdateQueue @ chunk-GMMWARBA.js?v=30ce3ece:10854
-commitLayoutEffectOnFiber @ chunk-GMMWARBA.js?v=30ce3ece:16664
-commitLayoutMountEffects_complete @ chunk-GMMWARBA.js?v=30ce3ece:17571
-commitLayoutEffects_begin @ chunk-GMMWARBA.js?v=30ce3ece:17560
-commitLayoutEffects @ chunk-GMMWARBA.js?v=30ce3ece:17511
-commitRootImpl @ chunk-GMMWARBA.js?v=30ce3ece:18947
-commitRoot @ chunk-GMMWARBA.js?v=30ce3ece:18871
-performSyncWorkOnRoot @ chunk-GMMWARBA.js?v=30ce3ece:18489
-flushSyncCallbacks @ chunk-GMMWARBA.js?v=30ce3ece:8707
-(anonymous) @ chunk-GMMWARBA.js?v=30ce3ece:18218
-Editor.tsx:367 Uncaught TypeError: Cannot read properties of null (reading 'from')
-    at Editor.tsx:367:43
-    at Array.forEach (<anonymous>)
-    at Editor.tsx:366:15
-    at useRealtime.ts:174:34
-(anonymous) @ Editor.tsx:367
-(anonymous) @ Editor.tsx:366
-(anonymous) @ useRealtime.ts:174
-setTimeout
-ws.onmessage @ useRealtime.ts:174
-useRealtime.ts:304 🔴 WS Disconnected
+type UseRealtimeProps = {
+  mindmapId?: string;
+  isGuest: boolean;
+  isDataLoaded: boolean;
+  isOwner: boolean;
+  onLayoutRequest: (keepCamera: boolean) => void;
+  onSetRootCollapse: (side: 'left' | 'right', collapsed: boolean) => void;
+};
+
+// Helper throttle
+const throttleFunc = (func: Function, limit: number) => {
+  let inThrottle: boolean;
+  return function(this: any, ...args: any[]) {
+    if (!inThrottle) {
+      func.apply(this, args);
+      inThrottle = true;
+      setTimeout(() => inThrottle = false, limit);
+    }
+  }
+}
+
+export function useRealtime({
+  mindmapId,
+  isGuest,
+  isDataLoaded,
+  isOwner,
+  onLayoutRequest,
+  onSetRootCollapse,
+}: UseRealtimeProps) {
+  const { getAccessToken, isAuthed, user } = useAuth();
+  const { addToast } = useToast();
+  const { setGraph, updatePeer, removePeer } = useEditorStore();
+  
+  const wsRef = useRef<WebSocket | null>(null);
+  const reconnectTimeoutRef = useRef<any>(null);
+  const [isConnected, setIsConnected] = useState(false);
+
+  // Dùng ref để lưu props mới nhất, tránh re-connect liên tục
+  const latestProps = useRef({ isOwner, onLayoutRequest, onSetRootCollapse });
+  useEffect(() => {
+    latestProps.current = { isOwner, onLayoutRequest, onSetRootCollapse };
+  }, [isOwner, onLayoutRequest, onSetRootCollapse]);
+  
+  const sendPatch = useCallback((type: string, payload: any) => {
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      try {
+        wsRef.current.send(JSON.stringify({ type, payload }));
+      } catch (e) {
+        console.error('Lỗi khi gửi WebSocket patch:', e);
+      }
+    }
+  }, []);
+
+  const sendCursor = useRef(
+    throttleFunc((x: number, y: number, name: string, color: string) => {
+       if (wsRef.current?.readyState === WebSocket.OPEN) {
+         wsRef.current.send(JSON.stringify({ 
+             type: 'CURSOR_MOVE', 
+             payload: { x, y, name, color } 
+         }));
+       }
+    }, 50)
+  ).current;
+
+  useEffect(() => {
+    if (!mindmapId || !isAuthed || isGuest || !isDataLoaded) {
+      return;
+    }
+
+    let isMounted = true;
+    let retryCount = 0;
+
+    const connect = async () => {
+      try {
+        const token = await getAccessToken();
+        if (!token || !isMounted) return;
+
+        const wsUrl = `ws://localhost:8081/ws/mindmap/${mindmapId}?token=${token}`;
+        const ws = new WebSocket(wsUrl);
+        wsRef.current = ws;
+
+        ws.onopen = () => {
+            console.log(`🟢 WebSocket connected: ${mindmapId}`);
+            setIsConnected(true);
+            retryCount = 0; 
+        };
+        
+        ws.onmessage = (event) => {
+          try {
+            const message: BroadcastPatch = JSON.parse(event.data);
+            const { type, payload, senderId } = message;
+
+            // Lấy props mới nhất từ ref
+            const { isOwner: currentIsOwner, onLayoutRequest: currentLayoutRequest, onSetRootCollapse: currentSetRootCollapse } = latestProps.current;
+
+            if (user?.sub === senderId || user?.id === senderId) return;
+
+            const { nodes: currentNodes, edges: currentEdges } = useEditorStore.getState();
+
+            switch (type) {
+              case 'USER_JOINED':
+                addToast(`User ${payload.userId.substring(0, 6)}... đã tham gia.`, 'info');
+                if (currentIsOwner) {
+                    // Gửi snapshot qua socket instance hiện tại
+                    if (ws.readyState === WebSocket.OPEN) {
+                        ws.send(JSON.stringify({ 
+                            type: 'FULL_SYNC', 
+                            payload: { nodes: currentNodes, edges: currentEdges } 
+                        }));
+                    }
+                }
+                break;
+
+              case 'FULL_SYNC': 
+                console.log("🔄 Received FULL_SYNC snapshot. Updating store...");
+                setGraph(payload.nodes, payload.edges);
+                setTimeout(() => currentLayoutRequest(true), 50);
+                addToast('Đã đồng bộ dữ liệu mới nhất.', 'success');
+                break;
+
+              case 'USER_LEFT':
+                removePeer(senderId);
+                addToast(`User... đã rời đi.`, 'info');
+                break;
+
+              case 'CURSOR_MOVE':
+                  updatePeer(senderId, { 
+                      x: payload.x, 
+                      y: payload.y, 
+                      name: payload.name, 
+                      color: payload.color 
+                  });
+                  break;
+              
+              case 'NODE_MOVE': {
+                const { id: nodeId, x, y } = payload;
+                const newNodes = currentNodes.map((n) =>
+                   n.id === nodeId ? { ...n, x, y } : n
+                );
+                setGraph(newNodes, currentEdges);
+                break;
+              }
+
+              case 'NODE_TEXT_CHANGE': {
+                const { id: nodeId, text } = payload;
+                const newNodes = currentNodes.map((n) =>
+                  n.id === nodeId ? { ...n, nodeText: text } : n
+                );
+                setGraph(newNodes, currentEdges);
+                setTimeout(() => currentLayoutRequest(true), 0);
+                break;
+              }
+
+              case 'NODE_CREATE': {
+                const { node: feNode, edge: feEdge } = payload;
+                // [FIX LỖI QUAN TRỌNG]: Chỉ thêm edge nếu nó tồn tại (khác null)
+                const nextEdges = feEdge ? [...currentEdges, feEdge] : currentEdges;
+                
+                setGraph([...currentNodes, feNode], nextEdges);
+                setTimeout(() => currentLayoutRequest(true), 0);
+                break;
+              }
+
+              case 'NODE_DELETE': {
+                const { nodeIds } = payload;
+                const set = new Set(nodeIds as string[]);
+                const newNodes = currentNodes.filter((n) => !set.has(n.id));
+                const newEdges = currentEdges.filter(
+                  (e) => !set.has(e.from) && !set.has(e.to)
+                );
+                setGraph(newNodes, newEdges);
+                setTimeout(() => currentLayoutRequest(true), 0);
+                break;
+              }
+
+              case 'NODE_REPARENT': {
+                const { nodeId, newParentId, x, y, side } = payload;
+                const newNodes = currentNodes.map((n) =>
+                  n.id === nodeId
+                    ? { ...n, parentId: newParentId, x, y, side }
+                    : n
+                );
+                const oldEdge = currentEdges.find((e) => e.to === nodeId);
+                let newEdges: EdgeData[];
+                if (oldEdge) {
+                  newEdges = currentEdges.map((e) =>
+                    e.id === oldEdge.id ? { ...e, from: newParentId } : e
+                  );
+                } else {
+                  newEdges = [
+                    ...currentEdges,
+                    { id: `e-${nodeId}`, from: newParentId, to: nodeId },
+                  ];
+                }
+                setGraph(newNodes, newEdges);
+                setTimeout(() => currentLayoutRequest(true), 0);
+                break;
+              }
+
+              case 'NODE_STYLE_UPDATE': {
+                const { id: nodeId, updates } = payload;
+                const newNodes = currentNodes.map((n) =>
+                  n.id === nodeId ? { ...n, ...updates } : n
+                );
+                setGraph(newNodes, currentEdges);
+                if (updates.nodeLength) setTimeout(() => currentLayoutRequest(true), 0);
+                break;
+              }
+
+              case 'NODE_QUICK_STYLE_APPLY': {
+               const { id: nodeId, styleId, resetStyle } = payload;
+                const newNodes = currentNodes.map((n) =>
+                  n.id === nodeId
+                    ? { ...n, ...resetStyle, quickStyleId: styleId }
+                    : n
+                );
+                setGraph(newNodes, currentEdges);
+                setTimeout(() => currentLayoutRequest(true), 0);
+                break;
+              }
+
+              case 'NODE_STYLE_PASTE': {
+               const { id: nodeId, style } = payload;
+                const newNodes = currentNodes.map((n) =>
+                  n.id === nodeId ? { ...n, ...style } : n
+                );
+                setGraph(newNodes, currentEdges);
+               setTimeout(() => currentLayoutRequest(true), 0);
+                break;
+              }
+
+              case 'NODE_STYLE_RESET': {
+                const { id: nodeId, resetStyle } = payload;
+                const newNodes = currentNodes.map((n) =>
+                  n.id === nodeId ? { ...n, ...resetStyle } : n
+                );
+                setGraph(newNodes, currentEdges);
+                setTimeout(() => currentLayoutRequest(true), 0);
+                break;
+              }
+
+              case 'NODE_TOGGLE_COLLAPSE': {
+                const { id: nodeId } = payload;
+                const newNodes = currentNodes.map(n => 
+                  n.id === nodeId ? { ...n, collapsed: !n.collapsed } : n
+                );
+                setGraph(newNodes, currentEdges);
+               break;
+              }
+
+              case 'ROOT_TOGGLE_COLLAPSE': {
+                const { side } = payload;
+                if (side === 'left' || side === 'right') {
+                    currentSetRootCollapse(side, true); 
+                }
+                break;
+              }
+              
+              case 'LINE_COLOR_TOGGLE': {
+                  useEditorStore.setState({ isColoredBranch: payload.state });
+                  setGraph([...currentNodes], currentEdges);
+                  break;
+              }
+
+              case 'BACKGROUND_CHANGE': {
+                  useEditorStore.setState({ backgroundColor: payload.color });
+                  break;
+              }
+
+              case 'GLOBAL_BRANCH_COLOR_CHANGE': {
+                  useEditorStore.setState({ globalBranchColor: payload.color });
+                  setGraph([...currentNodes], currentEdges);
+                  break;
+              }
+
+              case 'MAP_NAME_CHANGE': {
+                  useEditorStore.setState({ currentMindmapName: payload.name });
+                  break;
+              }
+
+              default:
+                break;
+            }
+          } catch (e) {
+            console.error('WS Message Error:', e);
+          }
+        };
+        
+        ws.onclose = () => {
+          console.log(`🔴 WS Disconnected`);
+          wsRef.current = null;
+          setIsConnected(false);
+
+          if (isMounted) {
+             const timeout = Math.min(1000 * (2 ** retryCount), 10000);
+             retryCount++;
+             reconnectTimeoutRef.current = setTimeout(connect, timeout);
+          }
+        };
+      } catch (err) {
+        console.error("WS Connect Error", err);
+        setIsConnected(false);
+      }
+    };
+
+    connect();
+
+    return () => {
+      isMounted = false;
+      if (wsRef.current) {
+        wsRef.current.close();
+      }
+      if (reconnectTimeoutRef.current) {
+          clearTimeout(reconnectTimeoutRef.current);
+      }
+    };
+  }, [mindmapId, isAuthed, isGuest, isDataLoaded, getAccessToken, addToast, setGraph, updatePeer, removePeer]);
+
+  return { sendPatch, sendCursor, isConnected };
+}
+
+- file có phần code mới :
+import { useEffect, useRef, useCallback, useState } from 'react';
+import { useAuth } from './useAuth';
+import { useToast } from './useToast';
+import { useEditorStore } from '../app/store/useEditorStore';
+import { throttle } from 'lodash'; // Hoặc dùng hàm throttleFunc thủ công bên dưới nếu chưa cài lodash
+
+type BroadcastPatch = {
+  type: string;
+  payload: any;
+  senderId: string;
+};
+
+type UseRealtimeProps = {
+  mindmapId?: string;
+  isGuest: boolean;
+  isDataLoaded: boolean;
+  isOwner: boolean;
+  // [MỚI] Thông tin người dùng hiện tại để gửi Presence
+  userInfo: { name: string; color: string }; 
+  onLayoutRequest: (keepCamera: boolean) => void;
+  onSetRootCollapse: (side: 'left' | 'right', collapsed: boolean) => void;
+};
+
+// Helper throttle (nếu không dùng lodash)
+const throttleFunc = (func: Function, limit: number) => {
+  let inThrottle: boolean;
+  return function(this: any, ...args: any[]) {
+    if (!inThrottle) {
+      func.apply(this, args);
+      inThrottle = true;
+      setTimeout(() => inThrottle = false, limit);
+    }
+  }
+}
+
+export function useRealtime({
+  mindmapId,
+  isGuest,
+  isDataLoaded,
+  isOwner,
+  userInfo, // [MỚI]
+  onLayoutRequest,
+  onSetRootCollapse,
+}: UseRealtimeProps) {
+  const { getAccessToken, isAuthed, user } = useAuth();
+  const { addToast } = useToast();
+  
+  // [MỚI] Lấy các actions tối ưu từ Store
+  const { setGraph, setPeerInfo, updatePeerCursor, removePeer } = useEditorStore();
+  
+  const wsRef = useRef<WebSocket | null>(null);
+  const reconnectTimeoutRef = useRef<any>(null);
+  const [isConnected, setIsConnected] = useState(false);
+
+  // Dùng ref để lưu props mới nhất tránh re-connect
+  const latestProps = useRef({ isOwner, userInfo, onLayoutRequest, onSetRootCollapse });
+  useEffect(() => {
+    latestProps.current = { isOwner, userInfo, onLayoutRequest, onSetRootCollapse };
+  }, [isOwner, userInfo, onLayoutRequest, onSetRootCollapse]);
+  
+  // 1. Hàm gửi Patch (cho các thao tác Node)
+  const sendPatch = useCallback((type: string, payload: any) => {
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      try {
+        wsRef.current.send(JSON.stringify({ type, payload }));
+      } catch (e) {
+        console.error('WS Send Error:', e);
+      }
+    }
+  }, []);
+
+  // 2. [MỚI] Hàm gửi Presence (Tên & Màu) - Chỉ gửi 1 lần khi join hoặc reconnect
+  const sendPresence = useCallback(() => {
+     const { name, color } = latestProps.current.userInfo;
+     if (wsRef.current?.readyState === WebSocket.OPEN) {
+         wsRef.current.send(JSON.stringify({ 
+             type: 'USER_PRESENCE', 
+             payload: { name, color } 
+         }));
+     }
+  }, []);
+
+  // 3. [MỚI] Hàm gửi vị trí chuột (Tối ưu hóa payload chỉ còn x, y)
+  // Throttle 50ms = 20 updates/giây (Đủ mượt mà không spam)
+  const sendCursor = useRef(
+    throttleFunc((x: number, y: number) => {
+       if (wsRef.current?.readyState === WebSocket.OPEN) {
+         wsRef.current.send(JSON.stringify({ 
+             type: 'CURSOR_MOVE', 
+             payload: { x, y } // Payload gọn nhẹ
+         }));
+       }
+    }, 50)
+  ).current;
+
+  useEffect(() => {
+    if (!mindmapId || !isAuthed || isGuest || !isDataLoaded) return;
+
+    let isMounted = true;
+    let retryCount = 0;
+
+    const connect = async () => {
+      try {
+        const token = await getAccessToken();
+        if (!token || !isMounted) return;
+
+        const wsUrl = `ws://localhost:8081/ws/mindmap/${mindmapId}?token=${token}`;
+        const ws = new WebSocket(wsUrl);
+        wsRef.current = ws;
+
+        ws.onopen = () => {
+            console.log(`🟢 WS Connected`);
+            setIsConnected(true);
+            retryCount = 0;
+            // [MỚI] Gửi thông tin bản thân ngay khi kết nối
+            sendPresence();
+        };
+        
+        ws.onmessage = (event) => {
+          try {
+            const message: BroadcastPatch = JSON.parse(event.data);
+            const { type, payload, senderId } = message;
+            
+            // Lấy context mới nhất
+            const { 
+                isOwner: currentIsOwner, 
+                onLayoutRequest: currentLayoutRequest, 
+                onSetRootCollapse: currentSetRootCollapse,
+                userInfo: currentUserInfo
+            } = latestProps.current;
+
+            if (user?.sub === senderId || user?.id === senderId) return;
+
+            const { nodes: currentNodes, edges: currentEdges } = useEditorStore.getState();
+
+            switch (type) {
+              case 'USER_JOINED':
+                addToast(`User... vừa tham gia.`, 'info');
+                
+                // [LOGIC] Khi có người mới vào:
+                // 1. Nếu mình là Owner -> Gửi Snapshot dữ liệu Map
+                if (currentIsOwner) {
+                    if (ws.readyState === WebSocket.OPEN) {
+                        ws.send(JSON.stringify({ 
+                            type: 'FULL_SYNC', 
+                            payload: { nodes: currentNodes, edges: currentEdges } 
+                        }));
+                    }
+                }
+                // 2. [MỚI] Bất kể là ai, cũng gửi lại Presence của mình để người mới biết mình là ai
+                // (Tránh việc người mới vào thấy con trỏ nhưng không thấy tên/màu)
+                if (ws.readyState === WebSocket.OPEN) {
+                    ws.send(JSON.stringify({ 
+                        type: 'USER_PRESENCE', 
+                        payload: currentUserInfo
+                    }));
+                }
+                break;
+              
+              // [MỚI] Nhận thông tin người khác
+              case 'USER_PRESENCE': 
+                setPeerInfo(senderId, { name: payload.name, color: payload.color });
+                break;
+
+              // [MỚI] Nhận tọa độ chuột (Payload gọn nhẹ)
+              case 'CURSOR_MOVE':
+                 // Chỉ update tọa độ, các info khác giữ nguyên
+                 updatePeerCursor(senderId, payload.x, payload.y);
+                 break;
+
+              case 'USER_LEFT':
+                removePeer(senderId);
+                break;
+
+              case 'FULL_SYNC': 
+                setGraph(payload.nodes, payload.edges);
+                setTimeout(() => currentLayoutRequest(true), 50);
+                addToast('Đã đồng bộ dữ liệu.', 'success');
+                break;
+              
+              // ... (Các case xử lý Node cũ giữ nguyên) ...
+              case 'NODE_MOVE': {
+                const { id: nodeId, x, y } = payload;
+                const newNodes = currentNodes.map((n) => n.id === nodeId ? { ...n, x, y } : n);
+                setGraph(newNodes, currentEdges);
+                break;
+              }
+              case 'NODE_TEXT_CHANGE': {
+                const { id: nodeId, text } = payload;
+                const newNodes = currentNodes.map((n) => n.id === nodeId ? { ...n, nodeText: text } : n);
+                setGraph(newNodes, currentEdges);
+                setTimeout(() => currentLayoutRequest(true), 0);
+                break;
+              }
+              case 'NODE_CREATE': {
+                // Fix lỗi null edge
+                const nextEdges = payload.edge ? [...currentEdges, payload.edge] : currentEdges;
+                setGraph([...currentNodes, payload.node], nextEdges);
+                setTimeout(() => currentLayoutRequest(true), 0);
+                break;
+              }
+              case 'NODE_DELETE': {
+                const set = new Set(payload.nodeIds as string[]);
+                setGraph(currentNodes.filter(n => !set.has(n.id)), currentEdges.filter(e => !set.has(e.from) && !set.has(e.to)));
+                setTimeout(() => currentLayoutRequest(true), 0);
+                break;
+              }
+              case 'NODE_REPARENT': {
+                 const { nodeId, newParentId, x, y, side } = payload;
+                 const newNodes = currentNodes.map(n => n.id === nodeId ? { ...n, parentId: newParentId, x, y, side } : n);
+                 const oldEdge = currentEdges.find(e => e.to === nodeId);
+                 let newEdges = oldEdge ? currentEdges.map(e => e.id === oldEdge.id ? { ...e, from: newParentId } : e) : [...currentEdges, { id: `e-${nodeId}`, from: newParentId, to: nodeId }];
+                 setGraph(newNodes, newEdges);
+                 setTimeout(() => currentLayoutRequest(true), 0);
+                 break;
+              }
+              case 'NODE_STYLE_UPDATE': {
+                 const newNodes = currentNodes.map(n => n.id === payload.id ? { ...n, ...payload.updates } : n);
+                 setGraph(newNodes, currentEdges);
+                 if (payload.updates.nodeLength) setTimeout(() => currentLayoutRequest(true), 0);
+                 break;
+              }
+              case 'NODE_QUICK_STYLE_APPLY': {
+                 const newNodes = currentNodes.map(n => n.id === payload.id ? { ...n, ...payload.resetStyle, quickStyleId: payload.styleId } : n);
+                 setGraph(newNodes, currentEdges);
+                 setTimeout(() => currentLayoutRequest(true), 0);
+                 break;
+              }
+              case 'NODE_STYLE_PASTE': {
+                 const newNodes = currentNodes.map(n => n.id === payload.id ? { ...n, ...payload.style } : n);
+                 setGraph(newNodes, currentEdges);
+                 setTimeout(() => currentLayoutRequest(true), 0);
+                 break;
+              }
+              case 'NODE_STYLE_RESET': {
+                 const newNodes = currentNodes.map(n => n.id === payload.id ? { ...n, ...payload.resetStyle } : n);
+                 setGraph(newNodes, currentEdges);
+                 setTimeout(() => currentLayoutRequest(true), 0);
+                 break;
+              }
+              case 'NODE_TOGGLE_COLLAPSE': {
+                 const newNodes = currentNodes.map(n => n.id === payload.id ? { ...n, collapsed: !n.collapsed } : n);
+                 setGraph(newNodes, currentEdges);
+                 break;
+              }
+              case 'ROOT_TOGGLE_COLLAPSE': {
+                 if (payload.side === 'left' || payload.side === 'right') currentSetRootCollapse(payload.side, true);
+                 break;
+              }
+              case 'LINE_COLOR_TOGGLE': {
+                  useEditorStore.setState({ isColoredBranch: payload.state });
+                  setGraph([...currentNodes], currentEdges);
+                  break;
+              }
+              case 'BACKGROUND_CHANGE': {
+                  useEditorStore.setState({ backgroundColor: payload.color });
+                  break;
+              }
+              case 'GLOBAL_BRANCH_COLOR_CHANGE': {
+                  useEditorStore.setState({ globalBranchColor: payload.color });
+                  setGraph([...currentNodes], currentEdges);
+                  break;
+              }
+              case 'MAP_NAME_CHANGE': {
+                  useEditorStore.setState({ currentMindmapName: payload.name });
+                  break;
+              }
+              default: break;
+            }
+          } catch (e) {
+            console.error('WS Msg Error', e);
+          }
+        };
+        
+        ws.onclose = () => {
+          console.log(`🔴 WS Disconnected`);
+          setIsConnected(false);
+          wsRef.current = null;
+          if (isMounted) {
+             const timeout = Math.min(1000 * (2 ** retryCount), 10000);
+             retryCount++;
+             reconnectTimeoutRef.current = setTimeout(connect, timeout);
+          }
+        };
+      } catch (err) {
+        console.error("WS Connect Error", err);
+        setIsConnected(false);
+      }
+    };
+    connect();
+    return () => {
+      isMounted = false;
+      if (wsRef.current) wsRef.current.close();
+      if (reconnectTimeoutRef.current) clearTimeout(reconnectTimeoutRef.current);
+    };
+  }, [mindmapId, isAuthed, isGuest, isDataLoaded, getAccessToken, addToast, setGraph, updatePeerCursor, removePeer, setPeerInfo]);
+
+  return { sendPatch, sendCursor, isConnected };
+}
+```
+
+---
+
+### 2. Cập nhật `src/pages/Editor.tsx`
+
+Bạn cần cập nhật 2 vị trí:
+1.  **Tính toán `myInfo`**: Tạo thông tin tên và màu cho chính mình.
+2.  **Cập nhật `useRealtime` hook**: Truyền `userInfo` vào.
+3.  **Cập nhật `onMouseMove` của Stage**: Tính toán toạ độ `World` (quan trọng!) và gửi đi.
+
+**Vị trí 1 & 2: Cập nhật hook (Khoảng dòng 530)**
+*Thay thế đoạn gọi `useRealtime` cũ bằng đoạn này:*
+
+```typescript
+  // --- [MỚI] Tạo thông tin nhận diện cho User hiện tại ---
+  // Dùng useMemo để màu và tên không bị đổi mỗi lần render lại
+  const myColor = useMemo(() => {
+      // Nếu có user id thì hash ra màu, không thì random
+      const seed = user?.sub || user?.id || 'guest'; 
+      return getCursorColor(seed); // Import từ EditorHelpers
+  }, [user]);
+  
+  const myName = useMemo(() => {
+      return user?.name || user?.email?.split('@')[0] || 'Guest';
+  }, [user]);
+
+  // --- [MỚI] Tích hợp Realtime với thông tin User ---
+  const { sendPatch, sendCursor, isConnected } = useRealtime({
+    mindmapId: id,
+    isGuest,
+    isDataLoaded,
+    isOwner,
+    userInfo: { name: myName, color: myColor }, // Truyền info vào để hook tự gửi khi join
+    onLayoutRequest: handleLayout,
+    onSetRootCollapse: handleSetRootCollapse,
+  });
+```
+
+**Vị trí 3: Cập nhật `onMouseMove` (Khoảng dòng 1200)**
+*Tìm đến prop `onMouseMove` trong thẻ `<Stage>` và thay thế bằng logic tính toán tọa độ thực:*
+
+```typescript
+            onMouseMove={(e) => {
+              // 1. Logic Pan (Giữ nguyên)
+              if (isPanning) { 
+                 setPos({ x: pos.x + e.evt.movementX, y: pos.y + e.evt.movementY }); 
+              } 
+              // 2. Logic Selecting (Giữ nguyên)
+              else if (isSelecting.current) {
+                const stage = e.target.getStage(); if (!stage) return;
+                const pointer = stage.getPointerPosition(); if (!pointer) return;
+                // ... (Logic selection cũ giữ nguyên) ...
+                // (Bạn có thể giữ nguyên logic selection cũ ở đây)
+                 const currentUnscaledPos = { x: (pointer.x - stage.x()) / stage.scaleX(), y: (pointer.y - stage.y()) / stage.scaleY() };
+                 const start = selectionStartPos.current;
+                 setSelectionRect({ visible: true, x: Math.min(start.x, currentUnscaledPos.x), y: Math.min(start.y, currentUnscaledPos.y), width: Math.abs(start.x - currentUnscaledPos.x), height: Math.abs(start.y - currentUnscaledPos.y) });
+              }
+
+              // 3. [MỚI] Gửi vị trí chuột (Logic quan trọng của Giai đoạn 2)
+              const stage = e.target.getStage();
+              if (stage) {
+                  const pointer = stage.getPointerPosition();
+                  if (pointer) {
+                      // Biến đổi từ tọa độ màn hình (Screen) -> tọa độ Canvas (World)
+                      // Công thức: (Pointer - StageOffset) / Scale
+                      const worldX = (pointer.x - stage.x()) / stage.scaleX();
+                      const worldY = (pointer.y - stage.y()) / stage.scaleY();
+                      
+                      // Gửi tọa độ đã biến đổi (chỉ gửi x, y)
+                      sendCursor(worldX, worldY);
+                  }
+              }
+            }}

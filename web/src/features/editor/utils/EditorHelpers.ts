@@ -164,3 +164,26 @@ export function calculateNodeBox(node: NodeData, style: NodeData) {
 
   return { w, h, textToRender: wrappedLines.join('\n'), finalFontSize };
 }
+
+// =================================================================================
+// CURSOR & USER UTILITIES
+// =================================================================================
+
+// Bảng màu đẹp (đã lọc các màu quá sáng hoặc quá tối)
+const CURSOR_COLORS = [
+  "#EF4444", "#F97316", "#F59E0B", "#10B981", "#06B6D4", 
+  "#3B82F6", "#6366F1", "#8B5CF6", "#EC4899", "#F43F5E"
+];
+
+/**
+ * Sinh màu cố định dựa trên userId.
+ * Cùng 1 userId sẽ luôn ra cùng 1 màu.
+ */
+export function getCursorColor(userId: string): string {
+  let hash = 0;
+  for (let i = 0; i < userId.length; i++) {
+    hash = userId.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  const index = Math.abs(hash % CURSOR_COLORS.length);
+  return CURSOR_COLORS[index];
+}

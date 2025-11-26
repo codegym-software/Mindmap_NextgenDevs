@@ -65,7 +65,8 @@ import {
   saveGuestDoc,
   calculateNodeBox,
   mixWithWhite,
-  getContrastColor
+  getContrastColor,
+  getCursorColor
 } from '../features/editor/utils/EditorHelpers';
 
 import CursorLayer from '../features/editor/CursorLayer'; // [MỚI]
@@ -639,17 +640,26 @@ export default function Editor() {
       setRootCollapse(prev => ({ ...prev, [side]: !prev[side] })); 
   }, []);
 
-  // [BƯỚC 2] Truyền hàm đã define ở trên vào hook
+  const myColor = useMemo(() => {
+      // Nếu có user id thì hash ra màu, không thì random
+      const seed = user?.sub || user?.id || 'guest'; 
+      return getCursorColor(seed); // Import từ EditorHelpers
+  }, [user]);
+  
+  const myName = useMemo(() => {
+      return user?.name || user?.email?.split('@')[0] || 'Guest';
+  }, [user]);
+
+    // --- [MỚI] Tích hợp Realtime với thông tin User ---
   const { sendPatch, sendCursor, isConnected } = useRealtime({
     mindmapId: id,
     isGuest,
     isDataLoaded,
-    isOwner, 
+    isOwner,
+    userInfo: { name: myName, color: myColor }, // Truyền info vào để hook tự gửi khi join
     onLayoutRequest: handleLayout,
-    onSetRootCollapse: handleSetRootCollapse, // <--- Dùng hàm này, KHÔNG viết trực tiếp (side) => {...} ở đây
+    onSetRootCollapse: handleSetRootCollapse,
   });
-  const myColor = useMemo(() => BRANCH_COLORS_PALETTE[Math.floor(Math.random() * BRANCH_COLORS_PALETTE.length)], []);
-  const myName = useMemo(() => "Me", []);
 
   // =========================================================================
   // 6. ZOOM & PAN HANDLERS
@@ -1360,13 +1370,34 @@ export default function Editor() {
               }
             }}
             onMouseMove={(e) => {
-              if (isPanning) { setPos({ x: pos.x + e.evt.movementX, y: pos.y + e.evt.movementY }); } 
+              // 1. Logic Pan (Giữ nguyên)
+              if (isPanning) { 
+                 setPos({ x: pos.x + e.evt.movementX, y: pos.y + e.evt.movementY }); 
+              } 
+              // 2. Logic Selecting (Giữ nguyên)
               else if (isSelecting.current) {
                 const stage = e.target.getStage(); if (!stage) return;
-                const pos = stage.getPointerPosition(); if (!pos) return;
-                const currentUnscaledPos = { x: (pos.x - stage.x()) / stage.scaleX(), y: (pos.y - stage.y()) / stage.scaleY() };
-                const start = selectionStartPos.current;
-                setSelectionRect({ visible: true, x: Math.min(start.x, currentUnscaledPos.x), y: Math.min(start.y, currentUnscaledPos.y), width: Math.abs(start.x - currentUnscaledPos.x), height: Math.abs(start.y - currentUnscaledPos.y) });
+                const pointer = stage.getPointerPosition(); if (!pointer) return;
+                // ... (Logic selection cũ giữ nguyên) ...
+                // (Bạn có thể giữ nguyên logic selection cũ ở đây)
+                 const currentUnscaledPos = { x: (pointer.x - stage.x()) / stage.scaleX(), y: (pointer.y - stage.y()) / stage.scaleY() };
+                 const start = selectionStartPos.current;
+                 setSelectionRect({ visible: true, x: Math.min(start.x, currentUnscaledPos.x), y: Math.min(start.y, currentUnscaledPos.y), width: Math.abs(start.x - currentUnscaledPos.x), height: Math.abs(start.y - currentUnscaledPos.y) });
+              }
+
+              // 3. [MỚI] Gửi vị trí chuột (Logic quan trọng của Giai đoạn 2)
+              const stage = e.target.getStage();
+              if (stage) {
+                  const pointer = stage.getPointerPosition();
+                  if (pointer) {
+                      // Biến đổi từ tọa độ màn hình (Screen) -> tọa độ Canvas (World)
+                      // Công thức: (Pointer - StageOffset) / Scale
+                      const worldX = (pointer.x - stage.x()) / stage.scaleX();
+                      const worldY = (pointer.y - stage.y()) / stage.scaleY();
+                      
+                      // Gửi tọa độ đã biến đổi (chỉ gửi x, y)
+                      sendCursor(worldX, worldY);
+                  }
               }
             }}
             onDblClick={(e) => {
