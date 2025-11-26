@@ -18,6 +18,7 @@ import {
   Arrow,
   Image as KonvaImage,
 } from 'react-konva';
+import { SquareArrowOutUpRight } from 'lucide-react'; 
 import * as dagre from 'dagre';
 import useImage from 'use-image'; 
 import { useDebouncedCallback } from 'use-debounce';
@@ -291,6 +292,7 @@ export default function Editor() {
   // State nội bộ
   const [name, setName] = useState('Loading...');
   const [isDataLoaded, setIsDataLoaded] = useState(false);
+  const [isReadyToShow, setIsReadyToShow] = useState(false);
   const [isFormattingToolbarOpen, setFormattingToolbarOpen] = useState(false); // UI Mới
   const [dimensions, setDimensions] = useState({
     width: window.innerWidth,
@@ -533,7 +535,11 @@ export default function Editor() {
             backgroundColor: data.backgroundColor || '#FAFAFB', 
           });
           setBackgroundColor(data.backgroundColor || '#FAFAFB');
-          setSelectedNodeIds(['root']);
+          if (data.nodes.length <= 1) {
+             setSelectedNodeIds(['root']);
+          } else {
+             setSelectedNodeIds([]); 
+          }
           setIsDataLoaded(true);
         }
       } catch (error) {
@@ -579,6 +585,8 @@ export default function Editor() {
   useEffect(() => {
     if (selectedNodeIds.length > 0) {
        setFormattingToolbarOpen(true);
+    } else {
+       setFormattingToolbarOpen(false);
     }
   }, [selectedNodeIds]);
 
@@ -620,11 +628,11 @@ export default function Editor() {
   // 2. Hook Kết nối và Nhận Patch
   useEffect(() => {
     if (!id || !isAuthed || isGuest || !isDataLoaded) {
-      return; // Chỉ user đăng nhập & không phải Guest mới kết nối WS
+      return; 
     }
 
     let isConnecting = true;
-    let isMounted = true; // Cờ cleanup
+    let isMounted = true; 
 
     const connect = async () => {
       try {
@@ -800,16 +808,14 @@ export default function Editor() {
   // Style & Layout Logic
   // ================================================
 
-  // Helper để so sánh các node có thay đổi vị trí/kích thước không
 const deepEqualNodes = (nodes1: NodeData[], nodes2: NodeData[]): boolean => {
   if (nodes1.length !== nodes2.length) return false;
   for (let i = 0; i < nodes1.length; i++) {
     const n1 = nodes1[i];
     const n2 = nodes2[i];
-    // Chỉ so sánh các thuộc tính quan trọng cho layout để tránh so sánh sâu không cần thiết
     if (
       n1.id !== n2.id ||
-      Math.abs(n1.x - n2.x) > 0.1 || // Dùng ngưỡng nhỏ để tính toán số học dấu phẩy động
+      Math.abs(n1.x - n2.x) > 0.1 || 
       Math.abs(n1.y - n2.y) > 0.1 ||
       n1.parentId !== n2.parentId ||
       n1.side !== n2.side ||
@@ -1355,7 +1361,7 @@ const handleFitToScreen = useCallback(() => {
         (e) => !nodesToDelete.has(e.from) && !nodesToDelete.has(e.to)
       );
       setGraph(newNodes, newEdges);
-      setSelectedNodeIds([parentId]); 
+      setSelectedNodeIds([]);
       setTimeout(() => handleLayout(true), 50);
       debouncedPushHistory();
       debouncedPersistData();
@@ -1548,6 +1554,16 @@ const handleFitToScreen = useCallback(() => {
       pendingLayoutRef.current = false;
     }
   }, [handleLayout]);
+
+  useEffect(() => {
+    if (isDataLoaded) {
+      const t = setTimeout(() => {
+        handleFitToScreen();
+        setIsReadyToShow(true); 
+      }, 10); 
+      return () => clearTimeout(t);
+    }
+  }, [isDataLoaded, handleFitToScreen]);
 
   const handleDragMove = (e: any, draggedNodeId: string) => {
     const pos = e.target.position();
@@ -1902,7 +1918,7 @@ const handleFitToScreen = useCallback(() => {
   // Render 
   // ================================================
 
-  if (!isDataLoaded) {
+  if (!isReadyToShow) { 
     return (
       <div className="w-screen h-screen bg-white flex items-center justify-center text-gray-800 gap-2">
         <Spinner className="w-8 h-8 border-gray-400 border-t-gray-800" />
@@ -1961,78 +1977,69 @@ const handleFitToScreen = useCallback(() => {
             const visual = nodeVisuals.get(editingNodeId!);
             const node = nodeMap.get(editingNodeId!);
             if (!visual || !node || !stageRef.current) return null;
+
+            const { style, box } = visual;
             const stageRect = stageRef.current.container().getBoundingClientRect();
-            const wrapperStyle: React.CSSProperties = {
-              position: 'absolute',
-              left: stageRect.left,
-              top: stageRect.top,
-              width: stageRect.width,
-              height: stageRect.height,
-              transform: `translate(${pos.x}px, ${pos.y}px) scale(${scale})`,
-              transformOrigin: '0 0',
-              zIndex: 50,
-              pointerEvents: 'none',
-            };
-            const localLeft = visual.style.x - visual.box.w / 2;
-            const localTop = visual.style.y - visual.box.h / 2;
+            const absoluteX = stageRect.left + pos.x + style.x * scale;
+            const absoluteY = stageRect.top + pos.y + style.y * scale;
+
             return (
-              <div style={wrapperStyle}>
-                <textarea
-                  ref={editingInputRef}
-                  defaultValue={node.nodeText}
-                  onInput={(e) => {
-                    const el = e.currentTarget as HTMLTextAreaElement;
-                    const visualNow = visual;
-                    if (!visualNow) return;
-                    el.style.height = 'auto';
-                    const unscaledScroll = el.scrollHeight / Math.max(scale, 0.0001);
-                    const targetH = Math.max(visualNow.box.h, unscaledScroll);
-                    el.style.height = `${targetH}px`;
-                  }}
-                  onBlur={() => stopEditing(true)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' && !e.shiftKey) {
-                      e.preventDefault();
-                      stopEditing(true);
-                    } else if (e.key === 'Escape') {
-                      stopEditing(false);
-                    } else if (e.key === 'Tab') {
-                      e.preventDefault(); 
-                      stopEditing(true); 
-                    }
-                  }}
-                  style={{
-                    position: 'absolute',
-                    left: localLeft,
-                    top: localTop,
-                    width: visual.box.w,
-                    height: visual.box.h,
-                    fontSize: `${visual.box.finalFontSize}px`,
-                    fontWeight: visual.style.fontWeight || 'normal',
-                    fontStyle: visual.style.fontStyle === 'italic' ? 'italic' : 'normal',
-                    fontFamily: visual.style.fontFamily || 'Inter',
-                    lineHeight: LINE_HEIGHT_MULTIPLIER,
-                    padding: `${PADDING_Y}px ${PADDING_X}px`,
-                    textAlign: visual.style.textAlign || 'center',
-                    textDecoration: visual.style.textDecoration || 'none',
-                    color: visual.style.textColor || '#333333',
-                    backgroundColor: visual.style.color,
-                    border: `${visual.style.borderWidth || 0}px ${
-                      visual.style.borderStyle === 'dashed' ? 'dashed'
-                      : visual.style.borderStyle === 'dotted' ? 'dotted'
-                      : 'solid'
-                    } ${visual.style.borderColor || 'transparent'}`,
-                    borderRadius: visual.style.shape === 'roundedRect' ? '8px' : '0px',
-                    boxSizing: 'border-box',
-                    outline: 'none',
-                    boxShadow: 'none',
-                    transition: 'none',
-                    pointerEvents: 'auto',
-                    overflow: 'hidden',
-                  }}
-                  className="z-50 rounded-md outline-none resize-none"
-                />
-              </div>
+              <textarea
+                ref={editingInputRef}
+                defaultValue={node.nodeText}
+                onInput={(e) => {
+                  const el = e.currentTarget as HTMLTextAreaElement;
+                  el.style.height = 'auto';
+                  const newHeight = Math.max(visual.box.h, el.scrollHeight);
+                  el.style.height = `${newHeight}px`;
+                }}
+                onBlur={() => stopEditing(true)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    stopEditing(true);
+                  } else if (e.key === 'Escape') {
+                    stopEditing(false);
+                  } else if (e.key === 'Tab') {
+                    e.preventDefault();
+                    stopEditing(true);
+                  }
+                }}
+                style={{
+                  position: 'fixed',
+                  left: absoluteX,
+                  top: absoluteY,
+                  width: visual.box.w,
+                  height: visual.box.h,
+                  transform: `translate(-50%, -50%) scale(${scale})`,
+                  transformOrigin: 'center center',
+                  
+                  fontSize: `${visual.box.finalFontSize}px`,
+                  fontWeight: visual.style.fontWeight || 'normal',
+                  fontStyle: visual.style.fontStyle === 'italic' ? 'italic' : 'normal',
+                  fontFamily: visual.style.fontFamily || 'Inter',
+                  lineHeight: 1.3, 
+                  padding: `${PADDING_Y}px ${PADDING_X}px`,
+                  textAlign: visual.style.textAlign || 'center',
+                  textDecoration: visual.style.textDecoration || 'none',
+                  color: visual.style.textColor || '#333333',
+                  backgroundColor: visual.style.color,
+                  
+                  border: `${visual.style.borderWidth || 0}px ${
+                    visual.style.borderStyle === 'dashed' ? 'dashed'
+                    : visual.style.borderStyle === 'dotted' ? 'dotted'
+                    : 'solid'
+                  } ${visual.style.borderColor || 'transparent'}`,
+                  borderRadius: visual.style.shape === 'roundedRect' ? '8px' : '0px',
+                  
+                  boxSizing: 'border-box',
+                  outline: '2px solid #3b82f6', 
+                  zIndex: 100,
+                  overflow: 'hidden',
+                  resize: 'none',
+                }}
+                className="shadow-lg" 
+              />
             );
           })()}
 
@@ -2320,10 +2327,8 @@ const handleFitToScreen = useCallback(() => {
                       visible={editingNodeId !== node.id}
                       text={textToRender || '(...)'}
                       width={w} 
-                      // Nếu có ảnh, text height sẽ là phần còn lại
                       height={style.imageUrl ? (h - imageHeight - 10) : h} 
                       offsetX={w / 2} 
-                      // Offset Y cần tính lại: nếu có ảnh, text bị đẩy xuống
                       offsetY={style.imageUrl ? (h / 2) - imageHeight - 10 : h / 2} 
                       align={style.textAlign}
                       verticalAlign="middle"
@@ -2407,8 +2412,8 @@ const handleFitToScreen = useCallback(() => {
                     )}
                     {(style as any).hyperlink && (
                     <Group
-                      x={w / 2 - 10} 
-                      y={-h / 2 + 10} 
+                      x={w / 2 - 20} 
+                      y={0} 
                       onClick={(e) => {
                         e.cancelBubble = true; 
                         window.open((style as any).hyperlink, '_blank', 'noopener,noreferrer');
@@ -2417,13 +2422,16 @@ const handleFitToScreen = useCallback(() => {
                       onMouseLeave={(e) => { const stage = e.target.getStage(); if (stage) stage.container().style.cursor = 'default'; }}
                       title={`Mở link: ${(style as any).hyperlink}`}
                     >
-                      <Circle radius={9} fill="#E0E7FF" stroke="#4F46E5" strokeWidth={1} />
+                      <Circle radius={8} fill="#5f85ffff" stroke="#ffffffff" strokeWidth={1} />
                       <Path 
-                        data="M9.25 10.75a.75.75 0 0 0 1.5 0v-1.5h1.5a.75.75 0 0 0 0-1.5h-1.5v-1.5a.75.75 0 0 0-1.5 0v1.5h-1.5a.75.75 0 0 0 0 1.5h1.5v1.5Z M3.75 5.5a2 2 0 0 1 2-2h4.5a2 2 0 0 1 2 2v1a.75.75 0 0 0 1.5 0v-1a3.5 3.5 0 0 0-3.5-3.5h-4.5A3.5 3.5 0 0 0 2.25 5.5v5A3.5 3.5 0 0 0 5.75 14h1a.75.75 0 0 0 0-1.5h-1a2 2 0 0 1-2-2v-5Z"
-                        fill="#4F46E5"
-                        scale={{ x: 0.8, y: 0.8 }}
-                        offsetX={10} 
-                        offsetY={10} 
+                        data="M21 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h6 M21 3l-9 9 M15 3h6v6"
+                        stroke="#ffffffff"      
+                        strokeWidth={2}       
+                        lineCap="round"
+                        lineJoin="round"
+                        scale={{ x: 0.4, y: 0.4 }} 
+                        offsetX={12}          
+                        offsetY={12}          
                       />
                     </Group>
                   )}
