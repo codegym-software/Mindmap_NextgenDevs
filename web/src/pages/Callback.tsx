@@ -63,4 +63,8 @@ export default function Callback() {
       <span>Đang xử lý đăng nhập...</span>
     </div>
   );
+<<<<<<< HEAD
 }
+=======
+}
+>>>>>>> ft/share

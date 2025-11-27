@@ -123,6 +123,7 @@ if (!currentTokens.refresh_token) {
 throw new Error("No refresh token available.");
 }
 
+<<<<<<< HEAD
 console.log("Access token expired, attempting refresh...");
 
   try {
@@ -143,6 +144,29 @@ setAuthTokens(newTokens);
 console.log("Token refresh successful.");
 // 5. Trả về access token MỚI
 return newTokens.access_token;
+=======
+  console.log("Access token expired, attempting refresh...");
+
+  try {
+    // 3. Gọi hàm refreshToken mới (từ AuthApi.ts)
+    const newSession = await refreshToken(currentTokens.refresh_token);
+
+    const newTokens: Tokens = {
+      access_token: newSession.access_token,
+      id_token: newSession.id_token,
+      // [QUAN TRỌNG] Giữ lại refresh token CŨ,
+      // vì Cognito /oauth2/token không trả về refresh token mới
+      refresh_token: currentTokens.refresh_token, 
+      expires_at: Math.floor(Date.now() / 1000) + (newSession.expires_in ?? 3600),
+    };
+
+    // 4. Lưu token mới vào context/localStorage
+    setAuthTokens(newTokens);
+    console.log("Token refresh successful.");
+    
+    // 5. Trả về access token MỚI
+    return newTokens.access_token;
+>>>>>>> ft/share
 
   } catch (error) {
     console.error("Token refresh failed (API):", error);

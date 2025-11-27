@@ -31,6 +31,9 @@ public class MindmapContent {
 
     /** Danh sách các liên kết giữa node với node */
     private List<EdgeData> edges;
+    
+    private GlobalSettings globalSettings = new GlobalSettings(); 
+
 
     /** Theme của mindmap (light | dark) */
     private MindmapTheme theme = MindmapTheme.LIGHT;

@@ -239,7 +239,7 @@ const AuthModal: React.FC<Props> = ({ isOpen, onClose, initialMode = 'login' }) 
 
             {(mode === 'login' || mode === 'register') && (
                 <>
-                <div className="my-6 flex items-center">
+                   <div className="my-6 flex items-center">
                         <div className="flex-1 border-t border-gray-300"></div>
                         <span className="px-4 text-gray-500 text-sm">hoặc</span>
                         <div className="flex-1 border-t border-gray-300"></div>

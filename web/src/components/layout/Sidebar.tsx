@@ -2,6 +2,8 @@
 import { useEffect, useRef, useState, useMemo } from "react";
 import { useAuth } from "../../hooks/useAuth";
 import { useMindmapsStore } from "../../app/store/useMindmapsStore";
+// [MỚI] Import editor store để đồng bộ tên
+import { useEditorStore } from "../../app/store/useEditorStore"; 
 import { Plus, Search, Edit, Trash2, Share2, PanelLeftOpen, Pin, PinOff } from 'lucide-react';
 import { useToast } from "../../hooks/useToast";
 import { mindmapsApi } from "../../services/mindmapsApi";
@@ -15,6 +17,9 @@ export default function Sidebar() {
   const { addToast } = useToast();
   const { items, set: setMindmaps, loading } = useMindmapsStore();
   const { load: loadGuests, updateGuestName, removeGuest } = useLocalMindmap();
+  
+  const currentMindmapId = useEditorStore(s => s.currentMindmapId);
+  const setEditorStore = useEditorStore(s => s.set);
 
   const [open, setOpen] = useState(false);
   const [pinned, setPinned] = useState(() => localStorage.getItem(PIN_KEY) === "1");
@@ -91,6 +96,12 @@ export default function Sidebar() {
       } else {
         updateGuestName(editingId, tempName); // Đã bao gồm setMindmaps
       }
+
+      // [MỚI] Đồng bộ tên với Editor nếu map đang được mở
+      if (editingId === currentMindmapId) {
+        setEditorStore({ currentMindmapName: tempName });
+      }
+
       addToast("Đổi tên thành công!", "success");
     } catch (error) {
       console.error("Rename failed:", error);
@@ -186,7 +197,7 @@ export default function Sidebar() {
           <div className="flex-1 overflow-y-auto px-2 py-3 space-y-1 custom-scrollbar">
             <div className="text-xs text-gray-900/50 px-2 mb-2 font-semibold uppercase">Gần đây</div> 
             {loading ? (
-               <div className="text-center text-gray-900/40 py-8 text-sm">Đang tải...</div> 
+                <div className="text-center text-gray-900/40 py-8 text-sm">Đang tải...</div> 
             ) : filteredMindmaps.length === 0 ? (
               <div className="text-center text-gray-900/40 py-8 text-sm">Không tìm thấy mindmap nào.</div> 
             ) : (

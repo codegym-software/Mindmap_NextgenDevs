@@ -12,6 +12,7 @@ Thumbs.db
 # ==============================
 #  Node / React / Vite (web/)
 # ==============================
+node_modules/
 web/node_modules/
 web/dist/
 web/.vite/
@@ -80,11 +81,13 @@ infra/.yml
 cognito.txt
 decription-be.txt
 decription-fe.txt
+fe-compare.txt
 promt.txt
 structure.txt
 all_code.txt
 mindmap_code_dump.txt
+web/src/all_tsx_files.txt
 all_java_files.txt
 CMD.txt
 WEB_Decription.txt
-all_yml_files.txt
+all_tsx_files.txt

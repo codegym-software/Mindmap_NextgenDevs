@@ -1,3 +1,711 @@
-Editor.tsx:541 WebSocket connected to mindmap: 6914096d1fbd450d526d5980
-localStorage
-Storage {mm_theme: 'light', mm_sidebar_pinned: '0', mm_tokens: '{"access_token":"eyJraWQiOiJBK2lzVmp4ZFh3Y290WVZ1V….7FhZf52otICkEgpwP8UmCw","expires_at":1762956812}', length: 3}mm_sidebar_pinned: "0"mm_theme: "light"mm_tokens: "{\"access_token\":\"eyJraWQiOiJBK2lzVmp4ZFh3Y290WVZ1VDE5cjRNT1NhZ3V3Nmdsa1lhckNcL3pLRmJpYz0iLCJhbGciOiJSUzI1NiJ9.eyJzdWIiOiIxOWNlNTQ0OC1kMGExLTcwZjktNzY0Yy1lYmVlMTRmMmIwOGQiLCJjb2duaXRvOmdyb3VwcyI6WyJhcC1zb3V0aGVhc3QtMl90MzBPV1dpemdfR29vZ2xlIl0sImlzcyI6Imh0dHBzOlwvXC9jb2duaXRvLWlkcC5hcC1zb3V0aGVhc3QtMi5hbWF6b25hd3MuY29tXC9hcC1zb3V0aGVhc3QtMl90MzBPV1dpemciLCJ2ZXJzaW9uIjoyLCJjbGllbnRfaWQiOiI3c284cW5vaTdwZ25lNmJxMGtxMnBwaGFybSIsIm9yaWdpbl9qdGkiOiI0M2FhZTk0ZS1kYTBmLTQyNDgtOTcwZi1lOGUyM2U4NDEwMmUiLCJ0b2tlbl91c2UiOiJhY2Nlc3MiLCJzY29wZSI6Im9wZW5pZCBwcm9maWxlIGVtYWlsIiwiYXV0aF90aW1lIjoxNzYyOTIwODEyLCJleHAiOjE3NjI5NTY4MTIsImlhdCI6MTc2MjkyMDgxMiwianRpIjoiMTRkYWY0YmYtYjdhNy00N2NkLWE4MTAtNDZjYjA4MmI3MjhlIiwidXNlcm5hbWUiOiJnb29nbGVfMTEwMzg0MDAzNDYzNDg5OTk5NTUzIn0.gAsdD6nLeREjOJDYurq5vNprk-7aKd7G4r8etQ6RSSLYv6wQ3gadSbp7-WqR-gQOxnsagaY41H7AV7h_zYuSiOZQ1vWkXJdh0MQ3NY3AHtfnbaKzWoD_hKMu1aJQfqgd2cJlbWulJaQ-2D3JgfD30pp-vb5Wwl0Rngd9HGu_aMSGh2LTrNw0yTPH7HJhDhq-cRvgcFZRkjD0-pbR7pE9nVKD9Gm1-v59UixodPbWO4rVDoDA5-fdB9YEB79uvEl1HBOS8VqYf_hsMkdsiRqvMPEafuV85oYR4udOuENP1U2_82cSww1iJNd0o0dQkj6Hpn6eN51ii3kxV3CtuxYEXg\",\"id_token\":\"eyJraWQiOiJ0MzR4QTh1blNFTEp6QUhNWE11MW0yVUtwbGNXUzRNaFk5MjJoZm9kVVJvPSIsImFsZyI6IlJTMjU2In0.eyJhdF9oYXNoIjoiUzRwMWJ3Q21Fc1NSQWhBTEhFTktkZyIsInN1YiI6IjE5Y2U1NDQ4LWQwYTEtNzBmOS03NjRjLWViZWUxNGYyYjA4ZCIsImNvZ25pdG86Z3JvdXBzIjpbImFwLXNvdXRoZWFzdC0yX3QzME9XV2l6Z19Hb29nbGUiXSwiZW1haWxfdmVyaWZpZWQiOmZhbHNlLCJpc3MiOiJodHRwczpcL1wvY29nbml0by1pZHAuYXAtc291dGhlYXN0LTIuYW1hem9uYXdzLmNvbVwvYXAtc291dGhlYXN0LTJfdDMwT1dXaXpnIiwiY29nbml0bzp1c2VybmFtZSI6Imdvb2dsZV8xMTAzODQwMDM0NjM0ODk5OTk1NTMiLCJvcmlnaW5fanRpIjoiNDNhYWU5NGUtZGEwZi00MjQ4LTk3MGYtZThlMjNlODQxMDJlIiwiYXVkIjoiN3NvOHFub2k3cGduZTZicTBrcTJwcGhhcm0iLCJpZGVudGl0aWVzIjpbeyJkYXRlQ3JlYXRlZCI6IjE3NTkxMzkzMDkzMzEiLCJ1c2VySWQiOiIxMTAzODQwMDM0NjM0ODk5OTk1NTMiLCJwcm92aWRlck5hbWUiOiJHb29nbGUiLCJwcm92aWRlclR5cGUiOiJHb29nbGUiLCJpc3N1ZXIiOm51bGwsInByaW1hcnkiOiJ0cnVlIn1dLCJ0b2tlbl91c2UiOiJpZCIsImF1dGhfdGltZSI6MTc2MjkyMDgxMiwiZXhwIjoxNzYyOTI0NDEyLCJpYXQiOjE3NjI5MjA4MTIsImp0aSI6IjA1N2U4ZWRlLTA1NDctNDIxZS04MWE2LTZiN2RiM2EyYzM5MyIsImVtYWlsIjoiaHVhbnYzNTk2QGdtYWlsLmNvbSJ9.rvwwR6RFpufRYVA3Pp1HUKqbRH23C2m3nfLwGLLBngwuRKZ6tTrLnye_SEJZ2Wcz9z4KyNHm2F4W9IwKLo11tVA-CVeBnpBKE977ZnpKV_9BisKH9efs9yc9xXZ8x_Y5jMgT06VWHmgDO3fKAj72kNw3-9NsFUZJk0CyIqqm8Oe4wq8gneea70HNcwcs44O37SL3oQYiNJ5YgIGCCXcNlXwfDlm95iQMtQfmeN0dBGU4W4ESY3rAWoKY5S1_VNk4lYiz1oK-JwzadxUXZPe2TCMaGevo3dG5KeOfr7Bk5IFKsiky5hgcb2qEYCqSiuVyr9hMbN7uGagGpadG1qszAg\",\"refresh_token\":\"eyJjdHkiOiJKV1QiLCJlbmMiOiJBMjU2R0NNIiwiYWxnIjoiUlNBLU9BRVAifQ.K3K3_xr16z_Uso30A58cH3IdLKLCdl3_4NPdx7KDVh9TSZZ3OZI7UOYztRISKg9VCh15me5s5MFYPTBrx47jsy-_HQ1y26Dd_CMra7D6GZ-dbjEQUrsUIzNpdfFBmAMtwT0qXzf732_Ecs-TYMOLD43PdRGVxVxxaD04ByB1nHlmv08dXeOcieBQbjK7YbDoy0HYHDh1G_xD0OTeF6aAVs06iZxm5ZmZg9OReH6_a013C_kPQ4NdzirspwiXZ5ABkoUUVcAL2MDHcTNq3aIimWzDJ6SsMgLbKeBq4WK5JO17KxPnCbDS3sSEzCVo7CLZYCOxZmIzeoe_njB1_-eYvA.bsTGFuqj6z_IAWdg.yUbYCFQ3r50hQEGJqrvu4DmXFQTNsrelR1JSCoaIdn_1uuL6VX9R8ZvuIneMI53lQz696CMfnRtz_fLB8ifbKQWjNRMoHppz-el1DBn2n1Hi-UP0kFwo2qGzGoIi2YOdPis4zpqQv2kRwbpp28flhHgSbboJWDeOVG4Z073lSOycVUOUyrP9x6yyh0BWIY5nufU3rwbQ2ymu2OHyDw9aqRmrkdWDXbQ0Qsm1vjxZcMofm62DGQ_kTmU6i-TYzxMzIXCu80BzWpisnWQBNuxbEnTLKmps8PEAgd0qKbnejEoFEd6p0rjukl5E6LJ6zmNAwm1i39gfy-0SVE3YzDeQjbD1a7FQfwd41Cf44cfoTZCSzawbgSkpZfcpa4GaVLYLIa7xwFAyofIRdlWj-h_BOwKBpLkbC7Leyxfs113EI2I9-cfEOBDWpS0C2SSg0rN7gcI1MEpJswrfJZs_o8MEZWgu_gL_byFFb7IEq8bVyBP5-6XQJc3jDLrYLMvtgc5XEmuAIk6Vouv4pqvFFUHnBavsTmkjY3kC6Fpf6ThXdisHZbp568okpgk2MYcln_rxxWqrByKSfGqeDNERt1J0pWEqgyChYaPw_tOJQj6spMid0-ePnGjhqrE7g1gRI91tJSH0iDlDEVmfODWAZfE4EMNUPy9tuACPvAqvr-BNLa13vL9ladv3arx0ObFUrxMiC0slv3aSupanemTzaGfBri3xB1i__YO0lmFqJwBVyacA9rlm3iXDcLnF_Tt6OVSd94bWa8F3z1dYNpgxKAyKEUO5m05JAzzTHg5J8JiPlkRn6Toyo0yH9G_3VWXCLCZMZVXLpNW9zJ924pF53VtbVLIH4ziDCP6VqOv4K3bFSCa4k0zmBdnfZjfERyG9Oj_JO6N2Y4zdeqTMY7-ueylxxw4B308rCXG1AuC3musdGzQDYkcKKv2B128r6kuz53yQULhpT5reLYjrFpAbIWZrJZhz-a-x0GaLMsSmcDSHrOZ7F3rmHYZha1dbdZ8JDvijq_R69ozG9k2_s4FJF_a_hivinPAxL2DcLEII_tUq0AGu24K5vQ-jKMtreMKCAaou-05DyLIZC5FfThq_5-oslmvM7_tBy11bgL7CXDYGZs_LfZ-FUJMOVfsrZMp-w4CUnGruYIq_PlZPgHIlg--cNnVC3uy4k0l4S8XHJ2xVtZ1JbVzgvT-1_Yds0hACfksf5je4oq0o7morfcXfEDz6nhMY58NM5vgXZAHenuWj9w.7FhZf52otICkEgpwP8UmCw\",\"expires_at\":1762956812}"length: 3[[Prototype]]: Storage
+*Tôi cần bạn gộp hai file này lại với nhau file có tính năng mới nhưng chưa đầy đủ và file của tôi cầnt hêm tính năng mới :*
+* Bạn hãy viết lại thành một file đầy đủ có comment như trong code nhé *
+
+-file của tôi :
+import { useEffect, useRef, useCallback, useState } from 'react';
+import { useAuth } from './useAuth';
+import { useToast } from './useToast';
+import { EdgeData, useEditorStore } from '../app/store/useEditorStore';
+import { throttle } from 'lodash';
+
+type BroadcastPatch = {
+  type: string;
+  payload: any;
+  senderId: string;
+};
+
+type UseRealtimeProps = {
+  mindmapId?: string;
+  isGuest: boolean;
+  isDataLoaded: boolean;
+  isOwner: boolean;
+  onLayoutRequest: (keepCamera: boolean) => void;
+  onSetRootCollapse: (side: 'left' | 'right', collapsed: boolean) => void;
+};
+
+// Helper throttle
+const throttleFunc = (func: Function, limit: number) => {
+  let inThrottle: boolean;
+  return function(this: any, ...args: any[]) {
+    if (!inThrottle) {
+      func.apply(this, args);
+      inThrottle = true;
+      setTimeout(() => inThrottle = false, limit);
+    }
+  }
+}
+
+export function useRealtime({
+  mindmapId,
+  isGuest,
+  isDataLoaded,
+  isOwner,
+  onLayoutRequest,
+  onSetRootCollapse,
+}: UseRealtimeProps) {
+  const { getAccessToken, isAuthed, user } = useAuth();
+  const { addToast } = useToast();
+  const { setGraph, updatePeer, removePeer } = useEditorStore();
+  
+  const wsRef = useRef<WebSocket | null>(null);
+  const reconnectTimeoutRef = useRef<any>(null);
+  const [isConnected, setIsConnected] = useState(false);
+
+  // Dùng ref để lưu props mới nhất, tránh re-connect liên tục
+  const latestProps = useRef({ isOwner, onLayoutRequest, onSetRootCollapse });
+  useEffect(() => {
+    latestProps.current = { isOwner, onLayoutRequest, onSetRootCollapse };
+  }, [isOwner, onLayoutRequest, onSetRootCollapse]);
+  
+  const sendPatch = useCallback((type: string, payload: any) => {
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      try {
+        wsRef.current.send(JSON.stringify({ type, payload }));
+      } catch (e) {
+        console.error('Lỗi khi gửi WebSocket patch:', e);
+      }
+    }
+  }, []);
+
+  const sendCursor = useRef(
+    throttleFunc((x: number, y: number, name: string, color: string) => {
+       if (wsRef.current?.readyState === WebSocket.OPEN) {
+         wsRef.current.send(JSON.stringify({ 
+             type: 'CURSOR_MOVE', 
+             payload: { x, y, name, color } 
+         }));
+       }
+    }, 50)
+  ).current;
+
+  useEffect(() => {
+    if (!mindmapId || !isAuthed || isGuest || !isDataLoaded) {
+      return;
+    }
+
+    let isMounted = true;
+    let retryCount = 0;
+
+    const connect = async () => {
+      try {
+        const token = await getAccessToken();
+        if (!token || !isMounted) return;
+
+        const wsUrl = `ws://localhost:8081/ws/mindmap/${mindmapId}?token=${token}`;
+        const ws = new WebSocket(wsUrl);
+        wsRef.current = ws;
+
+        ws.onopen = () => {
+            console.log(`🟢 WebSocket connected: ${mindmapId}`);
+            setIsConnected(true);
+            retryCount = 0; 
+        };
+        
+        ws.onmessage = (event) => {
+          try {
+            const message: BroadcastPatch = JSON.parse(event.data);
+            const { type, payload, senderId } = message;
+
+            // Lấy props mới nhất từ ref
+            const { isOwner: currentIsOwner, onLayoutRequest: currentLayoutRequest, onSetRootCollapse: currentSetRootCollapse } = latestProps.current;
+
+            if (user?.sub === senderId || user?.id === senderId) return;
+
+            const { nodes: currentNodes, edges: currentEdges } = useEditorStore.getState();
+
+            switch (type) {
+              case 'USER_JOINED':
+                addToast(`User ${payload.userId.substring(0, 6)}... đã tham gia.`, 'info');
+                if (currentIsOwner) {
+                    // Gửi snapshot qua socket instance hiện tại
+                    if (ws.readyState === WebSocket.OPEN) {
+                        ws.send(JSON.stringify({ 
+                            type: 'FULL_SYNC', 
+                            payload: { nodes: currentNodes, edges: currentEdges } 
+                        }));
+                    }
+                }
+                break;
+
+              case 'FULL_SYNC': 
+                console.log("🔄 Received FULL_SYNC snapshot. Updating store...");
+                setGraph(payload.nodes, payload.edges);
+                setTimeout(() => currentLayoutRequest(true), 50);
+                addToast('Đã đồng bộ dữ liệu mới nhất.', 'success');
+                break;
+
+              case 'USER_LEFT':
+                removePeer(senderId);
+                addToast(`User... đã rời đi.`, 'info');
+                break;
+
+              case 'CURSOR_MOVE':
+                  updatePeer(senderId, { 
+                      x: payload.x, 
+                      y: payload.y, 
+                      name: payload.name, 
+                      color: payload.color 
+                  });
+                  break;
+              
+              case 'NODE_MOVE': {
+                const { id: nodeId, x, y } = payload;
+                const newNodes = currentNodes.map((n) =>
+                   n.id === nodeId ? { ...n, x, y } : n
+                );
+                setGraph(newNodes, currentEdges);
+                break;
+              }
+
+              case 'NODE_TEXT_CHANGE': {
+                const { id: nodeId, text } = payload;
+                const newNodes = currentNodes.map((n) =>
+                  n.id === nodeId ? { ...n, nodeText: text } : n
+                );
+                setGraph(newNodes, currentEdges);
+                setTimeout(() => currentLayoutRequest(true), 0);
+                break;
+              }
+
+              case 'NODE_CREATE': {
+                const { node: feNode, edge: feEdge } = payload;
+                // [FIX LỖI QUAN TRỌNG]: Chỉ thêm edge nếu nó tồn tại (khác null)
+                const nextEdges = feEdge ? [...currentEdges, feEdge] : currentEdges;
+                
+                setGraph([...currentNodes, feNode], nextEdges);
+                setTimeout(() => currentLayoutRequest(true), 0);
+                break;
+              }
+
+              case 'NODE_DELETE': {
+                const { nodeIds } = payload;
+                const set = new Set(nodeIds as string[]);
+                const newNodes = currentNodes.filter((n) => !set.has(n.id));
+                const newEdges = currentEdges.filter(
+                  (e) => !set.has(e.from) && !set.has(e.to)
+                );
+                setGraph(newNodes, newEdges);
+                setTimeout(() => currentLayoutRequest(true), 0);
+                break;
+              }
+
+              case 'NODE_REPARENT': {
+                const { nodeId, newParentId, x, y, side } = payload;
+                const newNodes = currentNodes.map((n) =>
+                  n.id === nodeId
+                    ? { ...n, parentId: newParentId, x, y, side }
+                    : n
+                );
+                const oldEdge = currentEdges.find((e) => e.to === nodeId);
+                let newEdges: EdgeData[];
+                if (oldEdge) {
+                  newEdges = currentEdges.map((e) =>
+                    e.id === oldEdge.id ? { ...e, from: newParentId } : e
+                  );
+                } else {
+                  newEdges = [
+                    ...currentEdges,
+                    { id: `e-${nodeId}`, from: newParentId, to: nodeId },
+                  ];
+                }
+                setGraph(newNodes, newEdges);
+                setTimeout(() => currentLayoutRequest(true), 0);
+                break;
+              }
+
+              case 'NODE_STYLE_UPDATE': {
+                const { id: nodeId, updates } = payload;
+                const newNodes = currentNodes.map((n) =>
+                  n.id === nodeId ? { ...n, ...updates } : n
+                );
+                setGraph(newNodes, currentEdges);
+                if (updates.nodeLength) setTimeout(() => currentLayoutRequest(true), 0);
+                break;
+              }
+
+              case 'NODE_QUICK_STYLE_APPLY': {
+               const { id: nodeId, styleId, resetStyle } = payload;
+                const newNodes = currentNodes.map((n) =>
+                  n.id === nodeId
+                    ? { ...n, ...resetStyle, quickStyleId: styleId }
+                    : n
+                );
+                setGraph(newNodes, currentEdges);
+                setTimeout(() => currentLayoutRequest(true), 0);
+                break;
+              }
+
+              case 'NODE_STYLE_PASTE': {
+               const { id: nodeId, style } = payload;
+                const newNodes = currentNodes.map((n) =>
+                  n.id === nodeId ? { ...n, ...style } : n
+                );
+                setGraph(newNodes, currentEdges);
+               setTimeout(() => currentLayoutRequest(true), 0);
+                break;
+              }
+
+              case 'NODE_STYLE_RESET': {
+                const { id: nodeId, resetStyle } = payload;
+                const newNodes = currentNodes.map((n) =>
+                  n.id === nodeId ? { ...n, ...resetStyle } : n
+                );
+                setGraph(newNodes, currentEdges);
+                setTimeout(() => currentLayoutRequest(true), 0);
+                break;
+              }
+
+              case 'NODE_TOGGLE_COLLAPSE': {
+                const { id: nodeId } = payload;
+                const newNodes = currentNodes.map(n => 
+                  n.id === nodeId ? { ...n, collapsed: !n.collapsed } : n
+                );
+                setGraph(newNodes, currentEdges);
+               break;
+              }
+
+              case 'ROOT_TOGGLE_COLLAPSE': {
+                const { side } = payload;
+                if (side === 'left' || side === 'right') {
+                    currentSetRootCollapse(side, true); 
+                }
+                break;
+              }
+              
+              case 'LINE_COLOR_TOGGLE': {
+                  useEditorStore.setState({ isColoredBranch: payload.state });
+                  setGraph([...currentNodes], currentEdges);
+                  break;
+              }
+
+              case 'BACKGROUND_CHANGE': {
+                  useEditorStore.setState({ backgroundColor: payload.color });
+                  break;
+              }
+
+              case 'GLOBAL_BRANCH_COLOR_CHANGE': {
+                  useEditorStore.setState({ globalBranchColor: payload.color });
+                  setGraph([...currentNodes], currentEdges);
+                  break;
+              }
+
+              case 'MAP_NAME_CHANGE': {
+                  useEditorStore.setState({ currentMindmapName: payload.name });
+                  break;
+              }
+
+              default:
+                break;
+            }
+          } catch (e) {
+            console.error('WS Message Error:', e);
+          }
+        };
+        
+        ws.onclose = () => {
+          console.log(`🔴 WS Disconnected`);
+          wsRef.current = null;
+          setIsConnected(false);
+
+          if (isMounted) {
+             const timeout = Math.min(1000 * (2 ** retryCount), 10000);
+             retryCount++;
+             reconnectTimeoutRef.current = setTimeout(connect, timeout);
+          }
+        };
+      } catch (err) {
+        console.error("WS Connect Error", err);
+        setIsConnected(false);
+      }
+    };
+
+    connect();
+
+    return () => {
+      isMounted = false;
+      if (wsRef.current) {
+        wsRef.current.close();
+      }
+      if (reconnectTimeoutRef.current) {
+          clearTimeout(reconnectTimeoutRef.current);
+      }
+    };
+  }, [mindmapId, isAuthed, isGuest, isDataLoaded, getAccessToken, addToast, setGraph, updatePeer, removePeer]);
+
+  return { sendPatch, sendCursor, isConnected };
+}
+
+- file có phần code mới :
+import { useEffect, useRef, useCallback, useState } from 'react';
+import { useAuth } from './useAuth';
+import { useToast } from './useToast';
+import { useEditorStore } from '../app/store/useEditorStore';
+import { throttle } from 'lodash'; // Hoặc dùng hàm throttleFunc thủ công bên dưới nếu chưa cài lodash
+
+type BroadcastPatch = {
+  type: string;
+  payload: any;
+  senderId: string;
+};
+
+type UseRealtimeProps = {
+  mindmapId?: string;
+  isGuest: boolean;
+  isDataLoaded: boolean;
+  isOwner: boolean;
+  // [MỚI] Thông tin người dùng hiện tại để gửi Presence
+  userInfo: { name: string; color: string }; 
+  onLayoutRequest: (keepCamera: boolean) => void;
+  onSetRootCollapse: (side: 'left' | 'right', collapsed: boolean) => void;
+};
+
+// Helper throttle (nếu không dùng lodash)
+const throttleFunc = (func: Function, limit: number) => {
+  let inThrottle: boolean;
+  return function(this: any, ...args: any[]) {
+    if (!inThrottle) {
+      func.apply(this, args);
+      inThrottle = true;
+      setTimeout(() => inThrottle = false, limit);
+    }
+  }
+}
+
+export function useRealtime({
+  mindmapId,
+  isGuest,
+  isDataLoaded,
+  isOwner,
+  userInfo, // [MỚI]
+  onLayoutRequest,
+  onSetRootCollapse,
+}: UseRealtimeProps) {
+  const { getAccessToken, isAuthed, user } = useAuth();
+  const { addToast } = useToast();
+  
+  // [MỚI] Lấy các actions tối ưu từ Store
+  const { setGraph, setPeerInfo, updatePeerCursor, removePeer } = useEditorStore();
+  
+  const wsRef = useRef<WebSocket | null>(null);
+  const reconnectTimeoutRef = useRef<any>(null);
+  const [isConnected, setIsConnected] = useState(false);
+
+  // Dùng ref để lưu props mới nhất tránh re-connect
+  const latestProps = useRef({ isOwner, userInfo, onLayoutRequest, onSetRootCollapse });
+  useEffect(() => {
+    latestProps.current = { isOwner, userInfo, onLayoutRequest, onSetRootCollapse };
+  }, [isOwner, userInfo, onLayoutRequest, onSetRootCollapse]);
+  
+  // 1. Hàm gửi Patch (cho các thao tác Node)
+  const sendPatch = useCallback((type: string, payload: any) => {
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      try {
+        wsRef.current.send(JSON.stringify({ type, payload }));
+      } catch (e) {
+        console.error('WS Send Error:', e);
+      }
+    }
+  }, []);
+
+  // 2. [MỚI] Hàm gửi Presence (Tên & Màu) - Chỉ gửi 1 lần khi join hoặc reconnect
+  const sendPresence = useCallback(() => {
+     const { name, color } = latestProps.current.userInfo;
+     if (wsRef.current?.readyState === WebSocket.OPEN) {
+         wsRef.current.send(JSON.stringify({ 
+             type: 'USER_PRESENCE', 
+             payload: { name, color } 
+         }));
+     }
+  }, []);
+
+  // 3. [MỚI] Hàm gửi vị trí chuột (Tối ưu hóa payload chỉ còn x, y)
+  // Throttle 50ms = 20 updates/giây (Đủ mượt mà không spam)
+  const sendCursor = useRef(
+    throttleFunc((x: number, y: number) => {
+       if (wsRef.current?.readyState === WebSocket.OPEN) {
+         wsRef.current.send(JSON.stringify({ 
+             type: 'CURSOR_MOVE', 
+             payload: { x, y } // Payload gọn nhẹ
+         }));
+       }
+    }, 50)
+  ).current;
+
+  useEffect(() => {
+    if (!mindmapId || !isAuthed || isGuest || !isDataLoaded) return;
+
+    let isMounted = true;
+    let retryCount = 0;
+
+    const connect = async () => {
+      try {
+        const token = await getAccessToken();
+        if (!token || !isMounted) return;
+
+        const wsUrl = `ws://localhost:8081/ws/mindmap/${mindmapId}?token=${token}`;
+        const ws = new WebSocket(wsUrl);
+        wsRef.current = ws;
+
+        ws.onopen = () => {
+            console.log(`🟢 WS Connected`);
+            setIsConnected(true);
+            retryCount = 0;
+            // [MỚI] Gửi thông tin bản thân ngay khi kết nối
+            sendPresence();
+        };
+        
+        ws.onmessage = (event) => {
+          try {
+            const message: BroadcastPatch = JSON.parse(event.data);
+            const { type, payload, senderId } = message;
+            
+            // Lấy context mới nhất
+            const { 
+                isOwner: currentIsOwner, 
+                onLayoutRequest: currentLayoutRequest, 
+                onSetRootCollapse: currentSetRootCollapse,
+                userInfo: currentUserInfo
+            } = latestProps.current;
+
+            if (user?.sub === senderId || user?.id === senderId) return;
+
+            const { nodes: currentNodes, edges: currentEdges } = useEditorStore.getState();
+
+            switch (type) {
+              case 'USER_JOINED':
+                addToast(`User... vừa tham gia.`, 'info');
+                
+                // [LOGIC] Khi có người mới vào:
+                // 1. Nếu mình là Owner -> Gửi Snapshot dữ liệu Map
+                if (currentIsOwner) {
+                    if (ws.readyState === WebSocket.OPEN) {
+                        ws.send(JSON.stringify({ 
+                            type: 'FULL_SYNC', 
+                            payload: { nodes: currentNodes, edges: currentEdges } 
+                        }));
+                    }
+                }
+                // 2. [MỚI] Bất kể là ai, cũng gửi lại Presence của mình để người mới biết mình là ai
+                // (Tránh việc người mới vào thấy con trỏ nhưng không thấy tên/màu)
+                if (ws.readyState === WebSocket.OPEN) {
+                    ws.send(JSON.stringify({ 
+                        type: 'USER_PRESENCE', 
+                        payload: currentUserInfo
+                    }));
+                }
+                break;
+              
+              // [MỚI] Nhận thông tin người khác
+              case 'USER_PRESENCE': 
+                setPeerInfo(senderId, { name: payload.name, color: payload.color });
+                break;
+
+              // [MỚI] Nhận tọa độ chuột (Payload gọn nhẹ)
+              case 'CURSOR_MOVE':
+                 // Chỉ update tọa độ, các info khác giữ nguyên
+                 updatePeerCursor(senderId, payload.x, payload.y);
+                 break;
+
+              case 'USER_LEFT':
+                removePeer(senderId);
+                break;
+
+              case 'FULL_SYNC': 
+                setGraph(payload.nodes, payload.edges);
+                setTimeout(() => currentLayoutRequest(true), 50);
+                addToast('Đã đồng bộ dữ liệu.', 'success');
+                break;
+              
+              // ... (Các case xử lý Node cũ giữ nguyên) ...
+              case 'NODE_MOVE': {
+                const { id: nodeId, x, y } = payload;
+                const newNodes = currentNodes.map((n) => n.id === nodeId ? { ...n, x, y } : n);
+                setGraph(newNodes, currentEdges);
+                break;
+              }
+              case 'NODE_TEXT_CHANGE': {
+                const { id: nodeId, text } = payload;
+                const newNodes = currentNodes.map((n) => n.id === nodeId ? { ...n, nodeText: text } : n);
+                setGraph(newNodes, currentEdges);
+                setTimeout(() => currentLayoutRequest(true), 0);
+                break;
+              }
+              case 'NODE_CREATE': {
+                // Fix lỗi null edge
+                const nextEdges = payload.edge ? [...currentEdges, payload.edge] : currentEdges;
+                setGraph([...currentNodes, payload.node], nextEdges);
+                setTimeout(() => currentLayoutRequest(true), 0);
+                break;
+              }
+              case 'NODE_DELETE': {
+                const set = new Set(payload.nodeIds as string[]);
+                setGraph(currentNodes.filter(n => !set.has(n.id)), currentEdges.filter(e => !set.has(e.from) && !set.has(e.to)));
+                setTimeout(() => currentLayoutRequest(true), 0);
+                break;
+              }
+              case 'NODE_REPARENT': {
+                 const { nodeId, newParentId, x, y, side } = payload;
+                 const newNodes = currentNodes.map(n => n.id === nodeId ? { ...n, parentId: newParentId, x, y, side } : n);
+                 const oldEdge = currentEdges.find(e => e.to === nodeId);
+                 let newEdges = oldEdge ? currentEdges.map(e => e.id === oldEdge.id ? { ...e, from: newParentId } : e) : [...currentEdges, { id: `e-${nodeId}`, from: newParentId, to: nodeId }];
+                 setGraph(newNodes, newEdges);
+                 setTimeout(() => currentLayoutRequest(true), 0);
+                 break;
+              }
+              case 'NODE_STYLE_UPDATE': {
+                 const newNodes = currentNodes.map(n => n.id === payload.id ? { ...n, ...payload.updates } : n);
+                 setGraph(newNodes, currentEdges);
+                 if (payload.updates.nodeLength) setTimeout(() => currentLayoutRequest(true), 0);
+                 break;
+              }
+              case 'NODE_QUICK_STYLE_APPLY': {
+                 const newNodes = currentNodes.map(n => n.id === payload.id ? { ...n, ...payload.resetStyle, quickStyleId: payload.styleId } : n);
+                 setGraph(newNodes, currentEdges);
+                 setTimeout(() => currentLayoutRequest(true), 0);
+                 break;
+              }
+              case 'NODE_STYLE_PASTE': {
+                 const newNodes = currentNodes.map(n => n.id === payload.id ? { ...n, ...payload.style } : n);
+                 setGraph(newNodes, currentEdges);
+                 setTimeout(() => currentLayoutRequest(true), 0);
+                 break;
+              }
+              case 'NODE_STYLE_RESET': {
+                 const newNodes = currentNodes.map(n => n.id === payload.id ? { ...n, ...payload.resetStyle } : n);
+                 setGraph(newNodes, currentEdges);
+                 setTimeout(() => currentLayoutRequest(true), 0);
+                 break;
+              }
+              case 'NODE_TOGGLE_COLLAPSE': {
+                 const newNodes = currentNodes.map(n => n.id === payload.id ? { ...n, collapsed: !n.collapsed } : n);
+                 setGraph(newNodes, currentEdges);
+                 break;
+              }
+              case 'ROOT_TOGGLE_COLLAPSE': {
+                 if (payload.side === 'left' || payload.side === 'right') currentSetRootCollapse(payload.side, true);
+                 break;
+              }
+              case 'LINE_COLOR_TOGGLE': {
+                  useEditorStore.setState({ isColoredBranch: payload.state });
+                  setGraph([...currentNodes], currentEdges);
+                  break;
+              }
+              case 'BACKGROUND_CHANGE': {
+                  useEditorStore.setState({ backgroundColor: payload.color });
+                  break;
+              }
+              case 'GLOBAL_BRANCH_COLOR_CHANGE': {
+                  useEditorStore.setState({ globalBranchColor: payload.color });
+                  setGraph([...currentNodes], currentEdges);
+                  break;
+              }
+              case 'MAP_NAME_CHANGE': {
+                  useEditorStore.setState({ currentMindmapName: payload.name });
+                  break;
+              }
+              default: break;
+            }
+          } catch (e) {
+            console.error('WS Msg Error', e);
+          }
+        };
+        
+        ws.onclose = () => {
+          console.log(`🔴 WS Disconnected`);
+          setIsConnected(false);
+          wsRef.current = null;
+          if (isMounted) {
+             const timeout = Math.min(1000 * (2 ** retryCount), 10000);
+             retryCount++;
+             reconnectTimeoutRef.current = setTimeout(connect, timeout);
+          }
+        };
+      } catch (err) {
+        console.error("WS Connect Error", err);
+        setIsConnected(false);
+      }
+    };
+    connect();
+    return () => {
+      isMounted = false;
+      if (wsRef.current) wsRef.current.close();
+      if (reconnectTimeoutRef.current) clearTimeout(reconnectTimeoutRef.current);
+    };
+  }, [mindmapId, isAuthed, isGuest, isDataLoaded, getAccessToken, addToast, setGraph, updatePeerCursor, removePeer, setPeerInfo]);
+
+  return { sendPatch, sendCursor, isConnected };
+}
+```
+
+---
+
+### 2. Cập nhật `src/pages/Editor.tsx`
+
+Bạn cần cập nhật 2 vị trí:
+1.  **Tính toán `myInfo`**: Tạo thông tin tên và màu cho chính mình.
+2.  **Cập nhật `useRealtime` hook**: Truyền `userInfo` vào.
+3.  **Cập nhật `onMouseMove` của Stage**: Tính toán toạ độ `World` (quan trọng!) và gửi đi.
+
+**Vị trí 1 & 2: Cập nhật hook (Khoảng dòng 530)**
+*Thay thế đoạn gọi `useRealtime` cũ bằng đoạn này:*
+
+```typescript
+  // --- [MỚI] Tạo thông tin nhận diện cho User hiện tại ---
+  // Dùng useMemo để màu và tên không bị đổi mỗi lần render lại
+  const myColor = useMemo(() => {
+      // Nếu có user id thì hash ra màu, không thì random
+      const seed = user?.sub || user?.id || 'guest'; 
+      return getCursorColor(seed); // Import từ EditorHelpers
+  }, [user]);
+  
+  const myName = useMemo(() => {
+      return user?.name || user?.email?.split('@')[0] || 'Guest';
+  }, [user]);
+
+  // --- [MỚI] Tích hợp Realtime với thông tin User ---
+  const { sendPatch, sendCursor, isConnected } = useRealtime({
+    mindmapId: id,
+    isGuest,
+    isDataLoaded,
+    isOwner,
+    userInfo: { name: myName, color: myColor }, // Truyền info vào để hook tự gửi khi join
+    onLayoutRequest: handleLayout,
+    onSetRootCollapse: handleSetRootCollapse,
+  });
+```
+
+**Vị trí 3: Cập nhật `onMouseMove` (Khoảng dòng 1200)**
+*Tìm đến prop `onMouseMove` trong thẻ `<Stage>` và thay thế bằng logic tính toán tọa độ thực:*
+
+```typescript
+            onMouseMove={(e) => {
+              // 1. Logic Pan (Giữ nguyên)
+              if (isPanning) { 
+                 setPos({ x: pos.x + e.evt.movementX, y: pos.y + e.evt.movementY }); 
+              } 
+              // 2. Logic Selecting (Giữ nguyên)
+              else if (isSelecting.current) {
+                const stage = e.target.getStage(); if (!stage) return;
+                const pointer = stage.getPointerPosition(); if (!pointer) return;
+                // ... (Logic selection cũ giữ nguyên) ...
+                // (Bạn có thể giữ nguyên logic selection cũ ở đây)
+                 const currentUnscaledPos = { x: (pointer.x - stage.x()) / stage.scaleX(), y: (pointer.y - stage.y()) / stage.scaleY() };
+                 const start = selectionStartPos.current;
+                 setSelectionRect({ visible: true, x: Math.min(start.x, currentUnscaledPos.x), y: Math.min(start.y, currentUnscaledPos.y), width: Math.abs(start.x - currentUnscaledPos.x), height: Math.abs(start.y - currentUnscaledPos.y) });
+              }
+
+              // 3. [MỚI] Gửi vị trí chuột (Logic quan trọng của Giai đoạn 2)
+              const stage = e.target.getStage();
+              if (stage) {
+                  const pointer = stage.getPointerPosition();
+                  if (pointer) {
+                      // Biến đổi từ tọa độ màn hình (Screen) -> tọa độ Canvas (World)
+                      // Công thức: (Pointer - StageOffset) / Scale
+                      const worldX = (pointer.x - stage.x()) / stage.scaleX();
+                      const worldY = (pointer.y - stage.y()) / stage.scaleY();
+                      
+                      // Gửi tọa độ đã biến đổi (chỉ gửi x, y)
+                      sendCursor(worldX, worldY);
+                  }
+              }
+            }}

@@ -26,25 +26,27 @@ import {
 // Props
 // =================================================================================
 type FormattingToolbarProps = {
-  selectedIds: string[]; 
-  currentNode: NodeData | null;
-  currentBackgroundColor: string;
-  globalStructure: GlobalStructure;
-  activeColorThemeId: keyof typeof colorThemes;
+  // [SỬA] Thay đổi từ string sang mảng string
+  selectedIds: string[]; 
+  currentNode: NodeData | null; // Vẫn là node đầu tiên được chọn
+  currentBackgroundColor: string;
+  globalStructure: GlobalStructure;
+  activeColorThemeId: keyof typeof colorThemes;
 
-  onApplyLayout: (structure: GlobalStructure) => void;
-  onSetBackgroundColor: (color: string) => void;
-  onSetGlobalFont: (font: string) => void;
-  onSetBranchLineWidth: (width: number) => void;
-  onToggleColoredBranch: (state: boolean) => void;
-  onSetGlobalBranchColor: (color: string) => void;
-  onSetActiveColorTheme: (themeName: keyof typeof colorThemes) => void;
+  onApplyLayout: (structure: GlobalStructure) => void;
+  onSetBackgroundColor: (color: string) => void;
+  onSetGlobalFont: (font: string) => void;
+  onSetBranchLineWidth: (width: number) => void;
+  onToggleColoredBranch: (state: boolean) => void;
+  onSetGlobalBranchColor: (color: string) => void;
+  onSetActiveColorTheme: (themeName: keyof typeof colorThemes) => void;
 
-  onUpdateNode: (updates: Partial<NodeData>) => void; 
-  onApplyQuickStyle: (styleId: QuickStyleId) => void;
-  onCopyStyle: () => void;
-  onPasteStyle: () => void;
-  onResetStyle: () => void;
+  // [SỬA] Bỏ tham số 'id'
+  onUpdateNode: (updates: Partial<NodeData>) => void; 
+  onApplyQuickStyle: (styleId: QuickStyleId) => void;
+  onCopyStyle: () => void;
+  onPasteStyle: () => void;
+  onResetStyle: () => void;
 };
 
 // =================================================================================
@@ -58,100 +60,81 @@ const BUTTON_ACTIVE_BG = "bg-blue-500 text-white";
 // Main Component
 // =================================================================================
 export default function FormattingToolbar({
-  selectedIds,
-  currentNode,
-  currentBackgroundColor,
-  globalStructure,
-  activeColorThemeId,
-  onApplyLayout,
-  onSetBackgroundColor,
-  onSetGlobalFont,
-  onSetBranchLineWidth,
-  onToggleColoredBranch,
-  onSetGlobalBranchColor,
-  onSetActiveColorTheme,
-  onUpdateNode,
-  onApplyQuickStyle,
-  onCopyStyle,
-  onPasteStyle,
-  onResetStyle,
+  selectedIds, // [SỬA]
+  currentNode,
+  currentBackgroundColor,
+  globalStructure,
+  activeColorThemeId,
+  onApplyLayout,
+  onSetBackgroundColor,
+  onSetGlobalFont,
+  onSetBranchLineWidth,
+  onToggleColoredBranch,
+  onSetGlobalBranchColor,
+  onSetActiveColorTheme,
+  onUpdateNode, // [SỬA]
+  onApplyQuickStyle,
+  onCopyStyle,
+  onPasteStyle,
+  onResetStyle,
 }: FormattingToolbarProps) {
-  const [activeTab, setActiveTab] = useState<'style' | 'map'>('map');
-  const activeTheme = colorThemes[activeColorThemeId];
-  
-  // [FIX] Thêm Ref để theo dõi click thủ công, ngăn useEffect "nhảy tab"
-  const manualTabClickRef = useRef(false);
+  const [activeTab, setActiveTab] = useState<'style' | 'map'>('map');
+  const activeTheme = colorThemes[activeColorThemeId];
+  
+  // [SỬA] Logic cấm/tắt tab Style
+  const isDisabled = useMemo(() => {
+    if (selectedIds.length === 0) return true;
+    return false;
+  }, [selectedIds]);
 
-  const isDisabled = useMemo(() => {
-    if (selectedIds.length === 0) return true;
-    // Cho phép style node 'root' nếu muốn
-    // if (selectedIds.length === 1 && selectedIds[0] === 'root') return true;
-    return false;
-  }, [selectedIds]);
-
-  // [FIX] Auto-switch tabs dựa trên selection, nhưng tôn trọng click thủ công
-  useEffect(() => {
-    // Nếu người dùng vừa tự click, bỏ qua hiệu ứng này
-    if (manualTabClickRef.current) {
-      manualTabClickRef.current = false; // Reset cờ
-      return;
+  // [SỬA] Auto-switch tabs based on node selection
+  useEffect(() => {
+    if (isDisabled) {
+      // Không có node nào được chọn HOẶC chỉ chọn 'root'
+      setActiveTab('map');
+    } else {
+      // Có ít nhất một node (không phải root) được chọn
+      setActiveTab('style');
     }
+  }, [isDisabled]); // [SỬA] Dùng isDisabled làm dependency
 
-    if (isDisabled) {
-      // Không có node nào được chọn
-      setActiveTab('map');
-    } else {
-      // Có ít nhất một node được chọn
-      setActiveTab('style');
-    }
-  // Chỉ chạy lại khi trạng thái 'disabled' thay đổi (tức là selection thay đổi)
-  }, [isDisabled]); 
+  return (
+    <div className="absolute top-11 right-0 h-[calc(100vh-2.75rem)] w-72 bg-white border-l border-gray-200 shadow-sm z-30 flex flex-col text-gray-700"> {/* Changed top-14 -> top-12 AND h-[calc(100vh-3.5rem)] -> h-[calc(100vh-3rem)] */}
+      {/* 1. Header (Tabs) */}
+      <TabHeader activeTab={activeTab} setActiveTab={setActiveTab} isDisabled={isDisabled} />
 
-  return (
-    <div className="absolute top-11 right-0 h-[calc(100vh-2.75rem)] w-72 bg-white border-l border-gray-200 shadow-sm z-30 flex flex-col text-gray-700"> {/* Changed top-14 -> top-12 AND h-[calc(100vh-3.5rem)] -> h-[calc(100vh-3rem)] */}
-      {/* 1. Header (Tabs) */}
-      <TabHeader 
-          activeTab={activeTab} 
-          // [FIX] Truyền hàm handler mới
-          onTabClick={(tab) => {
-            if (isDisabled && tab === 'style') return; // Ngăn click vào Style nếu bị vô hiệu hóa
-            manualTabClickRef.current = true; // Đánh dấu đây là click thủ công
-            setActiveTab(tab);
-          }}
-          isDisabled={isDisabled} 
-      />
-
-      {/* 2. Content */}
-      <div className="flex-1 overflow-y-auto">
-        {activeTab === 'style' && (
-          <NodeStylePanel
-            selectedIds={selectedIds}
-            currentNode={currentNode}
-            activeTheme={activeTheme}
-            onUpdateNode={onUpdateNode}
-            onApplyQuickStyle={onApplyQuickStyle}
-            onCopyStyle={onCopyStyle}
-            onPasteStyle={onPasteStyle}
-            onResetStyle={onResetStyle}
-          />
-        )}
-        {activeTab === 'map' && (
-          <MapPanel
-            globalStructure={globalStructure}
-            onApplyLayout={onApplyLayout}
-            currentBackgroundColor={currentBackgroundColor}
-            onSetBackgroundColor={onSetBackgroundColor}
-            activeColorThemeId={activeColorThemeId}
-            onSetActiveColorTheme={onSetActiveColorTheme}
-            onSetGlobalFont={onSetGlobalFont}
-            onSetBranchLineWidth={onSetBranchLineWidth}
-            onToggleColoredBranch={onToggleColoredBranch}
-            onSetGlobalBranchColor={onSetGlobalBranchColor}
-          />
-        )}
-      </div>
-    </div>
-  );
+      {/* 2. Content */}
+      <div className="flex-1 overflow-y-auto">
+        {activeTab === 'style' && (
+          <NodeStylePanel
+            selectedIds={selectedIds} // [SỬA]
+            currentNode={currentNode}
+            activeTheme={activeTheme}
+            onUpdateNode={onUpdateNode} // [SỬA]
+            onApplyQuickStyle={onApplyQuickStyle}
+            onCopyStyle={onCopyStyle}
+            onPasteStyle={onPasteStyle}
+            onResetStyle={onResetStyle}
+          />
+        )}
+        {activeTab === 'map' && (
+          <MapPanel
+            globalStructure={globalStructure}
+            onApplyLayout={onApplyLayout}
+            currentBackgroundColor={currentBackgroundColor}
+            onSetBackgroundColor={onSetBackgroundColor}
+            activeColorThemeId={activeColorThemeId}
+            onSetActiveColorTheme={onSetActiveColorTheme}
+            onSetGlobalFont={onSetGlobalFont}
+            onSetBranchLineWidth={onSetBranchLineWidth}
+            onToggleColoredBranch={onToggleColoredBranch}
+            // [SỬA] Truyền prop fix lỗi từ bước trước
+            onSetGlobalBranchColor={onSetGlobalBranchColor}
+          />
+        )}
+      </div>
+    </div>
+  );
 }
 
 // =================================================================================
@@ -163,424 +146,429 @@ type TabHeaderProps = {
   onTabClick: (tab: 'style' | 'map') => void; 
   isDisabled: boolean;
 };
-function TabHeader({ activeTab, onTabClick, isDisabled }: TabHeaderProps) {
-  return (
-    <div className="flex justify-center border-b border-gray-200 bg-gray-50">
-      <TabButton
-        label="Style"
-        isActive={activeTab === 'style'}
-        // [FIX] Dùng prop mới
-        onClick={() => onTabClick('style')} 
-        disabled={isDisabled}
-      />
-      <TabButton
-        label="Map"
-        isActive={activeTab === 'map'}
-        // [FIX] Dùng prop mới
-        onClick={() => onTabClick('map')}
-      />
-    </div>
-  );
+function TabHeader({ activeTab, setActiveTab, isDisabled }: TabHeaderProps) {
+  return (
+    <div className="flex justify-center border-b border-gray-200 bg-gray-50">
+      <TabButton
+        label="Style"
+        isActive={activeTab === 'style'}
+        onClick={() => setActiveTab('style')}
+        disabled={isDisabled} // [SỬA] Logic cấm/tắt đã được cập nhật
+      />
+      <TabButton
+        label="Map"
+        isActive={activeTab === 'map'}
+        onClick={() => setActiveTab('map')}
+      />
+    </div>
+  );
 }
 
 // =================================================================================
 // Tab "Map" (Cài đặt toàn cục)
 // =================================================================================
 type MapPanelProps = {
-  globalStructure: GlobalStructure;
-  onApplyLayout: (structure: GlobalStructure) => void;
-  currentBackgroundColor: string;
-  onSetBackgroundColor: (color: string) => void;
-  activeColorThemeId: keyof typeof colorThemes;
-  onSetActiveColorTheme: (themeName: keyof typeof colorThemes) => void;
-  onSetGlobalFont: (font: string) => void;
-  onSetBranchLineWidth: (width: number) => void;
-  onToggleColoredBranch: (state: boolean) => void;
-  onSetGlobalBranchColor: (color: string) => void;
+  globalStructure: GlobalStructure;
+  onApplyLayout: (structure: GlobalStructure) => void;
+  currentBackgroundColor: string;
+  onSetBackgroundColor: (color: string) => void;
+  activeColorThemeId: keyof typeof colorThemes;
+  onSetActiveColorTheme: (themeName: keyof typeof colorThemes) => void;
+  onSetGlobalFont: (font: string) => void;
+  onSetBranchLineWidth: (width: number) => void;
+  onToggleColoredBranch: (state: boolean) => void;
+  // [SỬA] Thêm prop
+  onSetGlobalBranchColor: (color: string) => void;
 };
 function MapPanel({
-  globalStructure,
-  onApplyLayout,
-  currentBackgroundColor,
-  onSetBackgroundColor,
-  activeColorThemeId,
-  onSetActiveColorTheme,
-  onSetGlobalFont,
-  onSetBranchLineWidth,
-  onToggleColoredBranch,
-  onSetGlobalBranchColor,
+  globalStructure,
+  onApplyLayout,
+  currentBackgroundColor,
+  onSetBackgroundColor,
+  activeColorThemeId,
+  onSetActiveColorTheme,
+  onSetGlobalFont,
+  onSetBranchLineWidth,
+  onToggleColoredBranch,
+  // [SỬA] Nhận prop
+  onSetGlobalBranchColor,
 }: MapPanelProps) {
-  const currentFont = useEditorStore((s) => s.globalFont);
-  const currentLineWidth = useEditorStore((s) => s.branchLineWidth);
-  const isColored = useEditorStore((s) => s.isColoredBranch);
-  const globalBranchColor = useEditorStore((s) => s.globalBranchColor);
-  const activeTheme = colorThemes[activeColorThemeId];
+  const currentFont = useEditorStore((s) => s.globalFont);
+  const currentLineWidth = useEditorStore((s) => s.branchLineWidth);
+  const isColored = useEditorStore((s) => s.isColoredBranch);
+  const globalBranchColor = useEditorStore((s) => s.globalBranchColor);
+  const activeTheme = colorThemes[activeColorThemeId];
 
-  return (
-    <div className="p-4 space-y-4">
-      {/* 2. Cấu trúc */}
-      <RowItem label="Cấu trúc">
-        <div className="flex justify-between gap-1 w-full">
-          <StructureButton
-            label={<img src="/icons/mindmap.png" alt="Mindmap" className="w-6 h-6" />}
-            isActive={globalStructure === 'mindmap'}
-            onClick={() => onApplyLayout('mindmap')}
-          />
-          <StructureButton
-            label={<img src="/icons/logic.png" alt="Logic" className="w-6 h-6" />}
-            isActive={globalStructure === 'logic'}
-            onClick={() => onApplyLayout('logic')}
-          />
-          <StructureButton
-            label={<img src="/icons/org.png" alt="Org" className="w-6 h-6" />}
-            isActive={globalStructure === 'org'}
-            onClick={() => onApplyLayout('org')}
-          />
-        </div>
-      </RowItem>
+  return (
+    <div className="p-4 space-y-4">
+      {/* 2. Cấu trúc */}
+      <RowItem label="Cấu trúc">
+        <div className="flex justify-between gap-1 w-full">
+          <StructureButton
+            label={<img src="/icons/mindmap.png" alt="Mindmap" className="w-6 h-6" />}
+            isActive={globalStructure === 'mindmap'}
+            onClick={() => onApplyLayout('mindmap')}
+          />
+          <StructureButton
+            label={<img src="/icons/logic.png" alt="Logic" className="w-6 h-6" />}
+            isActive={globalStructure === 'logic'}
+            onClick={() => onApplyLayout('logic')}
+          />
+          <StructureButton
+            label={<img src="/icons/org.png" alt="Org" className="w-6 h-6" />}
+            isActive={globalStructure === 'org'}
+            onClick={() => onApplyLayout('org')}
+          />
+        </div>
+      </RowItem>
 
 
-      {/* 3. Màu nền */}
-      <ColorItem
-        label="Màu nền"
-        color={currentBackgroundColor}
-        onChange={onSetBackgroundColor}
-      />
+      {/* 3. Màu nền */}
+      <ColorItem
+        label="Màu nền"
+        color={currentBackgroundColor}
+        onChange={onSetBackgroundColor}
+      />
 
-      {/* 4. Phông chữ toàn cục */}
-      <RowItem label="Phông chữ">
-        <CustomSelect
-          value={currentFont}
-          onChange={onSetGlobalFont}
-        >
-          {fonts.map((font) => (
-            <Option key={font.value} value={font.value}>
-              <span style={{ fontFamily: font.value }}>{font.name}</span>
-            </Option>
-          ))}
-        </CustomSelect>
-      </RowItem>
-      
-      {/* 5. Độ dày nhánh */}
-      <RowItem label="Độ dày nhánh">
-        <select
-          value={currentLineWidth}
-          onChange={(e) => {
-            onSetBranchLineWidth(Number(e.target.value));
-          }}
-          className={`flex-1 p-1.5 ${INPUT_BG} rounded text-sm outline-none border border-transparent focus:border-blue-500 focus:ring-1 focus:ring-blue-500`}
-        >
-          <option value={1}>Mỏng</option>
-          <option value={2}>Vừa</option>
-          <option value={4}>Dày</option>
-        </select>
-      </RowItem>
-      <ColorItem
-        label="Màu nhánh"
-        color={globalBranchColor}
-        onChange={onSetGlobalBranchColor}
-      >
-        <label className="flex items-center gap-2 cursor-pointer text-sm">
-          <input
-            type="checkbox"
-            checked={isColored}
-            onChange={(e) => onToggleColoredBranch(e.target.checked)}
-            className="rounded border-gray-300 cursor-pointer"
-          />
-          <span>Nhiều màu</span>
-        </label>
-      </ColorItem>
-  
-    </div>
-  );
+      {/* 4. Phông chữ toàn cục */}
+      <RowItem label="Phông chữ">
+        <CustomSelect
+          value={currentFont}
+          onChange={onSetGlobalFont}
+        >
+          {fonts.map((font) => (
+            <Option key={font.value} value={font.value}>
+              <span style={{ fontFamily: font.value }}>{font.name}</span>
+            </Option>
+          ))}
+        </CustomSelect>
+      </RowItem>
+      
+      {/* 5. Độ dày nhánh */}
+      <RowItem label="Độ dày nhánh">
+        <select
+          value={currentLineWidth}
+          onChange={(e) => {
+            onSetBranchLineWidth(Number(e.target.value));
+          }}
+          className={`flex-1 p-1.5 ${INPUT_BG} rounded text-sm outline-none border border-transparent focus:border-blue-500 focus:ring-1 focus:ring-blue-500`}
+        >
+          <option value={1}>Mỏng</option>
+          <option value={2}>Vừa</option>
+          <option value={4}>Dày</option>
+        </select>
+      </RowItem>
+      {/* [SỬA] Cập nhật onChange để gọi prop mới */}
+      <ColorItem
+        label="Màu nhánh"
+        color={globalBranchColor}
+        onChange={onSetGlobalBranchColor}
+      >
+        <label className="flex items-center gap-2 cursor-pointer text-sm">
+          <input
+            type="checkbox"
+            checked={isColored}
+            onChange={(e) => onToggleColoredBranch(e.target.checked)}
+            className="rounded border-gray-300 cursor-pointer"
+          />
+          <span>Nhiều màu</span>
+        </label>
+      </ColorItem>
+  
+    </div>
+  );
 }
 
 // =================================================================================
 // Tab "Style" (Cài đặt Node)
 // =================================================================================
 type NodeStylePanelProps = {
-  selectedIds: string[];
-  currentNode: NodeData | null;
-  activeTheme: ColorTheme;
-  onUpdateNode: (updates: Partial<NodeData>) => void;
-  onApplyQuickStyle: (styleId: QuickStyleId) => void;
-  onCopyStyle: () => void;
-  onPasteStyle: () => void;
-  onResetStyle: () => void;
+  // [SỬA]
+  selectedIds: string[];
+  currentNode: NodeData | null;
+  activeTheme: ColorTheme;
+  // [SỬA]
+  onUpdateNode: (updates: Partial<NodeData>) => void;
+  onApplyQuickStyle: (styleId: QuickStyleId) => void;
+  onCopyStyle: () => void;
+  onPasteStyle: () => void;
+  onResetStyle: () => void;
 };
 function NodeStylePanel({
-  selectedIds,
-  currentNode,
-  activeTheme,
-  onUpdateNode,
-  onApplyQuickStyle,
-  onCopyStyle,
-  onPasteStyle,
-  onResetStyle,
+  // [SỬA]
+  selectedIds,
+  currentNode,
+  activeTheme,
+  onUpdateNode,
+  onApplyQuickStyle,
+  onCopyStyle,
+  onPasteStyle,
+  onResetStyle,
 }: NodeStylePanelProps) {
-  
-  // Tính toán style (vẫn dựa trên node đầu tiên)
-  const style = useMemo(() => {
-    return getNodeComputedStyle(currentNode, activeTheme, useEditorStore.getState().globalFont);
-  }, [currentNode, activeTheme]);
-  
-  // State cục bộ cho "Độ dài" (vẫn dựa trên node đầu tiên)
-  const [localLength, setLocalLength] = useState<number | string>(style.nodeLength || 'fit');
-  
-  useEffect(() => {
-    // Cập nhật state cục bộ khi node thay đổi
-    setLocalLength(style.nodeLength || 'fit');
-  }, [style.nodeLength]);
+  
+  // Tính toán style (vẫn dựa trên node đầu tiên)
+  const style = useMemo(() => {
+    return getNodeComputedStyle(currentNode, activeTheme, useEditorStore.getState().globalFont);
+  }, [currentNode, activeTheme]);
+  
+  // State cục bộ cho "Độ dài" (vẫn dựa trên node đầu tiên)
+  const [localLength, setLocalLength] = useState<number | string>(style.nodeLength || 'fit');
+  
+  useEffect(() => {
+    // Cập nhật state cục bộ khi node thay đổi
+    setLocalLength(style.nodeLength || 'fit');
+  }, [style.nodeLength]);
 
 
-  const handleUpdate = (updates: Partial<NodeData>) => {
-    if (selectedIds.length > 0) {
-      onUpdateNode(updates);
-    }
-  };
+  // [SỬA] Handler chung
+  const handleUpdate = (updates: Partial<NodeData>) => {
+    // onUpdateNode giờ đã xử lý mảng
+    if (selectedIds.length > 0) {
+      onUpdateNode(updates);
+    }
+  };
 
-  return (
-    <div className="p-4 space-y-1">
-      {/* 1. Kiểu nhanh */}
-      {/* [FIX] Chỉ hiện khi không phải root */}
-      {selectedIds.length > 0 && !(selectedIds.length === 1 && selectedIds[0] === 'root') && (
-        <CollapsiblePanel label="Kiểu nhanh" defaultOpen>
-          <div className="grid grid-cols-2 gap-2">
-            <QuickStyleButton
-              label="Rất quan trọng"
-              styleId="important-dark"
-              activeTheme={activeTheme}
-              onClick={() => onApplyQuickStyle('important-dark')}
-            />
-            <QuickStyleButton
-              label="Quan trọng"
-              styleId="important-light"
-              activeTheme={activeTheme}
-              onClick={() => onApplyQuickStyle('important-light')}
-            />
-            <QuickStyleButton
-              label="Gạch bỏ"
-              styleId="strikethrough"
-              activeTheme={activeTheme}
-              onClick={() => onApplyQuickStyle('strikethrough')}
-            />
-            <QuickStyleButton
-              label="Mặc định"
-              styleId="default"
-              activeTheme={activeTheme}
-              onClick={() => onApplyQuickStyle('default')}
-            />
-          </div>
-        </CollapsiblePanel>
-      )}
+  return (
+    <div className="p-4 space-y-1">
+      {/* 1. Kiểu nhanh */}
+      {selectedIds.length > 0 && !(selectedIds.length === 1 && selectedIds[0] === 'root') && (
+        <CollapsiblePanel label="Kiểu nhanh" defaultOpen>
+          <div className="grid grid-cols-2 gap-2">
+            <QuickStyleButton
+              label="Rất quan trọng"
+              styleId="important-dark"
+              activeTheme={activeTheme}
+              onClick={() => onApplyQuickStyle('important-dark')}
+            />
+            <QuickStyleButton
+              label="Quan trọng"
+              styleId="important-light"
+              activeTheme={activeTheme}
+              onClick={() => onApplyQuickStyle('important-light')}
+            />
+            <QuickStyleButton
+              label="Gạch bỏ"
+              styleId="strikethrough"
+              activeTheme={activeTheme}
+              onClick={() => onApplyQuickStyle('strikethrough')}
+            />
+            <QuickStyleButton
+              label="Mặc định"
+              styleId="default"
+              activeTheme={activeTheme}
+              onClick={() => onApplyQuickStyle('default')}
+            />
+          </div>
+        </CollapsiblePanel>
+      )}
 
-      {/* 2. Hình dạng */}
-      <CollapsiblePanel label="Hình dạng" defaultOpen>
-        <RowItem label="Hình dạng">
-          <select
-            value={style.shape}
-            onChange={(e) => handleUpdate({ shape: e.target.value as NodeData['shape'] })}
-            className={`flex-1 p-1.5 ${INPUT_BG} rounded text-sm outline-none border border-transparent focus:border-blue-500 focus:ring-1 focus:ring-blue-500`}
-          >
-            <option value="roundedRect">Bo góc</option>
-            <option value="rectangle">Vuông</option>
-          </select>
-        </RowItem>
-        <ColorItem
-          label="Tô màu"
-          color={style.color || '#FFFFFF'}
-          onChange={(color) => handleUpdate({ color })}
-        />
-        <ColorItem
-          label="Viền"
-          color={style.borderColor || '#CCCCCC'}
-          onChange={(borderColor) => handleUpdate({ borderColor })}
-        >
-          <select
-            value={style.borderWidth}
-            onChange={(e) => handleUpdate({ borderWidth: Number(e.target.value) })}
-            className={`p-1.5 ${INPUT_BG} rounded text-sm outline-none border border-transparent focus:border-blue-500 focus:ring-1 focus:ring-blue-500`}
-         >
-            <option value={0}>Không</option>
-            <option value={2}>Mỏng</option>
-            <option value={4}>Dày</option>
-          </select>
-          <select
-            value={style.borderStyle}
-            onChange={(e) => handleUpdate({ borderStyle: e.target.value as NodeData['borderStyle'] })}
-            className={`p-1.5 ${INPUT_BG} rounded text-sm outline-none border border-transparent focus:border-blue-500 focus:ring-1 focus:ring-blue-500`}
-          >
-            <option value="solid">Liền</option>
-            <option value="dashed">Đứt</option>
-            <option value="dotted">Chấm</option>
-          </select>
-        </ColorItem>
-        <RowItem label="Độ dài">
-          <div className="flex items-center gap-1 w-full">
-            <input
-              type="text"
-              value={localLength === 'fit' ? '' : String(localLength)}
-              placeholder="Fit"
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
-              }}
-              onBlur={(e) => {
-                let val: number | 'fit' = parseInt(e.target.value);
-                if (isNaN(val) || e.target.value === '') {
-                  val = 'fit';
-                } else if (val < 80) {
-                  val = 80;
-                }
-                setLocalLength(val);
-                handleUpdate({ nodeLength: val });
-              }}
-              onChange={(e) => {
-                const val = e.target.value.replace(/[^0-9]/g, '');
-                setLocalLength(val === '' ? 'fit' : Number(val));
-              }}
-              className={`w-full flex-1 p-1.5 ${INPUT_BG} rounded text-sm outline-none border border-transparent focus:border-blue-500 focus:ring-1 focus:ring-blue-500`}
-            />
-            <button
-              onClick={() => {
-                setLocalLength('fit');
-                handleUpdate({ nodeLength: 'fit' });
-              }}
-              className={`p-1.5 rounded text-sm ${style.nodeLength === 'fit' ? BUTTON_ACTIVE_BG : BUTTON_BG}`}
-            >
-              Fit
-            </button>
-          </div>
-        </RowItem>
-      </CollapsiblePanel>
-      
-      {/* 3. Văn bản */}
-      <CollapsiblePanel label="Văn bản" defaultOpen>
-        <ColorItem
-          label="Màu chữ"
-          color={style.textColor || '#333333'}
-          onChange={(textColor) => handleUpdate({ textColor })}
-        />
-        <RowItem label="Phông chữ">
-          <CustomSelect
-            value={style.fontFamily}
-            onChange={(fontFamily) => handleUpdate({ fontFamily })}
-          >
-            {fonts.map((font) => (
-              <Option key={font.value} value={font.value}>
-                <span style={{ fontFamily: font.value }}>{font.name}</span>
-              </Option>
-            ))}
-          </CustomSelect>
-        </RowItem>
-        <RowItem label="Kích thước">
-          <input
-            type="number"
-            min={8}
-            max={72}
-            value={style.fontSize}
-            onChange={(e) => handleUpdate({ fontSize: Number(e.target.value) })}
-            className={`w-full flex-1 p-1.5 ${INPUT_BG} rounded text-sm outline-none border border-transparent focus:border-blue-500 focus:ring-1 focus:ring-blue-500`}
-          />
-        </RowItem>
-        <div className="grid grid-cols-4 gap-1">
-          <TextFormatButton
-            icon={<Bold size={16} />}
-            isActive={style.fontWeight === 'bold'}
-            onClick={() => handleUpdate({ fontWeight: style.fontWeight === 'bold' ? 'normal' : 'bold' })}
-          />
-          <TextFormatButton
-            icon={<Italic size={16} />}
-            isActive={style.fontStyle === 'italic'}
-            onClick={() => handleUpdate({ fontStyle: style.fontStyle === 'italic' ? 'normal' : 'italic' })}
-          />
-          <TextFormatButton
-            icon={<Underline size={16} />}
-            isActive={style.textDecoration === 'underline'}
-            onClick={() => handleUpdate({ textDecoration: style.textDecoration === 'underline' ? 'none' : 'underline' })}
-          />
-          <TextFormatButton
-            icon={<Strikethrough size={16} />}
-            isActive={style.textDecoration === 'line-through'}
-            onClick={() => handleUpdate({ textDecoration: style.textDecoration === 'line-through' ? 'none' : 'line-through' })}
-          />
-        </div>
-        <div className="grid grid-cols-4 gap-1">
-          <TextFormatButton
-            icon={<AlignLeft size={16} />}
-            isActive={style.textAlign === 'left'}
-            onClick={() => handleUpdate({ textAlign: 'left' })}
-          />
-          <TextFormatButton
-            icon={<AlignCenter size={16} />}
-            isActive={style.textAlign === 'center'}
-            onClick={() => handleUpdate({ textAlign: 'center' })}
-          />
-          <TextFormatButton
-            icon={<AlignRight size={16} />}
-            isActive={style.textAlign === 'right'}
-            onClick={() => handleUpdate({ textAlign: 'right' })}
-          />
-          <TextFormatButton
-            icon={<CaseSensitive size={16} />}
-            isActive={style.textCase !== 'normal'}
-            onClick={() => {
-              const nextCase = style.textCase === 'normal' ? 'uppercase' : (style.textCase === 'uppercase' ? 'lowercase' : 'normal');
-              handleUpdate({ textCase: nextCase as NodeData['textCase'] });
-            }}
-          />
-        </div>
-     </CollapsiblePanel>
+      {/* 2. Hình dạng */}
+      <CollapsiblePanel label="Hình dạng" defaultOpen>
+        <RowItem label="Hình dạng">
+          <select
+            value={style.shape}
+            onChange={(e) => handleUpdate({ shape: e.target.value as NodeData['shape'] })}
+            className={`flex-1 p-1.5 ${INPUT_BG} rounded text-sm outline-none border border-transparent focus:border-blue-500 focus:ring-1 focus:ring-blue-500`}
+          >
+            <option value="roundedRect">Bo góc</option>
+            <option value="rectangle">Vuông</option>
+          </select>
+        </RowItem>
+        <ColorItem
+          label="Tô màu"
+          color={style.color || '#FFFFFF'}
+          onChange={(color) => handleUpdate({ color })}
+        />
+        <ColorItem
+          label="Viền"
+          color={style.borderColor || '#CCCCCC'}
+          onChange={(borderColor) => handleUpdate({ borderColor })}
+        >
+          <select
+            value={style.borderWidth}
+            onChange={(e) => handleUpdate({ borderWidth: Number(e.target.value) })}
+            className={`p-1.5 ${INPUT_BG} rounded text-sm outline-none border border-transparent focus:border-blue-500 focus:ring-1 focus:ring-blue-500`}
+         >
+            <option value={0}>Không</option>
+            <option value={2}>Mỏng</option>
+            <option value={4}>Dày</option>
+          </select>
+          <select
+            value={style.borderStyle}
+            onChange={(e) => handleUpdate({ borderStyle: e.target.value as NodeData['borderStyle'] })}
+            className={`p-1.5 ${INPUT_BG} rounded text-sm outline-none border border-transparent focus:border-blue-500 focus:ring-1 focus:ring-blue-500`}
+          >
+            <option value="solid">Liền</option>
+            <option value="dashed">Đứt</option>
+            <option value="dotted">Chấm</option>
+          </select>
+        </ColorItem>
+        {/* SỬA: Độ dài */}
+        <RowItem label="Độ dài">
+          <div className="flex items-center gap-1 w-full">
+            <input
+              type="text"
+              value={localLength === 'fit' ? '' : String(localLength)} // Sửa: Chuyển sang String
+              placeholder="Fit"
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
+              }}
+              onBlur={(e) => {
+                let val: number | 'fit' = parseInt(e.target.value);
+                if (isNaN(val) || e.target.value === '') {
+                  val = 'fit';
+                } else if (val < 80) {
+                  val = 80;
+                }
+                setLocalLength(val);
+                handleUpdate({ nodeLength: val });
+              }}
+              onChange={(e) => {
+                const val = e.target.value.replace(/[^0-9]/g, '');
+                setLocalLength(val === '' ? 'fit' : Number(val));
+              }}
+              className={`w-full flex-1 p-1.5 ${INPUT_BG} rounded text-sm outline-none border border-transparent focus:border-blue-500 focus:ring-1 focus:ring-blue-500`}
+            />
+            <button
+              onClick={() => {
+                setLocalLength('fit');
+                handleUpdate({ nodeLength: 'fit' });
+              }}
+              className={`p-1.5 rounded text-sm ${style.nodeLength === 'fit' ? BUTTON_ACTIVE_BG : BUTTON_BG}`}
+            >
+              Fit
+            </button>
+          </div>
+        </RowItem>
+      </CollapsiblePanel>
+      
+      {/* 3. Văn bản */}
+      <CollapsiblePanel label="Văn bản" defaultOpen>
+        <ColorItem
+          label="Màu chữ"
+          color={style.textColor || '#333333'}
+          onChange={(textColor) => handleUpdate({ textColor })}
+        />
+        <RowItem label="Phông chữ">
+          <CustomSelect
+            value={style.fontFamily}
+            onChange={(fontFamily) => handleUpdate({ fontFamily })}
+          >
+            {fonts.map((font) => (
+              <Option key={font.value} value={font.value}>
+                <span style={{ fontFamily: font.value }}>{font.name}</span>
+              </Option>
+            ))}
+          </CustomSelect>
+        </RowItem>
+        <RowItem label="Kích thước">
+          <input
+            type="number"
+            min={8}
+            max={72}
+            value={style.fontSize}
+            onChange={(e) => handleUpdate({ fontSize: Number(e.target.value) })}
+            className={`w-full flex-1 p-1.5 ${INPUT_BG} rounded text-sm outline-none border border-transparent focus:border-blue-500 focus:ring-1 focus:ring-blue-500`}
+          />
+        </RowItem>
+        <div className="grid grid-cols-4 gap-1">
+          <TextFormatButton
+            icon={<Bold size={16} />}
+            isActive={style.fontWeight === 'bold'}
+            onClick={() => handleUpdate({ fontWeight: style.fontWeight === 'bold' ? 'normal' : 'bold' })}
+          />
+          <TextFormatButton
+            icon={<Italic size={16} />}
+            isActive={style.fontStyle === 'italic'}
+            onClick={() => handleUpdate({ fontStyle: style.fontStyle === 'italic' ? 'normal' : 'italic' })}
+          />
+          <TextFormatButton
+            icon={<Underline size={16} />}
+            isActive={style.textDecoration === 'underline'}
+            onClick={() => handleUpdate({ textDecoration: style.textDecoration === 'underline' ? 'none' : 'underline' })}
+          />
+          <TextFormatButton
+            icon={<Strikethrough size={16} />}
+            isActive={style.textDecoration === 'line-through'}
+            onClick={() => handleUpdate({ textDecoration: style.textDecoration === 'line-through' ? 'none' : 'line-through' })}
+          />
+        </div>
+        <div className="grid grid-cols-4 gap-1">
+          <TextFormatButton
+            icon={<AlignLeft size={16} />}
+            isActive={style.textAlign === 'left'}
+            onClick={() => handleUpdate({ textAlign: 'left' })}
+          />
+          <TextFormatButton
+            icon={<AlignCenter size={16} />}
+            isActive={style.textAlign === 'center'}
+            onClick={() => handleUpdate({ textAlign: 'center' })}
+          />
+          <TextFormatButton
+            icon={<AlignRight size={16} />}
+            isActive={style.textAlign === 'right'}
+            onClick={() => handleUpdate({ textAlign: 'right' })}
+          />
+          <TextFormatButton
+            icon={<CaseSensitive size={16} />}
+            isActive={style.textCase !== 'normal'}
+            onClick={() => {
+              const nextCase = style.textCase === 'normal' ? 'uppercase' : (style.textCase === 'uppercase' ? 'lowercase' : 'normal');
+              handleUpdate({ textCase: nextCase as NodeData['textCase'] });
+            }}
+          />
+        </div>
+     </CollapsiblePanel>
 
-      
-      {/* [FIX] Chỉ hiện khi không phải root */}
-      {selectedIds.length > 0 && !(selectedIds.length === 1 && selectedIds[0] === 'root') && (
-      <CollapsiblePanel label="Kiểu nhánh" defaultOpen>
-        <ColorItem
-          label="Màu nhánh"
-          color={style.branchColor || '#666666'}
-          onChange={(branchColor) => handleUpdate({ branchColor })}
-        >
-          <select
-            value={style.branchLineStyle}
-            onChange={(e) => handleUpdate({ branchLineStyle: e.target.value as NodeData['branchLineStyle'] })}
-            className={`p-1.5 ${INPUT_BG} rounded text-sm outline-none border border-transparent focus:border-blue-500 focus:ring-1 focus:ring-blue-500`}
-          >
-            <option value="bezier">Cong</option>
-            <option value="sharp">Gấp</option>
-          </select>
-          <select
-            value={style.branchLineEnd}
-            onChange={(e) => handleUpdate({ branchLineEnd: e.target.value as NodeData['branchLineEnd'] })}
-            className={`p-1.5 ${INPUT_BG} rounded text-sm outline-none border border-transparent focus:border-blue-500 focus:ring-1 focus:ring-blue-500`}
-          >
-            <option value="none">Không</option>
-            <option value="arrow">Mũi tên</option>
-          </select>
-        </ColorItem>
-        <RowItem label="Độ dày">
-          <select
-            value={style.branchLineThickness}
-            onChange={(e) => handleUpdate({ branchLineThickness: e.target.value as NodeData['branchLineThickness'] })}
-            className={`flex-1 p-1.5 ${INPUT_BG} rounded text-sm outline-none border border-transparent focus:border-blue-500 focus:ring-1 focus:ring-blue-500`}
-          >
-            <option value="thin">Mỏng</option>
-            <option value="normal">Vừa</option>
-            <option value="thick">Dày</option>
-         </select>
-        </RowItem>
-      </CollapsiblePanel>
-      )}
-      
-      {/* 6. Thao tác nhanh */}
-      <CollapsiblePanel label="Thao tác" defaultOpen>
-        <div className="grid grid-cols-3 gap-1">
-          <TextFormatButton icon={<Copy size={16} />} onClick={onCopyStyle} />
-          <TextFormatButton icon={<ClipboardPaste size={16} />} onClick={onPasteStyle} />
-          <TextFormatButton icon={<RotateCcw size={16} />} onClick={onResetStyle} />
-        </div>
-      </CollapsiblePanel>
-    </div>
-  );
+      
+
+      {/* 5. Nhánh (con) */}
+      <CollapsiblePanel label="Kiểu nhánh" defaultOpen>
+        <ColorItem
+          label="Màu nhánh"
+          color={style.branchColor || '#666666'}
+          onChange={(branchColor) => handleUpdate({ branchColor })}
+        >
+          <select
+            value={style.branchLineStyle}
+            onChange={(e) => handleUpdate({ branchLineStyle: e.target.value as NodeData['branchLineStyle'] })}
+            className={`p-1.5 ${INPUT_BG} rounded text-sm outline-none border border-transparent focus:border-blue-500 focus:ring-1 focus:ring-blue-500`}
+          >
+            <option value="bezier">Cong</option>
+            <option value="sharp">Gấp</option>
+          </select>
+          <select
+            value={style.branchLineEnd}
+            onChange={(e) => handleUpdate({ branchLineEnd: e.target.value as NodeData['branchLineEnd'] })}
+            className={`p-1.5 ${INPUT_BG} rounded text-sm outline-none border border-transparent focus:border-blue-500 focus:ring-1 focus:ring-blue-500`}
+          >
+            <option value="none">Không</option>
+            <option value="arrow">Mũi tên</option>
+          </select>
+        </ColorItem>
+        <RowItem label="Độ dày">
+          <select
+            value={style.branchLineThickness}
+            onChange={(e) => handleUpdate({ branchLineThickness: e.target.value as NodeData['branchLineThickness'] })}
+            className={`flex-1 p-1.5 ${INPUT_BG} rounded text-sm outline-none border border-transparent focus:border-blue-500 focus:ring-1 focus:ring-blue-500`}
+          >
+            <option value="thin">Mỏng</option>
+            <option value="normal">Vừa</option>
+            <option value="thick">Dày</option>
+         </select>
+        </RowItem>
+      </CollapsiblePanel>
+      
+      {/* 6. Thao tác nhanh */}
+      <CollapsiblePanel label="Thao tác" defaultOpen>
+        <div className="grid grid-cols-3 gap-1">
+          <TextFormatButton icon={<Copy size={16} />} onClick={onCopyStyle} />
+          <TextFormatButton icon={<ClipboardPaste size={16} />} onClick={onPasteStyle} />
+          <TextFormatButton icon={<RotateCcw size={16} />} onClick={onResetStyle} />
+        </div>
+      </CollapsiblePanel>
+    </div>
+  );
 }
 
 
@@ -617,26 +605,26 @@ type StructureButtonProps = {
   onClick: () => void;
 };
 function StructureButton({ label, isActive, onClick }: StructureButtonProps) {
-  return (
-    <button
-      onClick={onClick}
-      className={`flex-1 flex flex-col items-center justify-center gap-2 p-2 rounded-md border-2
-        ${isActive ? 'border-blue-500 bg-blue-50 text-blue-600' : 'border-gray-200 bg-gray-50 hover:bg-gray-100'}
-section      `}
-    >
-      <span className="text-xs font-medium">{label}</span>
-    </button>
-  );
+  return (
+    <button
+      onClick={onClick}
+      className={`flex-1 flex flex-col items-center justify-center gap-2 p-2 rounded-md border-2
+        ${isActive ? 'border-blue-500 bg-blue-50 text-blue-600' : 'border-gray-200 bg-gray-50 hover:bg-gray-100'}
+section      `}
+    >
+      <span className="text-xs font-medium">{label}</span>
+    </button>
+  );
 }
 
 // Wrapper hàng
 function RowItem({ label, children }: { label: string, children: React.ReactNode }) {
-  return (
-    <div className="flex items-center justify-between gap-4">
-      <label className="text-sm font-medium text-gray-500 whitespace-nowrap">{label}</label>
-       {children}
-    </div>
-  );
+  return (
+    <div className="flex items-center justify-between gap-4">
+      <label className="text-sm font-medium text-gray-500 whitespace-nowrap">{label}</label>
+       {children}
+    </div>
+  );
 }
 
 
