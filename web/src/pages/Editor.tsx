@@ -314,8 +314,6 @@ export default function Editor() {
   const draggedNodeChildrenRef = useRef<Set<string>>(new Set());
   const imposterRef = useRef<any>(null);
   const hiddenRealNodesRef = useRef<any[]>([]);
-  const lastPosRef = useRef({ x: 0, y: 0 });
-  const [hiddenEdgeIds, setHiddenEdgeIds] = useState<Set<string>>(new Set());
   const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null);
   const [backgroundColor, setBackgroundColor] = useState('#FAFAFB');
   const [styleClipboard, setStyleClipboard] = useState<Partial<NodeData> | null>(
@@ -1586,66 +1584,129 @@ const handleFitToScreen = useCallback(() => {
     };
 
     const childIds = collectChildren(nodeId);
-    if (childIds.length === 0) {
-      lastPosRef.current = { x: node?.x() || 0, y: node?.y() || 0 };
-      return;
+    
+    const nodesToHide: any[] = [];
+    const edgeClones: any[] = [];
+    const nodeClones: any[] = [];
+
+    // --- A. CLONE NODE CHA (để tạo "cái xác" nằm lại vị trí cũ) ---
+    const rootNodeShape = stage.findOne(`#${nodeId}`);
+    if (rootNodeShape) {
+      const rootClone = rootNodeShape.clone();
+      rootClone.draggable(false);
+      rootClone.opacity(1); // Giữ nguyên độ đậm trong cache
+      nodeClones.push(rootClone);
+      // KHÔNG ẩn rootNodeShape thật - để kéo nó đi
     }
 
-    // Clone nodes và ẩn edges liên quan
-    const clones: any[] = [];
-    const hiddenNodes: any[] = [];
-    const hiddenEdges: any[] = [];
+    // --- B. CLONE CON CHÁU & DÂY ---
     const childIdSet = new Set([nodeId, ...childIds]);
     
+    // Clone các node con
     childIds.forEach(childId => {
       const childNode = stage.findOne(`#${childId}`);
       if (childNode) {
         const clone = childNode.clone();
         clone.draggable(false);
-        clones.push(clone);
+        nodeClones.push(clone);
+        // Ẩn con thật đi
         childNode.visible(false);
-        hiddenNodes.push(childNode);
+        nodesToHide.push(childNode);
       }
     });
 
-    // Ẩn tất cả edges liên quan đến node cha và node con
-    const edgeIdsToHide = new Set<string>();
+    // Clone tất cả edges liên quan (KHÔNG ẩn vì chúng sẽ tự động update vị trí)
     edges.forEach(edge => {
       if (childIdSet.has(edge.from) || childIdSet.has(edge.to)) {
-        edgeIdsToHide.add(edge.id);
         const edgeShape = stage.findOne(`#${edge.id}`);
         if (edgeShape) {
-          edgeShape.visible(false);
-          hiddenEdges.push(edgeShape);
+          const clone = edgeShape.clone();
+          edgeClones.push(clone);
+          // KHÔNG ẩn dây thật - để chúng tự động vẽ lại theo vị trí mới
         }
       }
     });
 
-    // Set state để React không render lại edges
-    setHiddenEdgeIds(edgeIdsToHide);
+    // --- C. TẠO IMPOSTER GROUP (CÁI XÁC MỜ) ---
+    if (nodeClones.length > 0 || edgeClones.length > 0) {
+      const imposterGroup = new Konva.Group({
+        listening: false,
+        opacity: 0.3, // Làm mờ toàn bộ cái xác (30%)
+        x: 0,
+        y: 0
+      });
 
-    if (clones.length === 0) {
-      lastPosRef.current = { x: node?.x() || 0, y: node?.y() || 0 };
-      return;
+      // Thêm Dây trước, Node sau
+      edgeClones.forEach(clone => imposterGroup.add(clone));
+      nodeClones.forEach(clone => imposterGroup.add(clone));
+      
+      layer.add(imposterGroup);
+
+      // Cache thành ảnh tĩnh - tính bounding box thủ công hoàn toàn
+      try {
+        layer.batchDraw();
+        
+        let minX = Infinity, minY = Infinity;
+        let maxX = -Infinity, maxY = -Infinity;
+        
+        // Duyệt qua tất cả edges để tìm min/max
+        edgeClones.forEach((clone: any) => {
+          const points = clone.points();
+          if (points && points.length > 0) {
+            for (let i = 0; i < points.length; i += 2) {
+              const x = points[i];
+              const y = points[i + 1];
+              minX = Math.min(minX, x);
+              maxX = Math.max(maxX, x);
+              minY = Math.min(minY, y);
+              maxY = Math.max(maxY, y);
+            }
+          }
+        });
+        
+        // Duyệt qua tất cả nodes
+        nodeClones.forEach((clone: any) => {
+          const x = clone.x();
+          const y = clone.y();
+          const width = clone.width();
+          const height = clone.height();
+          const offsetX = clone.offsetX() || 0;
+          const offsetY = clone.offsetY() || 0;
+          
+          // Tính toán đúng bounding box với offset
+          const left = x - offsetX;
+          const right = x - offsetX + width;
+          const top = y - offsetY;
+          const bottom = y - offsetY + height;
+          
+          minX = Math.min(minX, left);
+          maxX = Math.max(maxX, right);
+          minY = Math.min(minY, top);
+          maxY = Math.max(maxY, bottom);
+        });
+        
+        // Tăng padding để chắc chắn không bị cắt
+        const padding = 100;
+        const cacheWidth = (maxX - minX) + padding * 2;
+        const cacheHeight = (maxY - minY) + padding * 2;
+        
+        if (isFinite(minX) && isFinite(cacheWidth) && cacheWidth > 0 && cacheHeight > 0) {
+          imposterGroup.cache({
+            x: minX - padding,
+            y: minY - padding,
+            width: cacheWidth,
+            height: cacheHeight,
+            pixelRatio: 1
+          });
+        }
+      } catch (e) {
+        console.warn('Cache error:', e);
+      }
+
+      imposterRef.current = imposterGroup;
+      hiddenRealNodesRef.current = nodesToHide; // Chỉ lưu nodes, không lưu edges
+      draggedNodeChildrenRef.current = new Set(childIds);
     }
-
-    // Tạo imposter group
-    const imposterGroup = new Konva.Group({
-      listening: false,
-      opacity: 0.5,
-    });
-
-    clones.forEach(clone => imposterGroup.add(clone));
-    layer.add(imposterGroup);
-
-    // Cache thành bitmap
-    imposterGroup.cache({ pixelRatio: 1 });
-
-    imposterRef.current = imposterGroup;
-    hiddenRealNodesRef.current = [...hiddenNodes, ...hiddenEdges];
-    draggedNodeChildrenRef.current = new Set(childIds);
-    
-    lastPosRef.current = { x: node?.x() || 0, y: node?.y() || 0 };
   };
 
   // ...
@@ -1683,19 +1744,9 @@ const handleFitToScreen = useCallback(() => {
   }, [isDataLoaded, handleFitToScreen]);
 
   const handleDragMove = (e: any, draggedNodeId: string) => {
-    // Di chuyển imposter group theo node cha
-    if (imposterRef.current) {
-      const newX = e.target.x();
-      const newY = e.target.y();
-      
-      const dx = newX - lastPosRef.current.x;
-      const dy = newY - lastPosRef.current.y;
-      
-      imposterRef.current.x(imposterRef.current.x() + dx);
-      imposterRef.current.y(imposterRef.current.y() + dy);
-      
-      lastPosRef.current = { x: newX, y: newY };
-    }
+    // KHÔNG CẦN LÀM GÌ CẢ
+    // Konva tự động di chuyển Node Cha thật
+    // Imposter Group đứng yên tại chỗ làm "cái xác" mờ
   };
 
   const handleDragEnd = (e: any, draggedNodeId: string) => {
@@ -1704,7 +1755,6 @@ const handleFitToScreen = useCallback(() => {
       e.target.position({ x: 0, y: 0 });
       setDragStartState(null);
       draggedNodeChildrenRef.current.clear();
-      setHiddenEdgeIds(new Set());
       if (imposterRef.current) {
         imposterRef.current.destroy();
         imposterRef.current = null;
@@ -1727,9 +1777,6 @@ const handleFitToScreen = useCallback(() => {
       hiddenRealNodesRef.current.forEach(node => node.visible(true));
       hiddenRealNodesRef.current = [];
     }
-    
-    // Clear hidden edges state để React render lại
-    setHiddenEdgeIds(new Set());
     
     draggedNodeChildrenRef.current.clear();
     setDragStartState(null);
@@ -2074,9 +2121,9 @@ const handleFitToScreen = useCallback(() => {
   const visibleEdges = useMemo(
     () =>
       edges.filter(
-        (e) => visibleNodeIds.has(e.from) && visibleNodeIds.has(e.to) && !hiddenEdgeIds.has(e.id)
+        (e) => visibleNodeIds.has(e.from) && visibleNodeIds.has(e.to)
       ),
-    [edges, visibleNodeIds, hiddenEdgeIds]
+    [edges, visibleNodeIds]
   );
 
   const descendantCounts = useMemo(() => {
