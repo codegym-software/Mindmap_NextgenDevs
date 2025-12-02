@@ -315,6 +315,8 @@ export default function Editor() {
   const imposterRef = useRef<any>(null);
   const hiddenRealNodesRef = useRef<any[]>([]);
   const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null);
+  const [dropTargetNodeId, setDropTargetNodeId] = useState<string | null>(null);
+  const [draggingNodeId, setDraggingNodeId] = useState<string | null>(null);
   const [backgroundColor, setBackgroundColor] = useState('#FAFAFB');
   const [styleClipboard, setStyleClipboard] = useState<Partial<NodeData> | null>(
     null
@@ -1562,6 +1564,7 @@ const handleFitToScreen = useCallback(() => {
   const handleDragStart = (nodeId: string) => {
     pushHistory(useEditorStore.getState().nodes, useEditorStore.getState().edges);
     setDragStartState({ nodes, edges });
+    setDraggingNodeId(nodeId);
     
     const stage = stageRef.current;
     const layer = stage?.getLayers()[0];
@@ -1744,9 +1747,35 @@ const handleFitToScreen = useCallback(() => {
   }, [isDataLoaded, handleFitToScreen]);
 
   const handleDragMove = (e: any, draggedNodeId: string) => {
-    // KHÔNG CẦN LÀM GÌ CẢ
-    // Konva tự động di chuyển Node Cha thật
-    // Imposter Group đứng yên tại chỗ làm "cái xác" mờ
+    // Detect drop target khi đang kéo
+    const currentX = e.target.x();
+    const currentY = e.target.y();
+    
+    let potentialDropTarget: string | null = null;
+    
+    for (const node of nodes) {
+      if (node.id === draggedNodeId) continue;
+      if (draggedNodeChildrenRef.current.has(node.id)) continue; // Không cho drop vào con
+      
+      const visual = nodeVisuals.get(node.id);
+      if (!visual) continue;
+      
+      const { w, h } = visual.box;
+      const { x, y } = visual.style;
+      
+      const isOver =
+        currentX > x - w / 2 &&
+        currentX < x + w / 2 &&
+        currentY > y - h / 2 &&
+        currentY < y + h / 2;
+      
+      if (isOver) {
+        potentialDropTarget = node.id;
+        break;
+      }
+    }
+    
+    setDropTargetNodeId(potentialDropTarget);
   };
 
   const handleDragEnd = (e: any, draggedNodeId: string) => {
@@ -1754,6 +1783,8 @@ const handleFitToScreen = useCallback(() => {
     if (draggedNodeId === 'root') {
       e.target.position({ x: 0, y: 0 });
       setDragStartState(null);
+      setDropTargetNodeId(null);
+      setDraggingNodeId(null);
       draggedNodeChildrenRef.current.clear();
       if (imposterRef.current) {
         imposterRef.current.destroy();
@@ -1779,6 +1810,8 @@ const handleFitToScreen = useCallback(() => {
     }
     
     draggedNodeChildrenRef.current.clear();
+    setDropTargetNodeId(null);
+    setDraggingNodeId(null);
     setDragStartState(null);
     const finalX = e.target.x();
     const finalY = e.target.y();
@@ -2575,17 +2608,20 @@ const handleFitToScreen = useCallback(() => {
                 const { w, h, textToRender, finalFontSize, imageHeight, imageWidthDisplay } = box;
                 const isSelected = selectedIdsSet.has(node.id);
                 const hasChildren = nodesWithChildren.has(node.id);
+                const isDropTarget = dropTargetNodeId === node.id;
+                const isDragging = draggingNodeId === node.id;
                 const shapeProps = {
                   width: w, height: h, offsetX: w / 2, offsetY: h / 2,
                   fill: style.color,
-                  stroke: isSelected ? "#3b82f6" : style.borderColor,
-                  strokeWidth: isSelected ? 3 : (style.borderWidth || 0),
+                  stroke: isDropTarget ? "#10b981" : (isSelected ? "#3b82f6" : style.borderColor),
+                  strokeWidth: isDropTarget ? 4 : (isSelected ? 3 : (style.borderWidth || 0)),
                   dash: style.borderStyle === 'dashed' ? [8, 4] : (style.borderStyle === 'dotted' ? [2, 3] : undefined),
                 };
                 return (
                   <Group
                     key={node.id} id={node.id} x={style.x} y={style.y} 
                     draggable={node.id !== 'root'}
+                    opacity={isDragging ? 0.75 : 1}
                     onDragStart={() => handleDragStart(node.id)}
                     onDragMove={(e) => handleDragMove(e, node.id)}
                     onDragEnd={(e) => handleDragEnd(e, node.id)}
@@ -2643,6 +2679,29 @@ const handleFitToScreen = useCallback(() => {
                       lineHeight={LINE_HEIGHT_MULTIPLIER}
                     />
                     
+                    {/* Drop Target Indicator */}
+                    {isDropTarget && (
+                      <Group 
+                        x={globalStructure === 'org' ? 0 : (style.side === 'left' ? (-w / 2 - 15) : (w / 2 + 15))} 
+                        y={globalStructure === 'org' ? (h / 2 + 15) : 0}
+                      >
+                        <Circle radius={12} fill="#10b981" stroke="#FFFFFF" strokeWidth={2} />
+                        <Text
+                          text="+"
+                          fontSize={18}
+                          fill="#FFFFFF"
+                          align="center"
+                          verticalAlign="middle"
+                          width={24}
+                          height={24}
+                          offsetX={12}
+                          offsetY={12}
+                          fontStyle="bold"
+                          listening={false}
+                        />
+                      </Group>
+                    )}
+                    
                     {node.id === 'root' ? (
                       <>
                         {rootChildSides.left && (rootCollapse.left || hoveredNodeId === 'root') && (
@@ -2691,8 +2750,8 @@ const handleFitToScreen = useCallback(() => {
                     ) : (
                       hasChildren && (node.collapsed || hoveredNodeId === node.id) && (
                         <Group
-                          x={(style.side === 'left' ? -w / 2 : w / 2)}
-                          y={0}
+                          x={globalStructure === 'org' ? 0 : (style.side === 'left' ? -w / 2 : w / 2)}
+                          y={globalStructure === 'org' ? (h / 2) : 0}
                           onClick={(e) => handleToggleCollapse(e, node.id)}
                           onMouseEnter={(e) => { const stage = e.target.getStage(); if (stage) stage.container().style.cursor = 'pointer'; }}
                          onMouseLeave={(e) => { const stage = e.target.getStage(); if (stage) stage.container().style.cursor = 'default'; }}
