@@ -385,9 +385,12 @@ type OldFeGuestMapItem = {
 type OldFeGuestDoc = {
   id: string;
   name: string;
-  content: {
-    nodes: { [key: string]: any }; // Dạng Map
+  content: BeMindmapContent | {
+    nodes: { [key: string]: any } | BeNodeData[]; // Hỗ trợ cả dạng Map (cũ) và Array (mới)
     edges: FeEdgeData[];
+    layoutMode?: string;
+    theme?: string;
+    globalSettings?: BeGlobalSettings;
   };
 };
 
@@ -414,54 +417,83 @@ export function migrateOldGuestDataToBE(
       continue;
     }
 
-    const oldNodesList: any[] = Object.values(oldDoc.content.nodes || {});
-    const oldEdgesList: FeEdgeData[] = oldDoc.content.edges || [];
+    let beContent: BeMindmapContent;
 
-    const beNodes: BeNodeData[] = oldNodesList.map((oldNode) => {
-      // 1. Tạo một đối tượng FeNodeData (phẳng) tạm thời
-      const tempFeNode: FeNodeData = {
-        id: oldNode.id,
-        nodeText: oldNode.nodeText ?? oldNode.text ?? '',
-        x: oldNode.x || 0,
-        y: oldNode.y || 0,
-        parentId: oldNode.parentId,
-        collapsed: oldNode.collapsed || false,
-        side: oldNode.side,
-        shape: oldNode.shape,
-        color: oldNode.color ?? oldNode.fill,
-        borderColor: oldNode.borderColor ?? oldNode.stroke,
-        borderWidth: oldNode.borderWidth,
-        borderStyle: oldNode.borderStyle,
-        fontFamily: oldNode.fontFamily,
-        fontSize: oldNode.fontSize,
-        fontWeight: oldNode.fontWeight,
-        fontStyle: oldNode.fontStyle,
-        textDecoration: oldNode.textDecoration,
-        textAlign: oldNode.textAlign,
-        textColor: oldNode.textColor,
-        textCase: oldNode.textCase,
-        nodeLength: oldNode.nodeLength,
-        localStructure: oldNode.localStructure,
-        branchColor: oldNode.branchColor,
-        branchLineStyle: oldNode.branchLineStyle,
-        branchLineEnd: oldNode.branchLineEnd,
-        branchLineThickness: oldNode.branchLineThickness,
-        quickStyleId: oldNode.quickStyleId,
-        styleLocked: oldNode.styleLocked, 
+    // Kiểm tra xem content đã ở định dạng BE mới chưa
+    if ('layoutMode' in oldDoc.content && Array.isArray(oldDoc.content.nodes)) {
+      // Đã là định dạng mới (có globalSettings), chỉ cần dùng trực tiếp
+      beContent = oldDoc.content as BeMindmapContent;
+    } else {
+      // Định dạng cũ (nodes là Map, không có globalSettings)
+      const oldNodesList: any[] = Object.values((oldDoc.content as any).nodes || {});
+      const oldEdgesList: FeEdgeData[] = oldDoc.content.edges || [];
+
+      const beNodes: BeNodeData[] = oldNodesList.map((oldNode) => {
+        // 1. Tạo một đối tượng FeNodeData (phẳng) tạm thời
+        const tempFeNode: FeNodeData = {
+          id: oldNode.id,
+          nodeText: oldNode.nodeText ?? oldNode.text ?? '',
+          x: oldNode.x || 0,
+          y: oldNode.y || 0,
+          parentId: oldNode.parentId,
+          collapsed: oldNode.collapsed || false,
+          side: oldNode.side,
+          shape: oldNode.shape,
+          color: oldNode.color ?? oldNode.fill,
+          borderColor: oldNode.borderColor ?? oldNode.stroke,
+          borderWidth: oldNode.borderWidth,
+          borderStyle: oldNode.borderStyle,
+          fontFamily: oldNode.fontFamily,
+          fontSize: oldNode.fontSize,
+          fontWeight: oldNode.fontWeight,
+          fontStyle: oldNode.fontStyle,
+          textDecoration: oldNode.textDecoration,
+          textAlign: oldNode.textAlign,
+          textColor: oldNode.textColor,
+          textCase: oldNode.textCase,
+          nodeLength: oldNode.nodeLength,
+          localStructure: oldNode.localStructure,
+          branchColor: oldNode.branchColor,
+          branchLineStyle: oldNode.branchLineStyle,
+          branchLineEnd: oldNode.branchLineEnd,
+          branchLineThickness: oldNode.branchLineThickness,
+          quickStyleId: oldNode.quickStyleId,
+          styleLocked: oldNode.styleLocked,
+        };
+
+        // 2. Tái sử dụng hàm chuẩn hóa
+        return normalizeNodeFEtoBE(tempFeNode);
+      });
+
+      // 3. Tạo BeMindmapContent với globalSettings được suy luận từ nodes
+      // Suy luận globalFont: dùng font phổ biến nhất trong nodes (nếu có)
+      const fontCounts: { [font: string]: number } = {};
+      oldNodesList.forEach(node => {
+        if (node.fontFamily) {
+          fontCounts[node.fontFamily] = (fontCounts[node.fontFamily] || 0) + 1;
+        }
+      });
+      const mostCommonFont = Object.keys(fontCounts).length > 0
+        ? Object.keys(fontCounts).reduce((a, b) => fontCounts[a] > fontCounts[b] ? a : b)
+        : fonts[0].value;
+
+      // Suy luận theme dựa vào màu nền hoặc màu nodes (nếu có)
+      const hasCustomColors = oldNodesList.some(n => n.color || n.fill || n.quickStyleId);
+      
+      beContent = {
+        layoutMode: 'mindmap',
+        theme: 'light',
+        nodes: beNodes,
+        edges: oldEdgesList.map((e) => ({ id: e.id, from: e.from, to: e.to })),
+        globalSettings: {
+          fontFamily: mostCommonFont,
+          branchLineWidth: 2,
+          globalBranchColor: '#94A3B8',
+          backgroundColor: '#FAFAFB',
+          activeColorThemeId: 'dawn',
+        }
       };
-
-      // 2. Tái sử dụng hàm chuẩn hóa
-      return normalizeNodeFEtoBE(tempFeNode);
-    });
-
-    // 3. Tạo BeMindmapContent (CHƯA có globalSettings, vì dữ liệu cũ không có)
-    const beContent: BeMindmapContent = {
-      layoutMode: 'mindmap',
-      theme: 'light',
-      nodes: beNodes,
-      edges: oldEdgesList.map((e) => ({ id: e.id, from: e.from, to: e.to })),
-      // globalSettings sẽ là undefined, server sẽ dùng mặc định
-    };
+    }
 
     // 4. Tạo BeMindmapDoc hoàn chỉnh
     const beDoc: BeMindmapDoc = {
