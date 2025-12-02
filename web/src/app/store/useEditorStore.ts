@@ -104,7 +104,7 @@ export type NodeData = {
   fontWeight?: 'normal' | 'bold';
   fontStyle?: 'normal' | 'italic';
   textDecoration?: 'none' | 'underline' | 'line-through';
-  textAlign?: 'left' | 'center' | 'right';
+  textAlign?: 'LEFT' | 'CENTER' | 'RIGHT' | 'JUSTIFY';
   textColor?: string;
   textCase?: 'normal' | 'uppercase' | 'lowercase';
   nodeLength?: 'fit' | number;
@@ -139,7 +139,7 @@ export const DEFAULT_NODE_STYLE: Partial<NodeData> = {
   fontWeight: 'normal',
   fontStyle: 'normal',
   textDecoration: 'none',
-  textAlign: 'center',
+  textAlign: 'CENTER',
   textColor: '#000000ff', 
   nodeLength: 150,
   branchColor: undefined,

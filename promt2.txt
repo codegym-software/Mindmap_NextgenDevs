@@ -1,3 +1,83 @@
-Editor.tsx:541 WebSocket connected to mindmap: 6914096d1fbd450d526d5980
-localStorage
-Storage {mm_theme: 'light', mm_sidebar_pinned: '0', mm_tokens: '{"access_token":"eyJraWQiOiJBK2lzVmp4ZFh3Y290WVZ1V….7FhZf52otICkEgpwP8UmCw","expires_at":1762956812}', length: 3}mm_sidebar_pinned: "0"mm_theme: "light"mm_tokens: "{\"access_token\":\"eyJraWQiOiJBK2lzVmp4ZFh3Y290WVZ1VDE5cjRNT1NhZ3V3Nmdsa1lhckNcL3pLRmJpYz0iLCJhbGciOiJSUzI1NiJ9.eyJzdWIiOiIxOWNlNTQ0OC1kMGExLTcwZjktNzY0Yy1lYmVlMTRmMmIwOGQiLCJjb2duaXRvOmdyb3VwcyI6WyJhcC1zb3V0aGVhc3QtMl90MzBPV1dpemdfR29vZ2xlIl0sImlzcyI6Imh0dHBzOlwvXC9jb2duaXRvLWlkcC5hcC1zb3V0aGVhc3QtMi5hbWF6b25hd3MuY29tXC9hcC1zb3V0aGVhc3QtMl90MzBPV1dpemciLCJ2ZXJzaW9uIjoyLCJjbGllbnRfaWQiOiI3c284cW5vaTdwZ25lNmJxMGtxMnBwaGFybSIsIm9yaWdpbl9qdGkiOiI0M2FhZTk0ZS1kYTBmLTQyNDgtOTcwZi1lOGUyM2U4NDEwMmUiLCJ0b2tlbl91c2UiOiJhY2Nlc3MiLCJzY29wZSI6Im9wZW5pZCBwcm9maWxlIGVtYWlsIiwiYXV0aF90aW1lIjoxNzYyOTIwODEyLCJleHAiOjE3NjI5NTY4MTIsImlhdCI6MTc2MjkyMDgxMiwianRpIjoiMTRkYWY0YmYtYjdhNy00N2NkLWE4MTAtNDZjYjA4MmI3MjhlIiwidXNlcm5hbWUiOiJnb29nbGVfMTEwMzg0MDAzNDYzNDg5OTk5NTUzIn0.gAsdD6nLeREjOJDYurq5vNprk-7aKd7G4r8etQ6RSSLYv6wQ3gadSbp7-WqR-gQOxnsagaY41H7AV7h_zYuSiOZQ1vWkXJdh0MQ3NY3AHtfnbaKzWoD_hKMu1aJQfqgd2cJlbWulJaQ-2D3JgfD30pp-vb5Wwl0Rngd9HGu_aMSGh2LTrNw0yTPH7HJhDhq-cRvgcFZRkjD0-pbR7pE9nVKD9Gm1-v59UixodPbWO4rVDoDA5-fdB9YEB79uvEl1HBOS8VqYf_hsMkdsiRqvMPEafuV85oYR4udOuENP1U2_82cSww1iJNd0o0dQkj6Hpn6eN51ii3kxV3CtuxYEXg\",\"id_token\":\"eyJraWQiOiJ0MzR4QTh1blNFTEp6QUhNWE11MW0yVUtwbGNXUzRNaFk5MjJoZm9kVVJvPSIsImFsZyI6IlJTMjU2In0.eyJhdF9oYXNoIjoiUzRwMWJ3Q21Fc1NSQWhBTEhFTktkZyIsInN1YiI6IjE5Y2U1NDQ4LWQwYTEtNzBmOS03NjRjLWViZWUxNGYyYjA4ZCIsImNvZ25pdG86Z3JvdXBzIjpbImFwLXNvdXRoZWFzdC0yX3QzME9XV2l6Z19Hb29nbGUiXSwiZW1haWxfdmVyaWZpZWQiOmZhbHNlLCJpc3MiOiJodHRwczpcL1wvY29nbml0by1pZHAuYXAtc291dGhlYXN0LTIuYW1hem9uYXdzLmNvbVwvYXAtc291dGhlYXN0LTJfdDMwT1dXaXpnIiwiY29nbml0bzp1c2VybmFtZSI6Imdvb2dsZV8xMTAzODQwMDM0NjM0ODk5OTk1NTMiLCJvcmlnaW5fanRpIjoiNDNhYWU5NGUtZGEwZi00MjQ4LTk3MGYtZThlMjNlODQxMDJlIiwiYXVkIjoiN3NvOHFub2k3cGduZTZicTBrcTJwcGhhcm0iLCJpZGVudGl0aWVzIjpbeyJkYXRlQ3JlYXRlZCI6IjE3NTkxMzkzMDkzMzEiLCJ1c2VySWQiOiIxMTAzODQwMDM0NjM0ODk5OTk1NTMiLCJwcm92aWRlck5hbWUiOiJHb29nbGUiLCJwcm92aWRlclR5cGUiOiJHb29nbGUiLCJpc3N1ZXIiOm51bGwsInByaW1hcnkiOiJ0cnVlIn1dLCJ0b2tlbl91c2UiOiJpZCIsImF1dGhfdGltZSI6MTc2MjkyMDgxMiwiZXhwIjoxNzYyOTI0NDEyLCJpYXQiOjE3NjI5MjA4MTIsImp0aSI6IjA1N2U4ZWRlLTA1NDctNDIxZS04MWE2LTZiN2RiM2EyYzM5MyIsImVtYWlsIjoiaHVhbnYzNTk2QGdtYWlsLmNvbSJ9.rvwwR6RFpufRYVA3Pp1HUKqbRH23C2m3nfLwGLLBngwuRKZ6tTrLnye_SEJZ2Wcz9z4KyNHm2F4W9IwKLo11tVA-CVeBnpBKE977ZnpKV_9BisKH9efs9yc9xXZ8x_Y5jMgT06VWHmgDO3fKAj72kNw3-9NsFUZJk0CyIqqm8Oe4wq8gneea70HNcwcs44O37SL3oQYiNJ5YgIGCCXcNlXwfDlm95iQMtQfmeN0dBGU4W4ESY3rAWoKY5S1_VNk4lYiz1oK-JwzadxUXZPe2TCMaGevo3dG5KeOfr7Bk5IFKsiky5hgcb2qEYCqSiuVyr9hMbN7uGagGpadG1qszAg\",\"refresh_token\":\"eyJjdHkiOiJKV1QiLCJlbmMiOiJBMjU2R0NNIiwiYWxnIjoiUlNBLU9BRVAifQ.K3K3_xr16z_Uso30A58cH3IdLKLCdl3_4NPdx7KDVh9TSZZ3OZI7UOYztRISKg9VCh15me5s5MFYPTBrx47jsy-_HQ1y26Dd_CMra7D6GZ-dbjEQUrsUIzNpdfFBmAMtwT0qXzf732_Ecs-TYMOLD43PdRGVxVxxaD04ByB1nHlmv08dXeOcieBQbjK7YbDoy0HYHDh1G_xD0OTeF6aAVs06iZxm5ZmZg9OReH6_a013C_kPQ4NdzirspwiXZ5ABkoUUVcAL2MDHcTNq3aIimWzDJ6SsMgLbKeBq4WK5JO17KxPnCbDS3sSEzCVo7CLZYCOxZmIzeoe_njB1_-eYvA.bsTGFuqj6z_IAWdg.yUbYCFQ3r50hQEGJqrvu4DmXFQTNsrelR1JSCoaIdn_1uuL6VX9R8ZvuIneMI53lQz696CMfnRtz_fLB8ifbKQWjNRMoHppz-el1DBn2n1Hi-UP0kFwo2qGzGoIi2YOdPis4zpqQv2kRwbpp28flhHgSbboJWDeOVG4Z073lSOycVUOUyrP9x6yyh0BWIY5nufU3rwbQ2ymu2OHyDw9aqRmrkdWDXbQ0Qsm1vjxZcMofm62DGQ_kTmU6i-TYzxMzIXCu80BzWpisnWQBNuxbEnTLKmps8PEAgd0qKbnejEoFEd6p0rjukl5E6LJ6zmNAwm1i39gfy-0SVE3YzDeQjbD1a7FQfwd41Cf44cfoTZCSzawbgSkpZfcpa4GaVLYLIa7xwFAyofIRdlWj-h_BOwKBpLkbC7Leyxfs113EI2I9-cfEOBDWpS0C2SSg0rN7gcI1MEpJswrfJZs_o8MEZWgu_gL_byFFb7IEq8bVyBP5-6XQJc3jDLrYLMvtgc5XEmuAIk6Vouv4pqvFFUHnBavsTmkjY3kC6Fpf6ThXdisHZbp568okpgk2MYcln_rxxWqrByKSfGqeDNERt1J0pWEqgyChYaPw_tOJQj6spMid0-ePnGjhqrE7g1gRI91tJSH0iDlDEVmfODWAZfE4EMNUPy9tuACPvAqvr-BNLa13vL9ladv3arx0ObFUrxMiC0slv3aSupanemTzaGfBri3xB1i__YO0lmFqJwBVyacA9rlm3iXDcLnF_Tt6OVSd94bWa8F3z1dYNpgxKAyKEUO5m05JAzzTHg5J8JiPlkRn6Toyo0yH9G_3VWXCLCZMZVXLpNW9zJ924pF53VtbVLIH4ziDCP6VqOv4K3bFSCa4k0zmBdnfZjfERyG9Oj_JO6N2Y4zdeqTMY7-ueylxxw4B308rCXG1AuC3musdGzQDYkcKKv2B128r6kuz53yQULhpT5reLYjrFpAbIWZrJZhz-a-x0GaLMsSmcDSHrOZ7F3rmHYZha1dbdZ8JDvijq_R69ozG9k2_s4FJF_a_hivinPAxL2DcLEII_tUq0AGu24K5vQ-jKMtreMKCAaou-05DyLIZC5FfThq_5-oslmvM7_tBy11bgL7CXDYGZs_LfZ-FUJMOVfsrZMp-w4CUnGruYIq_PlZPgHIlg--cNnVC3uy4k0l4S8XHJ2xVtZ1JbVzgvT-1_Yds0hACfksf5je4oq0o7morfcXfEDz6nhMY58NM5vgXZAHenuWj9w.7FhZf52otICkEgpwP8UmCw\",\"expires_at\":1762956812}"length: 3[[Prototype]]: Storage
+GET http://localhost:8081/api/mindmaps net::ERR_EMPTY_RESPONSE
+(anonymous) @ index-BHQhAVqU.js:182
+xhr @ index-BHQhAVqU.js:182
+K7 @ index-BHQhAVqU.js:184
+Promise.then
+_request @ index-BHQhAVqU.js:185
+request @ index-BHQhAVqU.js:184
+j0.<computed> @ index-BHQhAVqU.js:185
+(anonymous) @ index-BHQhAVqU.js:180
+list @ index-BHQhAVqU.js:185
+(anonymous) @ index-BHQhAVqU.js:185
+(anonymous) @ index-BHQhAVqU.js:185
+cg @ index-BHQhAVqU.js:115
+gB @ index-BHQhAVqU.js:128
+mB @ index-BHQhAVqU.js:128
+vB @ index-BHQhAVqU.js:128
+pB @ index-BHQhAVqU.js:128
+ZB @ index-BHQhAVqU.js:128
+gv @ index-BHQhAVqU.js:128
+(anonymous) @ index-BHQhAVqU.js:128
+Ee @ index-BHQhAVqU.js:36
+Ue @ index-BHQhAVqU.js:36
+he @ index-BHQhAVqU.js:36Understand this error
+index-BHQhAVqU.js:312 Lỗi tải danh sách (sync): Dr {message: 'Network Error', name: 'AxiosError', code: 'ERR_NETWORK', config: {…}, request: XMLHttpRequest, …}
+console.error @ index-BHQhAVqU.js:312
+(anonymous) @ index-BHQhAVqU.js:185
+Promise.catch
+(anonymous) @ index-BHQhAVqU.js:185
+cg @ index-BHQhAVqU.js:115
+gB @ index-BHQhAVqU.js:128
+mB @ index-BHQhAVqU.js:128
+vB @ index-BHQhAVqU.js:128
+pB @ index-BHQhAVqU.js:128
+ZB @ index-BHQhAVqU.js:128
+gv @ index-BHQhAVqU.js:128
+(anonymous) @ index-BHQhAVqU.js:128
+Ee @ index-BHQhAVqU.js:36
+Ue @ index-BHQhAVqU.js:36
+he @ index-BHQhAVqU.js:36Understand this error
+index-BHQhAVqU.js:182  GET http://localhost:8081/api/mindmaps net::ERR_EMPTY_RESPONSE
+(anonymous) @ index-BHQhAVqU.js:182
+xhr @ index-BHQhAVqU.js:182
+K7 @ index-BHQhAVqU.js:184
+Promise.then
+_request @ index-BHQhAVqU.js:185
+request @ index-BHQhAVqU.js:184
+j0.<computed> @ index-BHQhAVqU.js:185
+(anonymous) @ index-BHQhAVqU.js:180
+list @ index-BHQhAVqU.js:185
+(anonymous) @ index-BHQhAVqU.js:185
+cg @ index-BHQhAVqU.js:115
+gB @ index-BHQhAVqU.js:128
+mB @ index-BHQhAVqU.js:128
+vB @ index-BHQhAVqU.js:128
+pB @ index-BHQhAVqU.js:128
+ZB @ index-BHQhAVqU.js:128
+gv @ index-BHQhAVqU.js:128
+(anonymous) @ index-BHQhAVqU.js:128
+Ee @ index-BHQhAVqU.js:36
+Ue @ index-BHQhAVqU.js:36
+he @ index-BHQhAVqU.js:36Understand this error
+index-BHQhAVqU.js:182  GET http://localhost:8081/api/mindmaps net::ERR_EMPTY_RESPONSE
+(anonymous) @ index-BHQhAVqU.js:182
+xhr @ index-BHQhAVqU.js:182
+K7 @ index-BHQhAVqU.js:184
+Promise.then
+_request @ index-BHQhAVqU.js:185
+request @ index-BHQhAVqU.js:184
+j0.<computed> @ index-BHQhAVqU.js:185
+(anonymous) @ index-BHQhAVqU.js:180
+list @ index-BHQhAVqU.js:185
+(anonymous) @ index-BHQhAVqU.js:185
+(anonymous) @ index-BHQhAVqU.js:185
+cg @ index-BHQhAVqU.js:115
+wB @ index-BHQhAVqU.js:128
+FE @ index-BHQhAVqU.js:132
+j2 @ index-BHQhAVqU.js:132
+ZB @ index-BHQhAVqU.js:128
+gv @ index-BHQhAVqU.js:128
+(anonymous) @ index-BHQhAVqU.js:128
+Ee @ index-BHQhAVqU.js:36
+Ue @ index-BHQhAVqU.js:36
+he @ index-BHQhAVqU.js:36Understand this error

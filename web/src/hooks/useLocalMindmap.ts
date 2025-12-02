@@ -71,7 +71,7 @@ export function useLocalMindmap() {
         fontWeight: 'normal',
         fontStyle: 'normal',
         textDecoration: 'none',
-        textAlign: 'center',
+        textAlign: 'CENTER',
         textCase: 'normal',
         nodeLength: 'fit',
         localStructure: 'default',

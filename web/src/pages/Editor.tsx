@@ -1908,7 +1908,7 @@ const handleFitToScreen = useCallback(() => {
       fontFamily: style.fontFamily || 'Inter',
       fontWeight: style.fontWeight || 'normal',
       fontStyle: style.fontStyle === 'italic' ? 'italic' : 'normal',
-      textAlign: style.textAlign || 'center',
+      textAlign: style.textAlign || 'CENTER',
       textColor: style.textColor || '#333333',
       textDecoration: style.textDecoration || 'none',
     };
@@ -2020,7 +2020,7 @@ const handleFitToScreen = useCallback(() => {
                   fontFamily: visual.style.fontFamily || 'Inter',
                   lineHeight: 1.3, 
                   padding: `${PADDING_Y}px ${PADDING_X}px`,
-                  textAlign: visual.style.textAlign || 'center',
+                  textAlign: (visual.style.textAlign || 'CENTER').toLowerCase() as 'left' | 'center' | 'right',
                   textDecoration: visual.style.textDecoration || 'none',
                   color: visual.style.textColor || '#333333',
                   backgroundColor: visual.style.color,

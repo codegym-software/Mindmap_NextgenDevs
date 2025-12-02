@@ -28,7 +28,7 @@ export type BeNodeStyle = {
   fontFamily?: string;
   fontSize?: number;
   textDecoration?: 'none' | 'underline' | 'line-through';
-  textAlign?: 'left' | 'center' | 'right';
+  textAlign?: 'LEFT' | 'CENTER' | 'RIGHT' | 'JUSTIFY';
   textCase?: 'normal' | 'uppercase' | 'lowercase';
   nodeLength?: 'fit' | number;
   quickStyleId?: string;

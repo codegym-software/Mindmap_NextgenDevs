@@ -485,18 +485,18 @@ function NodeStylePanel({
         <div className="grid grid-cols-4 gap-1">
           <TextFormatButton
             icon={<AlignLeft size={16} />}
-            isActive={style.textAlign === 'left'}
-            onClick={() => handleUpdate({ textAlign: 'left' })}
+            isActive={style.textAlign === 'LEFT'}
+            onClick={() => handleUpdate({ textAlign: 'LEFT' })}
           />
           <TextFormatButton
             icon={<AlignCenter size={16} />}
-            isActive={style.textAlign === 'center'}
-            onClick={() => handleUpdate({ textAlign: 'center' })}
+            isActive={style.textAlign === 'CENTER'}
+            onClick={() => handleUpdate({ textAlign: 'CENTER' })}
           />
           <TextFormatButton
             icon={<AlignRight size={16} />}
-            isActive={style.textAlign === 'right'}
-            onClick={() => handleUpdate({ textAlign: 'right' })}
+            isActive={style.textAlign === 'RIGHT'}
+            onClick={() => handleUpdate({ textAlign: 'RIGHT' })}
           />
           <TextFormatButton
             icon={<CaseSensitive size={16} />}
