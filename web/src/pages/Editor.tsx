@@ -2330,7 +2330,7 @@ const handleFitToScreen = useCallback(() => {
                       height={style.imageUrl ? (h - imageHeight - 10) : h} 
                       offsetX={w / 2} 
                       offsetY={style.imageUrl ? (h / 2) - imageHeight - 10 : h / 2} 
-                      align={style.textAlign}
+                      align={(style.textAlign || 'CENTER').toLowerCase() as 'left' | 'center' | 'right'}
                       verticalAlign="middle"
                       fill={style.textColor}
                       padding={PADDING_Y} listening={false}
