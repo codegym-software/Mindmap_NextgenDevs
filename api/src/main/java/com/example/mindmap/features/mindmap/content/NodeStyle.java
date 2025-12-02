@@ -24,11 +24,15 @@ public class NodeStyle {
     private String textDecoration;
     private String textColor;
     private String textCase;
+    private String backgroundColor;
     private String branchColor;
     private String branchLineStyle;
     private String branchLineEnd;
     private String branchLineThickness;
     private String quickStyleId;
+    private String nodeLength;
+    private String localStructure;
+    private Boolean styleLocked;
 
     // Getters and Setters
     public String getColor() { return color; }
@@ -88,6 +92,9 @@ public class NodeStyle {
     public String getTextCase() { return textCase; }
     public void setTextCase(String textCase) { this.textCase = textCase; }
     
+    public String getBackgroundColor() { return backgroundColor; }
+    public void setBackgroundColor(String backgroundColor) { this.backgroundColor = backgroundColor; }
+    
     public String getBranchColor() { return branchColor; }
     public void setBranchColor(String branchColor) { this.branchColor = branchColor; }
     
@@ -102,6 +109,15 @@ public class NodeStyle {
     
     public String getQuickStyleId() { return quickStyleId; }
     public void setQuickStyleId(String quickStyleId) { this.quickStyleId = quickStyleId; }
+    
+    public String getNodeLength() { return nodeLength; }
+    public void setNodeLength(String nodeLength) { this.nodeLength = nodeLength; }
+    
+    public String getLocalStructure() { return localStructure; }
+    public void setLocalStructure(String localStructure) { this.localStructure = localStructure; }
+    
+    public Boolean getStyleLocked() { return styleLocked; }
+    public void setStyleLocked(Boolean styleLocked) { this.styleLocked = styleLocked; }
 
     @JsonFormat(shape = JsonFormat.Shape.STRING)
     public enum TextAlign {

@@ -11,6 +11,8 @@ public class NodeData {
     private String hyperlink;
     private String notes;
     private Object externalReference;
+    private String side;
+    private Boolean boundary;
 
     // Getters and Setters
     public String getId() { return id; }
@@ -42,4 +44,10 @@ public class NodeData {
     
     public Object getExternalReference() { return externalReference; }
     public void setExternalReference(Object externalReference) { this.externalReference = externalReference; }
+    
+    public String getSide() { return side; }
+    public void setSide(String side) { this.side = side; }
+    
+    public Boolean getBoundary() { return boundary; }
+    public void setBoundary(Boolean boundary) { this.boundary = boundary; }
 }

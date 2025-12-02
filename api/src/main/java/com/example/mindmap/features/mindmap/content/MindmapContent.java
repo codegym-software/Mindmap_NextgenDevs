@@ -31,6 +31,7 @@ public class MindmapContent {
     public static class GlobalSettings {
         private String fontFamily;
         private Integer branchLineWidth;
+        private Boolean isColoredBranch;
         private String globalBranchColor;
         private String backgroundColor;
         private String activeColorThemeId;
@@ -40,6 +41,9 @@ public class MindmapContent {
         
         public Integer getBranchLineWidth() { return branchLineWidth; }
         public void setBranchLineWidth(Integer branchLineWidth) { this.branchLineWidth = branchLineWidth; }
+        
+        public Boolean getIsColoredBranch() { return isColoredBranch; }
+        public void setIsColoredBranch(Boolean isColoredBranch) { this.isColoredBranch = isColoredBranch; }
         
         public String getGlobalBranchColor() { return globalBranchColor; }
         public void setGlobalBranchColor(String globalBranchColor) { this.globalBranchColor = globalBranchColor; }
