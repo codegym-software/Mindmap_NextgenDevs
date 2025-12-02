@@ -301,7 +301,7 @@ public class MindmapService {
     }
 
     private MindmapSummaryResponse toSummaryResponse(Mindmap mindmap) {
-        return new MindmapSummaryResponse(mindmap.getId(), mindmap.getName(), mindmap.getOwnerId(), mindmap.getUpdatedAt(), mindmap.getTags(), mindmap.getAccessSettings());
+        return new MindmapSummaryResponse(mindmap.getId(), mindmap.getName(), mindmap.getOwnerId(), mindmap.getCreatedAt(), mindmap.getUpdatedAt(), mindmap.getTags(), mindmap.getAccessSettings());
     }
 
     private MindmapDetailResponse toDetailResponse(Mindmap mindmap) {

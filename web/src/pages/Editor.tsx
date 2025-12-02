@@ -614,6 +614,20 @@ export default function Editor() {
     return () => window.removeEventListener('mm:create', createHandler);
   }, [handleCreateNew]);
 
+  // Add Ctrl+S shortcut for saving
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+        e.preventDefault();
+        if (isDirty) {
+          handleSave();
+        }
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isDirty, handleSave]);
+
   // 1. Hàm Gửi Patch
   const sendPatch = useCallback((type: string, payload: any) => {
     if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
@@ -1692,6 +1706,7 @@ const handleFitToScreen = useCallback(() => {
 
   const handleSetBackgroundColor = (color: string) => {
     setBackgroundColor(color);
+    useEditorStore.setState({ backgroundColor: color, isDirty: true });
     pushHistory(useEditorStore.getState().nodes, useEditorStore.getState().edges);
     debouncedPersistData();
     sendPatch('BACKGROUND_CHANGE', { color });
@@ -1942,7 +1957,15 @@ const handleFitToScreen = useCallback(() => {
       <div className="w-screen h-screen bg-white overflow-hidden flex flex-col">
         <EditorToolbar
           onCommitName={() => {
-            debouncedPersistData();
+            // Save immediately when name is changed
+            if (isAuthed && id) {
+              const content = { nodes: nodes, edges };
+              mindmapsApi.update(id, { name, content }).catch((e) => {
+                console.error('Save name failed:', e);
+              });
+            } else if (isGuest && id) {
+              saveGuestDoc(id, name, nodes, edges);
+            }
             sendPatch('MAP_NAME_CHANGE', { name });
           }}
           onDashboard={() => navigate('/dashboard')}
@@ -2250,7 +2273,9 @@ const handleFitToScreen = useCallback(() => {
                 }
                 let strokeColor = globalBranchColor;
                 strokeColor = globalBranchColor;
-                const strokeWidth = branchLineWidth || 2;
+                // Apply node's branch line thickness or fallback to global setting
+                const nodeThickness = fromStyle.branchLineThickness === 'thin' ? 1 : fromStyle.branchLineThickness === 'thick' ? 3 : fromStyle.branchLineThickness === 'normal' ? 2 : undefined;
+                const strokeWidth = nodeThickness !== undefined ? nodeThickness : (branchLineWidth || 2);
                 const isBezier = fromStyle.branchLineStyle === 'bezier' && globalStructure !== 'org'; // Changed to fromStyle
                 const lineProps = {
                   points: points,
@@ -2471,16 +2496,20 @@ const handleFitToScreen = useCallback(() => {
               onSetGlobalFont={(font) => {
                 pushHistory(useEditorStore.getState().nodes, useEditorStore.getState().edges);
                 useEditorStore.setState({ globalFont: font, isDirty: true });
+                debouncedPersistData();
               }}
               onSetBranchLineWidth={(width) => {
                 pushHistory(useEditorStore.getState().nodes, useEditorStore.getState().edges);
                 useEditorStore.setState({ branchLineWidth: width, isDirty: true });
+                debouncedPersistData();
               }}
               onSetGlobalBranchColor={handleSetGlobalBranchColor}
               onSetActiveColorTheme={(themeName) => {
                 pushHistory(useEditorStore.getState().nodes, useEditorStore.getState().edges);
                 setGlobalStore({ activeColorThemeId: themeName });
                 setBackgroundColor(colorThemes[themeName as keyof typeof colorThemes].background);
+                useEditorStore.setState({ backgroundColor: colorThemes[themeName as keyof typeof colorThemes].background, isDirty: true });
+                debouncedPersistData();
               }}
               
               onUpdateNode={handleUpdateNode}

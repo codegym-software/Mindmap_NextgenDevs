@@ -166,26 +166,23 @@ export function getNodeComputedStyle(
 
   if (!node) return baseStyle as NodeData;
 
-  if (topology) {
+  if (node.id === 'root') {
+    baseStyle.color = theme.root.fill || '#000000';
+    baseStyle.textColor = theme.root.textColor || '#FFFFFF';
+    baseStyle.borderColor = theme.root.stroke || '#000000';
+    baseStyle.borderWidth = 4;
+    baseStyle.fontSize = 28;
+    baseStyle.fontWeight = 'bold';
+    baseStyle.textCase = 'uppercase';
+  } else if (topology) {
     const { depth, branchBaseColor } = topology;
-
-    if (node.id === 'root') {
-       baseStyle.color = theme.root.fill || '#000000';
-       baseStyle.textColor = theme.root.textColor || '#FFFFFF';
-       baseStyle.borderColor = theme.root.stroke || '#000000';
-       baseStyle.borderWidth = 4;
-       baseStyle.fontSize = 28;
-       baseStyle.fontWeight = 'bold';
-       baseStyle.textCase = 'uppercase';
-    } else {
-       const smartColors = getBranchColorByDepth(branchBaseColor, depth);
-       
-       baseStyle.color = smartColors.bg;
-       baseStyle.borderColor = smartColors.border;
-       baseStyle.textColor = getContrastingTextColor(smartColors.bg);
-       
-       if (depth >= 6) baseStyle.borderWidth = 2;
-    }
+    const smartColors = getBranchColorByDepth(branchBaseColor, depth);
+    
+    baseStyle.color = smartColors.bg;
+    baseStyle.borderColor = smartColors.border;
+    baseStyle.textColor = getContrastingTextColor(smartColors.bg);
+    
+    if (depth >= 6) baseStyle.borderWidth = 2;
   }
 
   // 3. [QUICK STYLE]

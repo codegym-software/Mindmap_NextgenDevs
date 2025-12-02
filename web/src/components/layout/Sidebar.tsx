@@ -223,7 +223,7 @@ export default function Sidebar() {
                     <a href={`/editor/${m.id}`} className="flex-grow min-w-0">
                       <div className="text-sm text-gray-900 font-medium truncate">{m.name}</div> 
                       <div className="text-gray-500 text-xs mt-1"> 
-                        {new Date(m.createdAt).toLocaleDateString("vi-VN")}
+                        {(m.updatedAt || m.createdAt) ? new Date(m.updatedAt || m.createdAt).toLocaleDateString("vi-VN", { year: 'numeric', month: '2-digit', day: '2-digit' }) : ''}
                       </div>
                     </a>
                   )}

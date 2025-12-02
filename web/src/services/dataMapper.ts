@@ -16,6 +16,7 @@ import {
 export type BeNodeStyle = {
   // === Các trường BE gốc ===
   shape: 'rectangle' | 'roundedRect'; 
+  color?: string; // Backend's main color field
   backgroundColor: string; // Tương ứng 'color' của FE
   textColor: string;
   borderStyle: 'solid' | 'dashed' | 'dotted';
@@ -140,11 +141,15 @@ export function normalizeNodeFEtoBE(feNode: FeNodeData): BeNodeData {
     hyperlink,
     styleLocked,
     boundary,
+    imageUrl,
+    imageWidth,
+    imageHeight,
   } = feNode;
 
   // Tạo object 'style' lồng nhau
   const beStyle: Partial<BeNodeStyle> = {
-    backgroundColor: color,
+    color: color, // Backend's main color field
+    backgroundColor: color, // Also send backgroundColor for compatibility
     textColor: textColor,
     shape: shape,
     borderColor,
@@ -164,7 +169,10 @@ export function normalizeNodeFEtoBE(feNode: FeNodeData): BeNodeData {
     branchLineEnd,
     branchLineThickness,
     quickStyleId: quickStyleId,
-    styleLocked: styleLocked, 
+    styleLocked: styleLocked,
+    imageUrl: imageUrl,
+    imageWidth: imageWidth,
+    imageHeight: imageHeight, 
   };
 
   // Tạo object NodeData của BE
@@ -204,7 +212,7 @@ export function normalizeNodeBEtoFE(beNode: BeNodeData): FeNodeData {
     hyperlink: hyperlink || undefined,
     boundary: boundary || false,
     shape: safeStyle.shape,
-    color: safeStyle.backgroundColor,
+    color: safeStyle.backgroundColor || safeStyle.color,
     borderColor: safeStyle.borderColor,
     borderWidth: safeStyle.borderWidth,
     borderStyle: safeStyle.borderStyle,
@@ -223,7 +231,10 @@ export function normalizeNodeBEtoFE(beNode: BeNodeData): FeNodeData {
     branchLineEnd: safeStyle.branchLineEnd,
     branchLineThickness: safeStyle.branchLineThickness,
     quickStyleId: safeStyle.quickStyleId as any,
-    styleLocked: safeStyle.styleLocked, 
+    styleLocked: safeStyle.styleLocked,
+    imageUrl: safeStyle.imageUrl,
+    imageWidth: safeStyle.imageWidth,
+    imageHeight: safeStyle.imageHeight,
   };
 
   return feNode;
