@@ -183,6 +183,20 @@ export function getNodeComputedStyle(
     baseStyle.textColor = getContrastingTextColor(smartColors.bg);
     
     if (depth >= 6) baseStyle.borderWidth = 2;
+  } else {
+    // Floating nodes - Ưu tiên màu từ DB, fallback theme nếu không có
+    if (!node.color) {
+      const defaultStyle = theme.quickStyles.default;
+      baseStyle.color = defaultStyle.fill || '#FFFFFF';
+    }
+    if (!node.borderColor) {
+      const defaultStyle = theme.quickStyles.default;
+      baseStyle.borderColor = defaultStyle.stroke || '#CBD5E0';
+    }
+    if (!node.textColor) {
+      const defaultStyle = theme.quickStyles.default;
+      baseStyle.textColor = defaultStyle.textColor || '#4A5568';
+    }
   }
 
   // 3. [QUICK STYLE]
@@ -201,7 +215,7 @@ export function getNodeComputedStyle(
   const computed: Partial<NodeData> = { ...baseStyle };
   const OVERRIDABLE_KEYS: (keyof NodeData)[] = [
     'shape', 'color', 'borderColor', 'borderWidth', 'borderStyle',
-    'fontFamily', 'fontSize', 'fontWeight', 'fontStyle', 'textDecoration', 
+    'fontSize', 'fontWeight', 'fontStyle', 'textDecoration', 
     'textAlign', 'textColor', 'textCase', 'nodeLength',
     'branchLineStyle', 'branchLineEnd', 'branchLineThickness',
     'imageUrl', 'imageWidth', 'imageHeight', 'hyperlink'
@@ -236,9 +250,9 @@ export function getNodeComputedStyle(
   // [ĐỒNG BỘ MÀU DÂY]
   computed.branchColor = node.branchColor ?? (topology ? topology.branchBaseColor : undefined);
 
-  if (node.fontFamily) {
-    computed.fontFamily = node.fontFamily;
-  }
+  // Global font applies to all nodes except root (unless explicitly set)
+  // Root keeps its own font settings
+  computed.fontFamily = isRoot && node.fontFamily ? node.fontFamily : globalFont;
 
   return computed as NodeData;
 }

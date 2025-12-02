@@ -289,8 +289,8 @@ export default function Editor() {
     }
   };
 
-  // State nội bộ
-  const [name, setName] = useState('Loading...');
+  // State nội bộ - Lấy name từ store thay vì state local
+  const name = useEditorStore(s => s.currentMindmapName);
   const [isDataLoaded, setIsDataLoaded] = useState(false);
   const [isReadyToShow, setIsReadyToShow] = useState(false);
   const [isFormattingToolbarOpen, setFormattingToolbarOpen] = useState(false); // UI Mới
@@ -521,7 +521,6 @@ export default function Editor() {
         }
 
         if (isMounted) {
-          setName(data.name);
           useEditorStore.setState({ currentMindmapId: id, currentMindmapName: data.name, isDirty: false });
           clearHistory();
           setGraph(data.nodes, data.edges);
@@ -1425,7 +1424,19 @@ const handleFitToScreen = useCallback(() => {
       setTimeout(() => handleLayout(true), 50);
     }
     debouncedPushHistory();
-    debouncedPersistData();
+    
+    // Lưu ngay lập tức khi thay đổi style node
+    if (id) {
+      if (isGuest) {
+        saveGuestDoc(id, name, newNodes, edges);
+      } else if (isAuthed) {
+        const docToSave = { name, content: { nodes: newNodes, edges } };
+        mindmapsApi.update(id, docToSave).catch((e) => {
+          console.error('Lưu style node thất bại:', e);
+        });
+      }
+    }
+    
     selectedNodeIds.forEach(id => {
       sendPatch('NODE_STYLE_UPDATE', { id, updates });
     });
@@ -1708,7 +1719,20 @@ const handleFitToScreen = useCallback(() => {
     setBackgroundColor(color);
     useEditorStore.setState({ backgroundColor: color, isDirty: true });
     pushHistory(useEditorStore.getState().nodes, useEditorStore.getState().edges);
-    debouncedPersistData();
+    
+    // Lưu ngay lập tức
+    if (id) {
+      const { nodes: currentNodes, edges: currentEdges } = useEditorStore.getState();
+      if (isGuest) {
+        saveGuestDoc(id, name, currentNodes, currentEdges);
+      } else if (isAuthed) {
+        const docToSave = { name, content: { nodes: currentNodes, edges: currentEdges } };
+        mindmapsApi.update(id, docToSave).catch((e) => {
+          console.error('Lưu màu nền thất bại:', e);
+        });
+      }
+    }
+    
     sendPatch('BACKGROUND_CHANGE', { color });
   };
    
@@ -1728,10 +1752,20 @@ const handleFitToScreen = useCallback(() => {
     });
     
     setGraph(newNodes, edges);
-    // Lưu lại
     useEditorStore.setState({ isDirty: true });
-    // Gửi patch
-    debouncedPersistData();
+    
+    // Lưu ngay lập tức
+    if (id) {
+      if (isGuest) {
+        saveGuestDoc(id, name, newNodes, edges);
+      } else if (isAuthed) {
+        const docToSave = { name, content: { nodes: newNodes, edges } };
+        mindmapsApi.update(id, docToSave).catch((e) => {
+          console.error('Lưu màu dây thất bại:', e);
+        });
+      }
+    }
+    
     sendPatch('GLOBAL_BRANCH_COLOR_CHANGE', { color });
   };
 
@@ -1741,8 +1775,21 @@ const handleFitToScreen = useCallback(() => {
 
     const newNodes = nodes.map((n) => {
       if (idSet.has(n.id)) {
-        const resetStyle = applyNodeDefaults(n, activeTheme);
-        return { ...n, ...resetStyle, quickStyleId: styleId };
+        // Chỉ set quickStyleId, không reset các properties khác
+        // getNodeComputedStyle sẽ tự động áp dụng quick style colors
+        return { 
+          ...n, 
+          quickStyleId: styleId,
+          // Xóa các override colors để quick style có hiệu lực
+          color: undefined,
+          borderColor: undefined,
+          textColor: undefined,
+          borderWidth: undefined,
+          fontWeight: undefined,
+          textDecoration: undefined,
+          fontSize: undefined,
+          textCase: undefined,
+        };
       }
       return n;
     });
@@ -1750,12 +1797,22 @@ const handleFitToScreen = useCallback(() => {
     setGraph(newNodes, edges);
     setTimeout(() => handleLayout(true), 50);
     debouncedPushHistory();
-    debouncedPersistData();
+    
+    // Lưu ngay lập tức
+    if (id) {
+      if (isGuest) {
+        saveGuestDoc(id, name, newNodes, edges);
+      } else if (isAuthed) {
+        const docToSave = { name, content: { nodes: newNodes, edges } };
+        mindmapsApi.update(id, docToSave).catch((e) => {
+          console.error('Lưu quick style thất bại:', e);
+        });
+      }
+    }
     
     // Gửi patch cho TỪNG node
-    const tempResetStyle = applyNodeDefaults(nodes[0], activeTheme);
-    selectedNodeIds.forEach(id => {
-      sendPatch('NODE_QUICK_STYLE_APPLY', { id: id, styleId, resetStyle: tempResetStyle });
+    selectedNodeIds.forEach(nodeId => {
+      sendPatch('NODE_QUICK_STYLE_APPLY', { id: nodeId, styleId });
     });
   };
 
@@ -1780,7 +1837,19 @@ const handleFitToScreen = useCallback(() => {
     setGraph(newNodes, edges);
     setTimeout(() => handleLayout(true), 50);
     debouncedPushHistory();
-    debouncedPersistData();
+    
+    // Lưu ngay lập tức
+    if (id) {
+      if (isGuest) {
+        saveGuestDoc(id, name, newNodes, edges);
+      } else if (isAuthed) {
+        const docToSave = { name, content: { nodes: newNodes, edges } };
+        mindmapsApi.update(id, docToSave).catch((e) => {
+          console.error('Lưu paste style thất bại:', e);
+        });
+      }
+    }
+    
     sendPatch('NODE_STYLE_PASTE', { id: selectedNodeIds, style: styleClipboard }); 
   };
 
@@ -1794,7 +1863,19 @@ const handleFitToScreen = useCallback(() => {
     setGraph(newNodes, edges);
     setTimeout(() => handleLayout(true), 50);
     debouncedPushHistory();
-    debouncedPersistData();
+    
+    // Lưu ngay lập tức
+    if (id) {
+      if (isGuest) {
+        saveGuestDoc(id, name, newNodes, edges);
+      } else if (isAuthed) {
+        const docToSave = { name, content: { nodes: newNodes, edges } };
+        mindmapsApi.update(id, docToSave).catch((e) => {
+          console.error('Lưu reset style thất bại:', e);
+        });
+      }
+    }
+    
     sendPatch('NODE_STYLE_RESET', { id: selectedNodeIds, resetStyle }); 
   };
 
@@ -2214,6 +2295,9 @@ const handleFitToScreen = useCallback(() => {
                 x: worldX,
                 y: worldY,
                 parentId: undefined,
+                // Thêm các thuộc tính style mặc định
+                ...DEFAULT_NODE_STYLE,
+                quickStyleId: 'default',
               };
 
               const newNodes = [...nodes, newNodeData];
@@ -2488,6 +2572,19 @@ const handleFitToScreen = useCallback(() => {
                 setGlobalStore({ globalStructure: structure });
                 handleLayout(false);
                 useEditorStore.setState({ isDirty: true });
+                
+                // Lưu ngay lập tức
+                if (id) {
+                  const { nodes: currentNodes, edges: currentEdges } = useEditorStore.getState();
+                  if (isGuest) {
+                    saveGuestDoc(id, name, currentNodes, currentEdges);
+                  } else if (isAuthed) {
+                    const docToSave = { name, content: { nodes: currentNodes, edges: currentEdges } };
+                    mindmapsApi.update(id, docToSave).catch((e) => {
+                      console.error('Lưu layout thất bại:', e);
+                    });
+                  }
+                }
               }}
               onSetBackgroundColor={(color) => {
                  handleSetBackgroundColor(color);
@@ -2496,12 +2593,36 @@ const handleFitToScreen = useCallback(() => {
               onSetGlobalFont={(font) => {
                 pushHistory(useEditorStore.getState().nodes, useEditorStore.getState().edges);
                 useEditorStore.setState({ globalFont: font, isDirty: true });
-                debouncedPersistData();
+                
+                // Lưu ngay lập tức
+                if (id) {
+                  const { nodes: currentNodes, edges: currentEdges } = useEditorStore.getState();
+                  if (isGuest) {
+                    saveGuestDoc(id, name, currentNodes, currentEdges);
+                  } else if (isAuthed) {
+                    const docToSave = { name, content: { nodes: currentNodes, edges: currentEdges } };
+                    mindmapsApi.update(id, docToSave).catch((e) => {
+                      console.error('Lưu font thất bại:', e);
+                    });
+                  }
+                }
               }}
               onSetBranchLineWidth={(width) => {
                 pushHistory(useEditorStore.getState().nodes, useEditorStore.getState().edges);
                 useEditorStore.setState({ branchLineWidth: width, isDirty: true });
-                debouncedPersistData();
+                
+                // Lưu ngay lập tức
+                if (id) {
+                  const { nodes: currentNodes, edges: currentEdges } = useEditorStore.getState();
+                  if (isGuest) {
+                    saveGuestDoc(id, name, currentNodes, currentEdges);
+                  } else if (isAuthed) {
+                    const docToSave = { name, content: { nodes: currentNodes, edges: currentEdges } };
+                    mindmapsApi.update(id, docToSave).catch((e) => {
+                      console.error('Lưu độ dày dây thất bại:', e);
+                    });
+                  }
+                }
               }}
               onSetGlobalBranchColor={handleSetGlobalBranchColor}
               onSetActiveColorTheme={(themeName) => {
@@ -2509,7 +2630,19 @@ const handleFitToScreen = useCallback(() => {
                 setGlobalStore({ activeColorThemeId: themeName });
                 setBackgroundColor(colorThemes[themeName as keyof typeof colorThemes].background);
                 useEditorStore.setState({ backgroundColor: colorThemes[themeName as keyof typeof colorThemes].background, isDirty: true });
-                debouncedPersistData();
+                
+                // Lưu ngay lập tức
+                if (id) {
+                  const { nodes: currentNodes, edges: currentEdges } = useEditorStore.getState();
+                  if (isGuest) {
+                    saveGuestDoc(id, name, currentNodes, currentEdges);
+                  } else if (isAuthed) {
+                    const docToSave = { name, content: { nodes: currentNodes, edges: currentEdges } };
+                    mindmapsApi.update(id, docToSave).catch((e) => {
+                      console.error('Lưu theme thất bại:', e);
+                    });
+                  }
+                }
               }}
               
               onUpdateNode={handleUpdateNode}

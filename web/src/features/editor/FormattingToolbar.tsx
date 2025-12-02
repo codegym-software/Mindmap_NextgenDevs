@@ -296,9 +296,32 @@ function NodeStylePanel({
 }: NodeStylePanelProps) {
   
   // Tính toán style (vẫn dựa trên node đầu tiên)
-  const style = useMemo(() => {
+  // [FIX] Dùng computed style cho hiển thị màu/border, nhưng dùng actual values cho các field có thể override
+  const computedStyle = useMemo(() => {
     return getNodeComputedStyle(currentNode, activeTheme, useEditorStore.getState().globalFont);
   }, [currentNode, activeTheme]);
+  
+  // Tạo style object với actual values từ node (không computed) cho các field quan trọng
+  const style = useMemo(() => {
+    if (!currentNode) return computedStyle;
+    
+    return {
+      ...computedStyle,
+      // Dùng actual values (không computed) cho các field này để user có thể override
+      fontFamily: currentNode.fontFamily ?? computedStyle.fontFamily,
+      fontSize: currentNode.fontSize ?? computedStyle.fontSize,
+      fontWeight: currentNode.fontWeight ?? computedStyle.fontWeight,
+      fontStyle: currentNode.fontStyle ?? computedStyle.fontStyle,
+      textDecoration: currentNode.textDecoration ?? computedStyle.textDecoration,
+      textAlign: currentNode.textAlign ?? computedStyle.textAlign,
+      textColor: currentNode.textColor ?? computedStyle.textColor,
+      textCase: currentNode.textCase ?? computedStyle.textCase,
+      color: currentNode.color ?? computedStyle.color,
+      borderColor: currentNode.borderColor ?? computedStyle.borderColor,
+      borderWidth: currentNode.borderWidth ?? computedStyle.borderWidth,
+      borderStyle: currentNode.borderStyle ?? computedStyle.borderStyle,
+    };
+  }, [currentNode, computedStyle]);
   
   // State cục bộ cho "Độ dài" (vẫn dựa trên node đầu tiên)
   const [localLength, setLocalLength] = useState<number | string>(style.nodeLength || 'fit');

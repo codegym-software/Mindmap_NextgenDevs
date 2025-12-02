@@ -39,6 +39,9 @@ export type BeNodeStyle = {
   branchLineEnd?: 'none' | 'arrow';
   branchLineThickness?: 'thin' | 'normal' | 'thick';
   styleLocked?: boolean;
+  imageUrl?: string;
+  imageWidth?: number;
+  imageHeight?: number;
 };
 
 export type BeNodeData = {
