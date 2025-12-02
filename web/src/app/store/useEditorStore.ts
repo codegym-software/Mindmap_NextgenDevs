@@ -166,6 +166,7 @@ export function getNodeComputedStyle(
 
   if (!node) return baseStyle as NodeData;
 
+  // 2. Áp dụng màu theo context (root/topology/floating)
   if (node.id === 'root') {
     baseStyle.color = theme.root.fill || '#000000';
     baseStyle.textColor = theme.root.textColor || '#FFFFFF';
@@ -175,6 +176,7 @@ export function getNodeComputedStyle(
     baseStyle.fontWeight = 'bold';
     baseStyle.textCase = 'uppercase';
   } else if (topology) {
+    // Nodes có parent - apply màu theo depth
     const { depth, branchBaseColor } = topology;
     const smartColors = getBranchColorByDepth(branchBaseColor, depth);
     
@@ -184,31 +186,40 @@ export function getNodeComputedStyle(
     
     if (depth >= 6) baseStyle.borderWidth = 2;
   } else {
-    // Floating nodes - Ưu tiên màu từ DB, fallback theme nếu không có
-    if (!node.color) {
-      const defaultStyle = theme.quickStyles.default;
-      baseStyle.color = defaultStyle.fill || '#FFFFFF';
-    }
-    if (!node.borderColor) {
-      const defaultStyle = theme.quickStyles.default;
-      baseStyle.borderColor = defaultStyle.stroke || '#CBD5E0';
-    }
-    if (!node.textColor) {
-      const defaultStyle = theme.quickStyles.default;
-      baseStyle.textColor = defaultStyle.textColor || '#4A5568';
-    }
+    // Floating nodes - dùng theme default (sẽ được override bởi quick style nếu có)
+    const defaultStyle = theme.quickStyles.default;
+    baseStyle.color = defaultStyle.fill || '#FFFFFF';
+    baseStyle.borderColor = defaultStyle.stroke || '#CBD5E0';
+    baseStyle.textColor = defaultStyle.textColor || '#4A5568';
   }
 
-  // 3. [QUICK STYLE]
+  // 3. [QUICK STYLE] - Override màu nếu node có quickStyleId
+  // QUAN TRỌNG: Quick style chỉ apply khi node KHÔNG có màu riêng (undefined)
   if (node.quickStyleId && node.quickStyleId !== 'default' && theme.quickStyles[node.quickStyleId]) {
     const qs = theme.quickStyles[node.quickStyleId];
-    baseStyle.color = qs.fill;
-    baseStyle.borderColor = qs.stroke;
-    baseStyle.textColor = qs.textColor;
-    if (qs.fontWeight) baseStyle.fontWeight = qs.fontWeight;
-    if (qs.textDecoration) baseStyle.textDecoration = qs.textDecoration;
-    if (qs.fontSize) baseStyle.fontSize = qs.fontSize;
-    if (qs.textcase) baseStyle.textCase = qs.textcase;
+    
+    // Chỉ apply quick style nếu node không có override riêng
+    if (node.color === undefined) {
+      baseStyle.color = qs.fill;
+      baseStyle.textColor = qs.textColor;
+    }
+    if (node.borderColor === undefined) {
+      baseStyle.borderColor = qs.stroke;
+    }
+    
+    // Font styles từ quick style
+    if (qs.fontWeight && node.fontWeight === undefined) {
+      baseStyle.fontWeight = qs.fontWeight;
+    }
+    if (qs.textDecoration && node.textDecoration === undefined) {
+      baseStyle.textDecoration = qs.textDecoration;
+    }
+    if (qs.fontSize && node.fontSize === undefined) {
+      baseStyle.fontSize = qs.fontSize;
+    }
+    if (qs.textcase && node.textCase === undefined) {
+      baseStyle.textCase = qs.textcase;
+    }
   }
 
   // 4. [OVERRIDE]
@@ -217,6 +228,7 @@ export function getNodeComputedStyle(
     'shape', 'color', 'borderColor', 'borderWidth', 'borderStyle',
     'fontSize', 'fontWeight', 'fontStyle', 'textDecoration', 
     'textAlign', 'textColor', 'textCase', 'nodeLength',
+    'fontFamily',
     'branchLineStyle', 'branchLineEnd', 'branchLineThickness',
     'imageUrl', 'imageWidth', 'imageHeight', 'hyperlink'
   ];
@@ -246,13 +258,16 @@ export function getNodeComputedStyle(
   computed.collapsed = node.collapsed;
   computed.hyperlink = node.hyperlink;
   computed.styleLocked = node.styleLocked;
+  computed.quickStyleId = node.quickStyleId; // Giữ quickStyleId để biết node dùng style nào
 
   // [ĐỒNG BỘ MÀU DÂY]
   computed.branchColor = node.branchColor ?? (topology ? topology.branchBaseColor : undefined);
 
-  // Global font applies to all nodes except root (unless explicitly set)
-  // Root keeps its own font settings
-  computed.fontFamily = isRoot && node.fontFamily ? node.fontFamily : globalFont;
+  // Font logic: Nếu node không có fontFamily override, dùng globalFont
+  // Nếu có fontFamily, giữ nguyên (đã được set ở bước OVERRIDE)
+  if (computed.fontFamily === undefined) {
+    computed.fontFamily = globalFont;
+  }
 
   return computed as NodeData;
 }

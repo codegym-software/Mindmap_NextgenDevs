@@ -150,33 +150,36 @@ export function normalizeNodeFEtoBE(feNode: FeNodeData): BeNodeData {
   } = feNode;
 
   // Tạo object 'style' lồng nhau
-  const beStyle: Partial<BeNodeStyle> = {
-    color: color, // Backend's main color field
-    backgroundColor: color, // Also send backgroundColor for compatibility
-    textColor: textColor,
-    shape: shape,
-    borderColor,
-    borderWidth,
-    borderStyle,
-    fontFamily,
-    fontSize,
-    fontWeight,
-    fontStyle,
-    textDecoration,
-    textAlign,
-    textCase,
-    nodeLength,
-    localStructure,
-    branchColor,
-    branchLineStyle,
-    branchLineEnd,
-    branchLineThickness,
-    quickStyleId: quickStyleId,
-    styleLocked: styleLocked,
-    imageUrl: imageUrl,
-    imageWidth: imageWidth,
-    imageHeight: imageHeight, 
-  };
+  const beStyle: Partial<BeNodeStyle> = {};
+  
+  // Chỉ gửi các field có giá trị (không undefined/null) để tránh ghi đè
+  if (shape !== undefined) beStyle.shape = shape;
+  if (color !== undefined) {
+    beStyle.color = color;
+    beStyle.backgroundColor = color;
+  }
+  if (textColor !== undefined) beStyle.textColor = textColor;
+  if (borderColor !== undefined) beStyle.borderColor = borderColor;
+  if (borderWidth !== undefined) beStyle.borderWidth = borderWidth;
+  if (borderStyle !== undefined) beStyle.borderStyle = borderStyle;
+  if (fontFamily !== undefined) beStyle.fontFamily = fontFamily;
+  if (fontSize !== undefined) beStyle.fontSize = fontSize;
+  if (fontWeight !== undefined) beStyle.fontWeight = fontWeight;
+  if (fontStyle !== undefined) beStyle.fontStyle = fontStyle;
+  if (textDecoration !== undefined) beStyle.textDecoration = textDecoration;
+  if (textAlign !== undefined) beStyle.textAlign = textAlign;
+  if (textCase !== undefined) beStyle.textCase = textCase;
+  if (nodeLength !== undefined) beStyle.nodeLength = nodeLength;
+  if (localStructure !== undefined) beStyle.localStructure = localStructure;
+  if (branchColor !== undefined) beStyle.branchColor = branchColor;
+  if (branchLineStyle !== undefined) beStyle.branchLineStyle = branchLineStyle;
+  if (branchLineEnd !== undefined) beStyle.branchLineEnd = branchLineEnd;
+  if (branchLineThickness !== undefined) beStyle.branchLineThickness = branchLineThickness;
+  if (quickStyleId !== undefined) beStyle.quickStyleId = quickStyleId;
+  if (styleLocked !== undefined) beStyle.styleLocked = styleLocked;
+  if (imageUrl !== undefined) beStyle.imageUrl = imageUrl;
+  if (imageWidth !== undefined) beStyle.imageWidth = imageWidth;
+  if (imageHeight !== undefined) beStyle.imageHeight = imageHeight;
 
   // Tạo object NodeData của BE
   const beNode: BeNodeData = {
@@ -196,6 +199,13 @@ export function normalizeNodeFEtoBE(feNode: FeNodeData): BeNodeData {
 }
 
 /**
+ * Helper: Convert null to undefined để logic check undefined hoạt động đúng
+ */
+function nullToUndefined<T>(value: T | null | undefined): T | undefined {
+  return value === null ? undefined : value;
+}
+
+/**
  * Dịch 1 Node: Backend (lồng style) -> Frontend (phẳng)
  */
 export function normalizeNodeBEtoFE(beNode: BeNodeData): FeNodeData {
@@ -204,6 +214,7 @@ export function normalizeNodeBEtoFE(beNode: BeNodeData): FeNodeData {
   const safeStyle = style || {};
 
   // "Làm phẳng" (flatten) object 'style'
+  // QUAN TRỌNG: Convert null thành undefined để logic check trong getNodeComputedStyle hoạt động đúng
   const feNode: FeNodeData = {
     id,
     nodeText: text,
@@ -214,30 +225,30 @@ export function normalizeNodeBEtoFE(beNode: BeNodeData): FeNodeData {
     side: side,
     hyperlink: hyperlink || undefined,
     boundary: boundary || false,
-    shape: safeStyle.shape,
-    color: safeStyle.backgroundColor || safeStyle.color,
-    borderColor: safeStyle.borderColor,
-    borderWidth: safeStyle.borderWidth,
-    borderStyle: safeStyle.borderStyle,
-    fontFamily: safeStyle.fontFamily,
-    fontSize: safeStyle.fontSize,
-    fontWeight: safeStyle.fontWeight,
-    fontStyle: safeStyle.fontStyle,
-    textDecoration: safeStyle.textDecoration,
-    textAlign: safeStyle.textAlign,
-    textColor: safeStyle.textColor,
-    textCase: safeStyle.textCase,
-    nodeLength: safeStyle.nodeLength,
-    localStructure: safeStyle.localStructure,
-    branchColor: safeStyle.branchColor,
-    branchLineStyle: safeStyle.branchLineStyle,
-    branchLineEnd: safeStyle.branchLineEnd,
-    branchLineThickness: safeStyle.branchLineThickness,
-    quickStyleId: safeStyle.quickStyleId as any,
-    styleLocked: safeStyle.styleLocked,
-    imageUrl: safeStyle.imageUrl,
-    imageWidth: safeStyle.imageWidth,
-    imageHeight: safeStyle.imageHeight,
+    shape: nullToUndefined(safeStyle.shape),
+    color: nullToUndefined(safeStyle.backgroundColor || safeStyle.color),
+    borderColor: nullToUndefined(safeStyle.borderColor),
+    borderWidth: nullToUndefined(safeStyle.borderWidth),
+    borderStyle: nullToUndefined(safeStyle.borderStyle),
+    fontFamily: nullToUndefined(safeStyle.fontFamily),
+    fontSize: nullToUndefined(safeStyle.fontSize),
+    fontWeight: nullToUndefined(safeStyle.fontWeight),
+    fontStyle: nullToUndefined(safeStyle.fontStyle),
+    textDecoration: nullToUndefined(safeStyle.textDecoration),
+    textAlign: nullToUndefined(safeStyle.textAlign),
+    textColor: nullToUndefined(safeStyle.textColor),
+    textCase: nullToUndefined(safeStyle.textCase),
+    nodeLength: nullToUndefined(safeStyle.nodeLength),
+    localStructure: nullToUndefined(safeStyle.localStructure),
+    branchColor: nullToUndefined(safeStyle.branchColor),
+    branchLineStyle: nullToUndefined(safeStyle.branchLineStyle),
+    branchLineEnd: nullToUndefined(safeStyle.branchLineEnd),
+    branchLineThickness: nullToUndefined(safeStyle.branchLineThickness),
+    quickStyleId: nullToUndefined(safeStyle.quickStyleId) as any,
+    styleLocked: nullToUndefined(safeStyle.styleLocked),
+    imageUrl: nullToUndefined(safeStyle.imageUrl),
+    imageWidth: nullToUndefined(safeStyle.imageWidth),
+    imageHeight: nullToUndefined(safeStyle.imageHeight),
   };
 
   return feNode;
