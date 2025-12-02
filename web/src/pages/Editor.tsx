@@ -6,6 +6,7 @@ import React, {
   useMemo,
 } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import Konva from 'konva';
 import {
   Stage,
   Layer,
@@ -306,11 +307,15 @@ export default function Editor() {
   const [isPanning, setIsPanning] = useState(false);
   const [editingNodeId, setEditingNodeId] = useState<string | null>(null);
   const [scale, setScale] = useState(1);
-  const [dropTargetId, setDropTargetId] = useState<string | null>(null);
   const [dragStartState, setDragStartState] = useState<{
     nodes: NodeData[];
     edges: EdgeData[];
   } | null>(null);
+  const draggedNodeChildrenRef = useRef<Set<string>>(new Set());
+  const imposterRef = useRef<any>(null);
+  const hiddenRealNodesRef = useRef<any[]>([]);
+  const lastPosRef = useRef({ x: 0, y: 0 });
+  const [hiddenEdgeIds, setHiddenEdgeIds] = useState<Set<string>>(new Set());
   const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null);
   const [backgroundColor, setBackgroundColor] = useState('#FAFAFB');
   const [styleClipboard, setStyleClipboard] = useState<Partial<NodeData> | null>(
@@ -374,6 +379,15 @@ export default function Editor() {
     () => new Set(edges.map((e) => e.from)),
     [edges]
   );
+  const adjacencyMap = useMemo(() => {
+    const map = new Map<string, string[]>();
+    edges.forEach(e => {
+      if (!map.has(e.from)) map.set(e.from, []);
+      map.get(e.from)!.push(e.to);
+    });
+    return map;
+  }, [edges]);
+  
   const [selectionRect, setSelectionRect] = useState({
     x: 0,
     y: 0,
@@ -1548,12 +1562,90 @@ const handleFitToScreen = useCallback(() => {
   }, [handleKeyDown]);
 
   const handleDragStart = (nodeId: string) => {
-    pushHistory(useEditorStore.getState().nodes, useEditorStore.getState().edges); // GĐ 7
+    pushHistory(useEditorStore.getState().nodes, useEditorStore.getState().edges);
     setDragStartState({ nodes, edges });
-    const node = stageRef.current?.findOne(`#${nodeId}`);
+    
+    const stage = stageRef.current;
+    const layer = stage?.getLayers()[0];
+    if (!stage || !layer) return;
+
+    const node = stage.findOne(`#${nodeId}`);
     if (node && editingNodeId === nodeId) {
       node.stopDrag();
+      return;
     }
+
+    // Thu thập tất cả node con (đệ quy)
+    const collectChildren = (id: string): string[] => {
+      const children = adjacencyMap.get(id) || [];
+      const allChildren = [...children];
+      children.forEach(childId => {
+        allChildren.push(...collectChildren(childId));
+      });
+      return allChildren;
+    };
+
+    const childIds = collectChildren(nodeId);
+    if (childIds.length === 0) {
+      lastPosRef.current = { x: node?.x() || 0, y: node?.y() || 0 };
+      return;
+    }
+
+    // Clone nodes và ẩn edges liên quan
+    const clones: any[] = [];
+    const hiddenNodes: any[] = [];
+    const hiddenEdges: any[] = [];
+    const childIdSet = new Set([nodeId, ...childIds]);
+    
+    childIds.forEach(childId => {
+      const childNode = stage.findOne(`#${childId}`);
+      if (childNode) {
+        const clone = childNode.clone();
+        clone.draggable(false);
+        clones.push(clone);
+        childNode.visible(false);
+        hiddenNodes.push(childNode);
+      }
+    });
+
+    // Ẩn tất cả edges liên quan đến node cha và node con
+    const edgeIdsToHide = new Set<string>();
+    edges.forEach(edge => {
+      if (childIdSet.has(edge.from) || childIdSet.has(edge.to)) {
+        edgeIdsToHide.add(edge.id);
+        const edgeShape = stage.findOne(`#${edge.id}`);
+        if (edgeShape) {
+          edgeShape.visible(false);
+          hiddenEdges.push(edgeShape);
+        }
+      }
+    });
+
+    // Set state để React không render lại edges
+    setHiddenEdgeIds(edgeIdsToHide);
+
+    if (clones.length === 0) {
+      lastPosRef.current = { x: node?.x() || 0, y: node?.y() || 0 };
+      return;
+    }
+
+    // Tạo imposter group
+    const imposterGroup = new Konva.Group({
+      listening: false,
+      opacity: 0.5,
+    });
+
+    clones.forEach(clone => imposterGroup.add(clone));
+    layer.add(imposterGroup);
+
+    // Cache thành bitmap
+    imposterGroup.cache({ pixelRatio: 1 });
+
+    imposterRef.current = imposterGroup;
+    hiddenRealNodesRef.current = [...hiddenNodes, ...hiddenEdges];
+    draggedNodeChildrenRef.current = new Set(childIds);
+    
+    lastPosRef.current = { x: node?.x() || 0, y: node?.y() || 0 };
   };
 
   // ...
@@ -1591,8 +1683,61 @@ const handleFitToScreen = useCallback(() => {
   }, [isDataLoaded, handleFitToScreen]);
 
   const handleDragMove = (e: any, draggedNodeId: string) => {
-    const pos = e.target.position();
-    let targetFound: string | null = null;
+    // Di chuyển imposter group theo node cha
+    if (imposterRef.current) {
+      const newX = e.target.x();
+      const newY = e.target.y();
+      
+      const dx = newX - lastPosRef.current.x;
+      const dy = newY - lastPosRef.current.y;
+      
+      imposterRef.current.x(imposterRef.current.x() + dx);
+      imposterRef.current.y(imposterRef.current.y() + dy);
+      
+      lastPosRef.current = { x: newX, y: newY };
+    }
+  };
+
+  const handleDragEnd = (e: any, draggedNodeId: string) => {
+    // Fix: Root node không thể drag, chỉ reset về vị trí 0,0
+    if (draggedNodeId === 'root') {
+      e.target.position({ x: 0, y: 0 });
+      setDragStartState(null);
+      draggedNodeChildrenRef.current.clear();
+      setHiddenEdgeIds(new Set());
+      if (imposterRef.current) {
+        imposterRef.current.destroy();
+        imposterRef.current = null;
+      }
+      if (hiddenRealNodesRef.current.length > 0) {
+        hiddenRealNodesRef.current.forEach(node => node.visible(true));
+        hiddenRealNodesRef.current = [];
+      }
+      return;
+    }
+
+    // Cleanup Imposter
+    if (imposterRef.current) {
+      imposterRef.current.destroy();
+      imposterRef.current = null;
+    }
+
+    // Hiện lại nodes thật
+    if (hiddenRealNodesRef.current.length > 0) {
+      hiddenRealNodesRef.current.forEach(node => node.visible(true));
+      hiddenRealNodesRef.current = [];
+    }
+    
+    // Clear hidden edges state để React render lại
+    setHiddenEdgeIds(new Set());
+    
+    draggedNodeChildrenRef.current.clear();
+    setDragStartState(null);
+    const finalX = e.target.x();
+    const finalY = e.target.y();
+
+    // Check drop target khi thả (thay vì trong khi drag)
+    let dropTargetId: string | null = null;
     for (const node of nodes) {
       if (node.id === draggedNodeId) continue;
       const visual = nodeVisuals.get(node.id);
@@ -1600,22 +1745,15 @@ const handleFitToScreen = useCallback(() => {
       const { w, h } = visual.box;
       const { x, y } = visual.style;
       const isOver =
-        pos.x > x - w / 2 &&
-        pos.x < x + w / 2 &&
-        pos.y > y - h / 2 &&
-        pos.y < y + h / 2;
+        finalX > x - w / 2 &&
+        finalX < x + w / 2 &&
+        finalY > y - h / 2 &&
+        finalY < y + h / 2;
       if (isOver) {
-        targetFound = node.id;
+        dropTargetId = node.id;
         break;
       }
     }
-    setDropTargetId(targetFound);
-  };
-
-  const handleDragEnd = (e: any, draggedNodeId: string) => {
-    setDragStartState(null);
-    const finalX = e.target.x();
-    const finalY = e.target.y();
 
     if (dropTargetId && dropTargetId !== draggedNodeId) {
       const draggedNode = nodes.find((n) => n.id === draggedNodeId);
@@ -1631,8 +1769,14 @@ const handleFitToScreen = useCallback(() => {
       checkChildren(draggedNodeId);
       if (isDroppingOnChild) {
         addToast('Không thể di chuyển node cha vào node con!', 'error');
-        setGraph(dragStartState?.nodes || nodes, dragStartState?.edges || edges);
-        setDropTargetId(null);
+        // Phục hồi vị trí cũ của node
+        if (dragStartState) {
+          const oldNode = dragStartState.nodes.find(n => n.id === draggedNodeId);
+          if (oldNode) {
+            e.target.position({ x: oldNode.x, y: oldNode.y });
+          }
+          setGraph(dragStartState.nodes, dragStartState.edges);
+        }
         return;
       }
       const newParentId = dropTargetId;
@@ -1664,6 +1808,8 @@ const handleFitToScreen = useCallback(() => {
       sendPatch('NODE_REPARENT', {
         nodeId: draggedNodeId, newParentId, x: finalX, y: finalY, side: parentSide,
       });
+      // Layout lại khi thay đổi parent
+      setTimeout(() => handleLayout(true), 50); 
     } else {
       const newNodes = nodes.map((n) => {
         if (n.id === draggedNodeId) {
@@ -1678,9 +1824,8 @@ const handleFitToScreen = useCallback(() => {
       });
       setGraph(newNodes, edges);
       sendPatch('NODE_MOVE', { id: draggedNodeId, x: finalX, y: finalY });
+      // Không layout khi chỉ di chuyển vị trí - mượt hơn!
     }
-    setDropTargetId(null);
-    setTimeout(() => handleLayout(true), 50); 
     debouncedPersistData();
   };
 
@@ -1925,12 +2070,13 @@ const handleFitToScreen = useCallback(() => {
     () => new Set(visibleNodes.map((n) => n.id)),
     [visibleNodes]
   );
+
   const visibleEdges = useMemo(
     () =>
       edges.filter(
-        (e) => visibleNodeIds.has(e.from) && visibleNodeIds.has(e.to)
+        (e) => visibleNodeIds.has(e.from) && visibleNodeIds.has(e.to) && !hiddenEdgeIds.has(e.id)
       ),
-    [edges, visibleNodeIds]
+    [edges, visibleNodeIds, hiddenEdgeIds]
   );
 
   const descendantCounts = useMemo(() => {
@@ -2381,18 +2527,18 @@ const handleFitToScreen = useCallback(() => {
                 const { style, box } = visual;
                 const { w, h, textToRender, finalFontSize, imageHeight, imageWidthDisplay } = box;
                 const isSelected = selectedIdsSet.has(node.id);
-                const isDropTarget = node.id === dropTargetId;
                 const hasChildren = nodesWithChildren.has(node.id);
                 const shapeProps = {
                   width: w, height: h, offsetX: w / 2, offsetY: h / 2,
                   fill: style.color,
-                  stroke: isDropTarget ? "#34d399" : (isSelected ? "#3b82f6" : style.borderColor),
-                  strokeWidth: isDropTarget ? 4 : (isSelected ? 3 : (style.borderWidth || 0)),
+                  stroke: isSelected ? "#3b82f6" : style.borderColor,
+                  strokeWidth: isSelected ? 3 : (style.borderWidth || 0),
                   dash: style.borderStyle === 'dashed' ? [8, 4] : (style.borderStyle === 'dotted' ? [2, 3] : undefined),
                 };
                 return (
                   <Group
-                    key={node.id} id={node.id} x={style.x} y={style.y} draggable
+                    key={node.id} id={node.id} x={style.x} y={style.y} 
+                    draggable={node.id !== 'root'}
                     onDragStart={() => handleDragStart(node.id)}
                     onDragMove={(e) => handleDragMove(e, node.id)}
                     onDragEnd={(e) => handleDragEnd(e, node.id)}
@@ -2452,7 +2598,7 @@ const handleFitToScreen = useCallback(() => {
                     
                     {node.id === 'root' ? (
                       <>
-                        {rootChildSides.left && (
+                        {rootChildSides.left && (rootCollapse.left || hoveredNodeId === 'root') && (
                           <Group
                             x={-w / 2} y={0}
                             onClick={(e) => handleToggleCollapse(e, 'root', 'left')}
@@ -2473,7 +2619,7 @@ const handleFitToScreen = useCallback(() => {
                             )}
                           </Group>
                         )}
-                        {rootChildSides.right && (
+                        {rootChildSides.right && (rootCollapse.right || hoveredNodeId === 'root') && (
                           <Group
                             x={w / 2} y={0}
                             onClick={(e) => handleToggleCollapse(e, 'root', 'right')}
@@ -2496,7 +2642,7 @@ const handleFitToScreen = useCallback(() => {
                         )}
                       </>
                     ) : (
-                      hasChildren && (
+                      hasChildren && (node.collapsed || hoveredNodeId === node.id) && (
                         <Group
                           x={(style.side === 'left' ? -w / 2 : w / 2)}
                           y={0}
