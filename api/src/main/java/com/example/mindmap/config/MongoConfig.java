@@ -4,12 +4,17 @@ import java.util.Set;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.mongodb.core.MongoTemplate;
+import org.springframework.data.mongodb.core.convert.MongoCustomConversions;
 import org.springframework.data.mongodb.core.index.CompoundIndexDefinition;
 import org.springframework.data.mongodb.core.index.Index;
 import org.springframework.data.mongodb.core.index.IndexOperations;
+
+import com.fasterxml.jackson.databind.MapperFeature;
+import com.fasterxml.jackson.databind.ObjectMapper;
 
 import jakarta.annotation.PostConstruct;
 
@@ -68,14 +73,13 @@ public class MongoConfig {
         });
     }
 
-     // Add custom Converters here if needed (e.g., for complex enums or types)
-    /*
-     @Bean
-     public MongoCustomConversions customConversions() {
-         List<Converter<?, ?>> converters = new ArrayList<>();
-         // converters.add(new YourCustomReadConverter());
-         // converters.add(new YourCustomWriteConverter());
-         return new MongoCustomConversions(converters);
-     }
-    */
+     // Configure ObjectMapper for MongoDB with case-insensitive enums
+    @Bean
+    public com.fasterxml.jackson.databind.ObjectMapper mongoObjectMapper() {
+        ObjectMapper mapper = new ObjectMapper();
+        mapper.enable(MapperFeature.ACCEPT_CASE_INSENSITIVE_ENUMS);
+        mapper.disable(com.fasterxml.jackson.databind.SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
+        mapper.registerModule(new com.fasterxml.jackson.datatype.jsr310.JavaTimeModule());
+        return mapper;
+    }
 }

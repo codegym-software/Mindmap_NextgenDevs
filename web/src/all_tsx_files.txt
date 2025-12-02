@@ -312,6 +312,7 @@ export type ColorThemeStyle = {
   fontSize?: number;
   fontWeight?: "normal" | "bold";
   textDecoration?: "none" | "underline" | "line-through";
+  textcase?: "normal" | "uppercase" | "lowercase";
 };
 
 export type ColorTheme = {
@@ -330,13 +331,13 @@ export const colorThemes: Record<string, ColorTheme> = {
   dawn: {
     background: "#ffffffff", 
     quickStyles: {
-      'important-dark': { fill: "#000000", color:"#000000", stroke: "#000000", textColor: "#FFFFFF", fontSize:18, fontWeight: "bold" },
-      'important-light': { fill: "#E5E5E5", color:"#E5E5E5", stroke: "#A3A3A3", textColor: "#000000" }, 
-      'strikethrough': { fill: "#FFFFFF", color:"#FFFFFF", stroke: "#CBD5E0", textColor: "#A0AEC0", textDecoration: "line-through" },
-      'default': { fill: "#FFFFFF", color:"#FFFFFF", stroke: "#000000", textColor: "#000000" },
-    },
+Â  Â  Â  'important-dark': { fill: "#90074dff", color:"#970074ff", stroke: "#97266D", textColor: "#ffffffff", fontWeight: "bold" },
+Â  Â  Â  'important-light': { fill: "#df1a5fff", color:"#b60ac0ff", stroke: "#ED89A7", textColor: "#ffffffff" },
+Â  Â  Â  strikethrough: { fill: "#FFFFFF", color:"#ffffffff", stroke: "#CBD5E0", textColor: "#A0AEC0", textDecoration: "line-through" },
+Â  Â  Â  default: { fill: "#FFFFFF", color:"#ffffffff", stroke: "#CBD5E0", textColor: "#4A5568" },
+Â  Â  },
     // Root máº·c Ä‘á»‹nh lÃ  Äen, chá»¯ Tráº¯ng
-    root: { fill: "#000000", stroke: "#000000", textColor: "#FFFFFF" },
+    root: { fill: "#ffffffff", stroke: "#343434ff", textColor: "#ae1e1eff"},
   },
 };
 
@@ -371,6 +372,11 @@ export type NodeData = {
   borderWidth?: number;
   borderStyle?: 'solid' | 'dashed' | 'dotted';
 
+  //áº£nh
+  imageUrl?: string;      
+  imageWidth?: number; 
+  imageHeight?: number;
+
   // Text
   fontFamily?: string;
   fontSize?: number;
@@ -388,6 +394,7 @@ export type NodeData = {
   branchLineStyle?: 'bezier' | 'sharp';
   branchLineEnd?: 'none' | 'arrow';
   branchLineThickness?: 'thin' | 'normal' | 'thick';
+  boundary?: boolean;
 };
 
 export type EdgeData = { id: string; from: string; to: string };
@@ -403,7 +410,7 @@ const MAX_HISTORY = 100;
 export const DEFAULT_NODE_STYLE: Partial<NodeData> = {
   shape: 'roundedRect',
   color: '#FFFFFF',
-  borderColor: '#000000', // Viá»n Ä‘en máº·c Ä‘á»‹nh
+  borderColor: '#000000', 
   borderWidth: 2,
   borderStyle: 'solid',
   fontFamily: fonts[0].value,
@@ -412,9 +419,8 @@ export const DEFAULT_NODE_STYLE: Partial<NodeData> = {
   fontStyle: 'normal',
   textDecoration: 'none',
   textAlign: 'center',
-  textColor: '#000000', // Chá»¯ Ä‘en máº·c Ä‘á»‹nh
-  textCase: 'normal',
-  nodeLength: 'fit',
+  textColor: '#000000ff', 
+  nodeLength: 150,
   branchColor: undefined,
   branchLineStyle: 'bezier',
   branchLineEnd: 'none',
@@ -434,12 +440,11 @@ export function getNodeComputedStyle(
     fontFamily: globalFont,
     color: theme.root.fill || '#FFFFFF', 
     borderColor: '#000000',
-    textColor: '#000000'
+    textColor: '#000000',
   };
 
   if (!node) return baseStyle as NodeData;
 
-  // 2. [THEME] Ãp dá»¥ng PhÃ¢n cáº¥p MÃ u sáº¯c (Hierarchical Color)
   if (topology) {
     const { depth, branchBaseColor } = topology;
 
@@ -447,9 +452,10 @@ export function getNodeComputedStyle(
        baseStyle.color = theme.root.fill || '#000000';
        baseStyle.textColor = theme.root.textColor || '#FFFFFF';
        baseStyle.borderColor = theme.root.stroke || '#000000';
-       baseStyle.borderWidth = 3;
-       baseStyle.fontSize = 24;
+       baseStyle.borderWidth = 4;
+       baseStyle.fontSize = 28;
        baseStyle.fontWeight = 'bold';
+       baseStyle.textCase = 'uppercase';
     } else {
        const smartColors = getBranchColorByDepth(branchBaseColor, depth);
        
@@ -462,12 +468,15 @@ export function getNodeComputedStyle(
   }
 
   // 3. [QUICK STYLE]
-  if (node.quickStyleId && theme.quickStyles[node.quickStyleId]) {
+  if (node.quickStyleId && node.quickStyleId !== 'default' && theme.quickStyles[node.quickStyleId]) {
     const qs = theme.quickStyles[node.quickStyleId];
     baseStyle.color = qs.fill;
     baseStyle.borderColor = qs.stroke;
     baseStyle.textColor = qs.textColor;
     if (qs.fontWeight) baseStyle.fontWeight = qs.fontWeight;
+    if (qs.textDecoration) baseStyle.textDecoration = qs.textDecoration;
+    if (qs.fontSize) baseStyle.fontSize = qs.fontSize;
+    if (qs.textcase) baseStyle.textCase = qs.textcase;
   }
 
   // 4. [OVERRIDE]
@@ -476,10 +485,17 @@ export function getNodeComputedStyle(
     'shape', 'color', 'borderColor', 'borderWidth', 'borderStyle',
     'fontFamily', 'fontSize', 'fontWeight', 'fontStyle', 'textDecoration', 
     'textAlign', 'textColor', 'textCase', 'nodeLength',
-    'branchLineStyle', 'branchLineEnd', 'branchLineThickness'
+    'branchLineStyle', 'branchLineEnd', 'branchLineThickness',
+    'imageUrl', 'imageWidth', 'imageHeight', 'hyperlink'
   ];
 
+  const isRoot = node.id === 'root';
   OVERRIDABLE_KEYS.forEach(key => {
+    // To preserve the root's identity, some properties are not overridable.
+    if (isRoot && ['fontSize', 'fontWeight', 'textCase', 'borderWidth', 'color', 'textColor', 'borderColor'].includes(key)) {
+      return;
+    }
+
     if (node[key] !== undefined) {
       (computed as any)[key] = node[key];
     }
@@ -539,6 +555,9 @@ export function applyNodeDefaults(node: NodeData, theme: ColorTheme): Partial<No
     branchLineThickness: undefined,
     styleLocked: undefined, 
     hyperlink: undefined, 
+    imageUrl: undefined,
+    imageWidth: undefined,
+    imageHeight: undefined, 
   };
 }
 
@@ -554,7 +573,6 @@ type State = {
   globalStructure: GlobalStructure;
   globalFont: string;
   branchLineWidth: number;
-  // [Cáº¬P NHáº¬T] Loáº¡i bá» isColoredBranch
   activeColorThemeId: string;
   globalBranchColor: string; 
   backgroundColor: string; 
@@ -570,6 +588,7 @@ type State = {
   clear: () => void;
   
   set: (p: Partial<State>) => void;
+  toggleNodeBoundary: (nodeId: string) => void;
 };
 
 export const useEditorStore = create<State>((set, get) => ({
@@ -582,8 +601,7 @@ export const useEditorStore = create<State>((set, get) => ({
   globalFont: fonts[0].value,
   branchLineWidth: 2,
   activeColorThemeId: 'dawn',
-  // [Cáº¬P NHáº¬T] Máº·c Ä‘á»‹nh lÃ  Äen cho giao diá»‡n Äen/Tráº¯ng
-  globalBranchColor: '#000000', 
+  globalBranchColor: '#94A3B8', 
   backgroundColor: '#FAFAFB', 
 
   isDirty: false,
@@ -639,6 +657,15 @@ export const useEditorStore = create<State>((set, get) => ({
   clear: () => set({ history: [], future: [] }),
   
   set: (p) => set(p),
+
+  toggleNodeBoundary: (nodeId: string) => {
+    const { nodes, edges } = get();
+    const newNodes = nodes.map((n) =>
+      n.id === nodeId ? { ...n, boundary: !n.boundary } : n
+    );
+    set({ nodes: newNodes, isDirty: true });
+    get().push(newNodes, edges);
+  },
 }));
 
 ==== D:\Ver2_MM\mindmap-project copy 2\web\src\app\store\useMindmapsStore.ts ====
@@ -1396,7 +1423,10 @@ export default function Sidebar() {
               <div className="text-center text-gray-900/40 py-8 text-sm">KhÃ´ng tÃ¬m tháº¥y mindmap nÃ o.</div> 
             ) : (
               filteredMindmaps.map((m) => (
-                <div key={m.id} className="group relative w-full text-left p-3 rounded-md hover:bg-gray-100 transition-colors flex items-center justify-between"> {/* Changed */}
+                <div 
+                  key={m.id} 
+                  className={`group relative w-full text-left p-2 rounded-md transition-colors flex items-center justify-between ${m.id === currentMindmapId ? 'bg-gradient-to-r from-blue-50 to-purple-100' : 'hover:bg-gray-100'}`}
+                >
                   {editingId === m.id ? (
                     <input
                       type="text"
@@ -1412,7 +1442,7 @@ export default function Sidebar() {
                     />
                   ) : (
                     <a href={`/editor/${m.id}`} className="flex-grow min-w-0">
-                      <div className="text-gray-900 font-medium truncate">{m.name}</div> 
+                      <div className="text-sm text-gray-900 font-medium truncate">{m.name}</div> 
                       <div className="text-gray-500 text-xs mt-1"> 
                         {new Date(m.createdAt).toLocaleDateString("vi-VN")}
                       </div>
@@ -2334,20 +2364,260 @@ export default function MindmapCardWithOptions({ item, onRename, onShare, onDele
   );
 }
 
-==== D:\Ver2_MM\mindmap-project copy 2\web\src\features\editor\EditorToolbar.tsx ====
+==== D:\Ver2_MM\mindmap-project copy 2\web\src\features\editor\modals\HyperlinkModal.tsx ====
+import React, { useState, useEffect } from 'react';
+import Modal from '../../../components/common/Modal';
+import Button from '../../../components/common/Button';
+
+type Props = {
+  isOpen: boolean;
+  onClose: () => void;
+  currentUrl?: string;
+  onConfirm: (url: string | undefined) => void;
+};
+
+export default function HyperlinkModal({ isOpen, onClose, currentUrl, onConfirm }: Props) {
+  const [url, setUrl] = useState('');
+
+  useEffect(() => {
+    if (isOpen) setUrl(currentUrl || '');
+  }, [isOpen, currentUrl]);
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    // Náº¿u url rá»—ng thÃ¬ coi nhÆ° lÃ  xÃ³a link
+    onConfirm(url.trim() === '' ? undefined : url.trim());
+    onClose();
+  };
+
+  return (
+    <Modal isOpen={isOpen} onClose={onClose} title="ChÃ¨n liÃªn káº¿t">
+      <form onSubmit={handleSubmit} className="space-y-4">
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">ÄÆ°á»ng dáº«n (URL)</label>
+          <input
+            type="text"
+            value={url}
+            onChange={(e) => setUrl(e.target.value)}
+            placeholder="https://example.com"
+            className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            autoFocus
+          />
+          <p className="text-xs text-gray-500 mt-1">Äá»ƒ trá»‘ng Ä‘á»ƒ xÃ³a liÃªn káº¿t hiá»‡n táº¡i.</p>
+        </div>
+        <div className="flex justify-end gap-2 pt-2">
+          <Button type="button" variant="outline" size="sm" onClick={onClose}>Há»§y</Button>
+          <Button type="submit" size="sm">XÃ¡c nháº­n</Button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+==== D:\Ver2_MM\mindmap-project copy 2\web\src\features\editor\modals\ImageModal.tsx ====
+import React, { useState } from 'react';
+import Modal from '../../../components/common/Modal';
+import Button from '../../../components/common/Button';
+import { Upload, Link as LinkIcon } from 'lucide-react';
+
+type Props = {
+  isOpen: boolean;
+  onClose: () => void;
+  onConfirm: (url: string) => void;
+};
+
+export default function ImageModal({ isOpen, onClose, onConfirm }: Props) {
+  const [activeTab, setActiveTab] = useState<'upload' | 'url'>('upload');
+  const [url, setUrl] = useState('');
+  const [isUploading, setIsUploading] = useState(false);
+
+  const handleUrlSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (url.trim()) {
+      onConfirm(url.trim());
+      onClose();
+      setUrl('');
+    }
+  };
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    // === TODO: TÃ­ch há»£p API Upload Backend thá»±c táº¿ á»Ÿ Ä‘Ã¢y ===
+    // Hiá»‡n táº¡i sáº½ dÃ¹ng FileReader Ä‘á»ƒ táº¡o base64 URL cho demo ngay láº­p tá»©c
+    setIsUploading(true);
+    
+    // Giáº£ láº­p delay upload
+    await new Promise(resolve => setTimeout(resolve, 1000));
+
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      const result = reader.result as string;
+      setIsUploading(false);
+      onConfirm(result); // Tráº£ vá» URL (hoáº·c Base64)
+      onClose();
+    };
+    reader.readAsDataURL(file);
+  };
+
+  return (
+    <Modal isOpen={isOpen} onClose={onClose} title="ChÃ¨n hÃ¬nh áº£nh">
+      <div className="space-y-4">
+        {/* Tabs */}
+        <div className="flex border-b border-gray-200">
+          <button
+            className={`flex-1 py-2 text-sm font-medium text-center ${
+              activeTab === 'upload' ? 'text-blue-600 border-b-2 border-blue-600' : 'text-gray-500 hover:text-gray-700'
+            }`}
+            onClick={() => setActiveTab('upload')}
+          >
+            Upload tá»« thiáº¿t bá»‹
+          </button>
+          <button
+            className={`flex-1 py-2 text-sm font-medium text-center ${
+              activeTab === 'url' ? 'text-blue-600 border-b-2 border-blue-600' : 'text-gray-500 hover:text-gray-700'
+            }`}
+            onClick={() => setActiveTab('url')}
+          >
+            Link áº£nh (URL)
+          </button>
+        </div>
+
+        {/* Tab Content */}
+        <div className="min-h-[150px] flex flex-col justify-center">
+          {activeTab === 'upload' ? (
+            <div className="flex flex-col items-center justify-center border-2 border-dashed border-gray-300 rounded-lg p-6 hover:bg-gray-50 transition-colors cursor-pointer relative">
+              <input 
+                type="file" 
+                accept="image/*" 
+                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                onChange={handleFileUpload}
+                disabled={isUploading}
+              />
+              <div className="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center mb-3">
+                <Upload className="text-blue-600" size={24} />
+              </div>
+              <p className="text-sm text-gray-600 font-medium">
+                {isUploading ? 'Äang táº£i lÃªn...' : 'Nháº¥n Ä‘á»ƒ chá»n hoáº·c kÃ©o tháº£ áº£nh vÃ o Ä‘Ã¢y'}
+              </p>
+              <p className="text-xs text-gray-400 mt-1">PNG, JPG, GIF tá»‘i Ä‘a 5MB</p>
+            </div>
+          ) : (
+            <form onSubmit={handleUrlSubmit} className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">ÄÆ°á»ng dáº«n áº£nh</label>
+                <div className="relative">
+                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                    <LinkIcon size={16} className="text-gray-400" />
+                  </div>
+                  <input
+                    type="url"
+                    value={url}
+                    onChange={(e) => setUrl(e.target.value)}
+                    className="pl-10 block w-full border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500 sm:text-sm py-2 border"
+                    placeholder="https://example.com/image.png"
+                    required
+                  />
+                </div>
+              </div>
+              <div className="flex justify-end gap-2">
+                <Button type="button" variant="ghost" size="sm" onClick={onClose}>Há»§y</Button>
+                <Button type="submit" size="sm">ChÃ¨n áº£nh</Button>
+              </div>
+            </form>
+          )}
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+==== D:\Ver2_MM\mindmap-project copy 2\web\src\features\editor\Boundary.tsx ====
 import React from 'react';
+import { Rect } from 'react-konva';
+import { NodeData } from '../../app/store/useEditorStore';
+
+type BoundaryProps = {
+  nodeId: string;
+  nodes: NodeData[];
+  edges: { from: string; to: string }[];
+  nodeVisuals: Map<string, { style: NodeData; box: { w: number; h: number } }>;
+};
+
+const Boundary: React.FC<BoundaryProps> = ({ nodeId, nodes, edges, nodeVisuals }) => {
+  const getDescendants = (id: string): string[] => {
+    const children = edges.filter(edge => edge.from === id).map(edge => edge.to);
+    return [...children, ...children.flatMap(getDescendants)];
+  };
+
+  const node = nodes.find(n => n.id === nodeId);
+  if (!node || !node.boundary) {
+    return null;
+  }
+
+  const descendantIds = [nodeId, ...getDescendants(nodeId)];
+  const boundaryNodes = descendantIds.map(id => nodes.find(n => n.id === id)).filter(Boolean) as NodeData[];
+
+  if (boundaryNodes.length === 0) {
+    return null;
+  }
+
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+
+  boundaryNodes.forEach(n => {
+    const visual = nodeVisuals.get(n.id);
+    if (visual) {
+      const { x, y } = visual.style;
+      const { w, h } = visual.box;
+      minX = Math.min(minX, x - w / 2);
+      maxX = Math.max(maxX, x + w / 2);
+      minY = Math.min(minY, y - h / 2);
+      maxY = Math.max(maxY, y + h / 2);
+    }
+  });
+
+  const padding = 8;
+  const x = minX - padding;
+  const y = minY - padding;
+  const width = maxX - minX + padding * 2;
+  const height = maxY - minY + padding * 2;
+
+  return (
+    <Rect
+      x={x}
+      y={y}
+      width={width}
+      height={height}
+      stroke="#6B7280"
+      strokeWidth={2}
+      cornerRadius={16}
+      dash={[10, 5]}
+    />
+  );
+};
+
+export default Boundary;
+
+==== D:\Ver2_MM\mindmap-project copy 2\web\src\features\editor\EditorToolbar.tsx ====
+import React, { useState } from 'react';
 import {
   Share2, Undo, Redo, Save, PanelRight, ZoomIn, ZoomOut, ChevronDown,
   AlignHorizontalJustifyCenter, // Node con
   AlignStartVertical,  // Node anh em
-  GitPullRequestDraft,     // Relationship
   BoxSelect,  // Boundary
-  TextSelect, // Summary
-  PlusSquare  // Insert
 } from 'lucide-react';
 import UserAvatarMenu from '../auth/UserAvatarMenu';
-import { useEditorStore } from '../../app/store/useEditorStore'; 
+import { useEditorStore, NodeData } from '../../app/store/useEditorStore'; 
 import { useMindmapsStore } from '../../app/store/useMindmapsStore';
+
+// New components
+import InsertDropdown from './InsertDropdown';
+import HyperlinkModal from './modals/HyperlinkModal';
+import ImageModal from './modals/ImageModal';
 
 type EditorToolbarProps = {
   onCommitName: () => void; 
@@ -2367,7 +2637,9 @@ type EditorToolbarProps = {
   selectedNodeIds: string[];
   onAddChild: () => void;
   onAddSibling: () => void;
-  onSetHyperlink: () => void; 
+  onSetHyperlink?: () => void; // ÄÃ¡nh dáº¥u optional vÃ¬ Ä‘Ã£ cÃ³ logic má»›i
+  onToggleBoundary: () => void;
+  onUpdateNode: (updates: Partial<NodeData>) => void; // [Má»šI]
 };
 
 const ToolbarButton = ({
@@ -2405,7 +2677,9 @@ export default function EditorToolbar({
   selectedNodeIds,
   onAddChild,
   onAddSibling,
-  onSetHyperlink
+  onSetHyperlink,
+  onToggleBoundary,
+  onUpdateNode
 }: EditorToolbarProps) {
   
   const setMindmapsItems = useMindmapsStore(s => s.set);
@@ -2413,6 +2687,11 @@ export default function EditorToolbar({
 
   const name = useEditorStore(s => s.currentMindmapName);
   const currentMindmapId = useEditorStore(s => s.currentMindmapId); 
+  const { nodes } = useEditorStore();
+
+  // [Má»šI] State cho Modals
+  const [isLinkModalOpen, setIsLinkModalOpen] = useState(false);
+  const [isImageModalOpen, setIsImageModalOpen] = useState(false);
 
   const setName = (newName: string) => useEditorStore.setState({ currentMindmapName: newName, isDirty: true });
 
@@ -2426,6 +2705,7 @@ export default function EditorToolbar({
     }
   };
 
+  // Logic Zoom
   const zoomLevels: number[] = [];
   for (let i = 50; i <= 400; i += 50) {
     zoomLevels.push(i);
@@ -2447,8 +2727,19 @@ export default function EditorToolbar({
 
   const isSingleNodeFocused = selectedNodeIds.length === 1;
   const isNotRootAndSingle = isSingleNodeFocused && selectedNodeIds[0] !== 'root';
+  const selectedNode = isSingleNodeFocused ? nodes.find(n => n.id === selectedNodeIds[0]) : null;
+
+  // Handlers Update Node
+  const handleConfirmLink = (url: string | undefined) => {
+    onUpdateNode({ hyperlink: url });
+  };
+
+  const handleConfirmImage = (url: string) => {
+    onUpdateNode({ imageUrl: url });
+  };
 
   return (
+    <>
     <div className="fixed top-0 left-0 right-0 h-12 bg-[#F5F5F5] border-b border-gray-200 flex items-center px-4 z-40">
 
       {/* 1. PHáº¦N BÃŠN TRÃI (Logo, TÃªn) */}
@@ -2488,36 +2779,20 @@ export default function EditorToolbar({
         <div className="w-px h-6 bg-gray-300 mx-2" />
 
         <ToolbarButton
-          onClick={() => alert('Chá»©c nÄƒng Relationship (LiÃªn káº¿t) sáº½ sá»›m ra máº¯t!')}
-          disabled={!isNotRootAndSingle} 
-          title="Táº¡o liÃªn káº¿t (Sáº¯p ra máº¯t)"
-        >
-          <GitPullRequestDraft size={20} />
-        </ToolbarButton>
-
-        <ToolbarButton
-          onClick={() => alert('Chá»©c nÄƒng Boundary (ÄÆ°á»ng viá»n) sáº½ sá»›m ra máº¯t!')}
-          disabled={!isNotRootAndSingle} 
-          title="Táº¡o Ä‘Æ°á»ng viá»n (Sáº¯p ra máº¯t)"
+          onClick={onToggleBoundary}
+          disabled={!isSingleNodeFocused}
+          title="Táº¡o hoáº·c xÃ³a Ä‘Æ°á»ng viá»n"
+          className={selectedNode?.boundary ? 'bg-gray-300/80' : ''}
         >
           <BoxSelect size={20} />
         </ToolbarButton>
         
-        <ToolbarButton
-          onClick={() => alert('Chá»©c nÄƒng Summary (TÃ³m táº¯t) sáº½ sá»›m ra máº¯t!')}
-          disabled={!isNotRootAndSingle} 
-          title="Táº¡o tÃ³m táº¯t (Sáº¯p ra máº¯t)"
-        >
-          <TextSelect size={20} />
-        </ToolbarButton>
-        
-        <ToolbarButton
-          onClick={onSetHyperlink} 
-          disabled={!isSingleNodeFocused} 
-          title="ChÃ¨n Hyperlink"
-        >
-          <PlusSquare size={20} />
-        </ToolbarButton>
+        {/* [THAY Äá»”I] Sá»­ dá»¥ng InsertDropdown thay vÃ¬ nÃºt Hyperlink cÅ© */}
+        <InsertDropdown 
+          disabled={!isSingleNodeFocused}
+          onInsertLink={() => setIsLinkModalOpen(true)}
+          onInsertImage={() => setIsImageModalOpen(true)}
+        />
       </div>
 
       {/* 3. PHáº¦N BÃŠN PHáº¢I (Zoom, Undo, Chia sáº»...) */}
@@ -2551,7 +2826,7 @@ export default function EditorToolbar({
 
         <div className="w-px h-6 bg-gray-300 mx-2" />
 
-        <button
+        <button 
           onClick={onSave}
           disabled={!isDirty} // áº¨n (má») khi !isDirty, Hiá»‡n khi isDirty
           title={isDirty ? "LÆ°u thay Ä‘á»•i (Ctrl+S)" : "ChÆ°a cÃ³ gÃ¬ thay Ä‘á»•i"}
@@ -2569,6 +2844,21 @@ export default function EditorToolbar({
         <UserAvatarMenu />
       </div>
     </div>
+
+    {/* Modals */}
+    <HyperlinkModal 
+      isOpen={isLinkModalOpen}
+      onClose={() => setIsLinkModalOpen(false)}
+      currentUrl={selectedNode?.hyperlink}
+      onConfirm={handleConfirmLink}
+    />
+    
+    <ImageModal
+      isOpen={isImageModalOpen}
+      onClose={() => setIsImageModalOpen(false)}
+      onConfirm={handleConfirmImage}
+    />
+    </>
   );
 }
 
@@ -3403,6 +3693,69 @@ function CollapsiblePanel({ label, children, defaultOpen = true }: CollapsiblePa
   );
 }
 
+==== D:\Ver2_MM\mindmap-project copy 2\web\src\features\editor\InsertDropdown.tsx ====
+import React, { useState, useRef, useEffect } from 'react';
+import { PlusSquare, Link as LinkIcon, Image as ImageIcon, ChevronDown } from 'lucide-react';
+
+type Props = {
+  disabled: boolean;
+  onInsertLink: () => void;
+  onInsertImage: () => void;
+};
+
+export default function InsertDropdown({ disabled, onInsertLink, onInsertImage }: Props) {
+  const [isOpen, setIsOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (ref.current && !ref.current.contains(event.target as Node)) {
+        setIsOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const handleSelect = (action: () => void) => {
+    action();
+    setIsOpen(false);
+  };
+
+  return (
+    <div className="relative" ref={ref}>
+      <button
+        onClick={() => !disabled && setIsOpen(!isOpen)}
+        disabled={disabled}
+        className={`flex items-center gap-1 p-2 rounded-md text-gray-700 ${
+          disabled ? 'opacity-40 cursor-not-allowed' : 'hover:bg-gray-300/50'
+        }`}
+        title="ChÃ¨n (Link, áº¢nh...)"
+      >
+        <PlusSquare size={20} />
+        <ChevronDown size={14} />
+      </button>
+
+      {isOpen && (
+        <div className="absolute top-full left-0 mt-1 w-48 bg-white rounded-md shadow-lg border border-gray-200 z-50 py-1">
+          <button
+            onClick={() => handleSelect(onInsertLink)}
+            className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 flex items-center gap-2"
+          >
+            <LinkIcon size={16} /> ChÃ¨n liÃªn káº¿t
+          </button>
+          <button
+            onClick={() => handleSelect(onInsertImage)}
+            className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 flex items-center gap-2"
+          >
+            <ImageIcon size={16} /> ChÃ¨n hÃ¬nh áº£nh
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 ==== D:\Ver2_MM\mindmap-project copy 2\web\src\hooks\useAuth.ts ====
 // src/hooks/useAuth.ts
 import { useContext } from "react";
@@ -3518,8 +3871,7 @@ export function useLocalMindmap() {
       // 2. Dá»‹ch nÃ³ sang chuáº©n BE (dÃ¹ng dataMapper)
       const beContent: BeMindmapContent = normalizeContentFEtoBE(
         [feRootNode], // Máº£ng node FE
-        [], // Máº£ng edge
-        { layoutMode: 'mindmap', theme: 'light' }
+        [] // Máº£ng edge
       );
 
       // 3. LÆ°u chuáº©n BE vÃ o localStorage
@@ -3844,9 +4196,14 @@ import {
   Circle,
   Path,
   Arrow,
+  Image as KonvaImage,
 } from 'react-konva';
+import { SquareArrowOutUpRight } from 'lucide-react'; 
 import * as dagre from 'dagre';
+import useImage from 'use-image'; 
 import { useDebouncedCallback } from 'use-debounce';
+
+// Sá»­ dá»¥ng alias ../ Ä‘á»ƒ import an toÃ n
 import EditorToolbar from '../features/editor/EditorToolbar';
 import Sidebar from '../components/layout/Sidebar';
 import FormattingToolbar from '../features/editor/FormattingToolbar';
@@ -3872,6 +4229,7 @@ import { useTheme } from '../hooks/useTheme';
 import Spinner from '../components/common/Spinner';
 import { useLocalMindmap } from '../hooks/useLocalMindmap';
 import { useMindmapsStore } from '../app/store/useMindmapsStore';
+import Boundary from '../features/editor/Boundary';
 
 import {
   BeMindmapContent,
@@ -3898,9 +4256,8 @@ const PADDING_X = 20,
   PADDING_Y = 12;
 const LINE_HEIGHT_MULTIPLIER = 1.3;
 
-// [MERGE] Giá»¯ láº¡i logic UI má»›i (branch colors) tá»« feature/tt
 const BRANCH_COLORS_PALETTE = [
-  '#EF4444', '#F97316', '#FACC15', '#22C55E',
+  '#475569','#EF4444', '#F97316', '#FACC15', '#22C55E',
   '#06B6D4', '#3B82F6', '#8B5CF6', '#EC4899',
 ];
 
@@ -3933,10 +4290,6 @@ function getContrastColor(hex: string) {
 // Component
 // =================================================================================
 
-/**
- * [MERGE GÄ 3] Cáº¥y ghÃ©p hÃ m loadGuestDoc (Ä‘Ã£ sá»­a)
- * Äá»c chuáº©n BE, dá»‹ch sang FE
- */
 export function loadGuestDoc(id: string): FeMindmapDoc | null {
   try {
     const raw = localStorage.getItem(GUEST_BUCKET);
@@ -3960,10 +4313,6 @@ export function loadGuestDoc(id: string): FeMindmapDoc | null {
   }
 }
 
-/**
- * [MERGE GÄ 3] Cáº¥y ghÃ©p hÃ m saveGuestDoc (Ä‘Ã£ sá»­a)
- * Nháº­n chuáº©n FE, dá»‹ch sang BE
- */
 function saveGuestDoc(
   id: string,
   name: string,
@@ -3981,12 +4330,9 @@ function saveGuestDoc(
   }
 }
 
-/**
- * [MERGE] Giá»¯ láº¡i hÃ m calculateNodeBox tá»« feature/tt
- * (ÄÃ¢y lÃ  logic layout/UI)
- */
 function calculateNodeBox(node: NodeData, style: NodeData) {
-  const { fontSize, nodeLength, nodeText, textCase, shape } = style;
+  // [Sá»¬A Lá»–I] ThÃªm imageUrl vÃ o destructuring
+  const { fontSize, nodeLength, nodeText, textCase, shape, imageUrl } = style; 
   const borderWidth = style.borderWidth || 0;
   let processedText = nodeText || '';
   if (textCase === 'uppercase') processedText = processedText.toUpperCase();
@@ -4011,7 +4357,7 @@ function calculateNodeBox(node: NodeData, style: NodeData) {
     w = Math.max(w, 80);
     wrappedLines = processedText.split('\n');
   } else {
-    w = Number(nodeLength) || 150;
+    w = Number(nodeLength) || 250;
     const contentWidth = w - PADDING_X * 2 - borderWidth * 2;
     const lines = processedText.split('\n');
     lines.forEach((line: string) => {
@@ -4043,8 +4389,51 @@ function calculateNodeBox(node: NodeData, style: NodeData) {
     wrappedLines.length * finalLineHeight + PADDING_Y * 2
   );
 
-  return { w, h, textToRender: wrappedLines.join('\n'), finalFontSize };
+  let imageHeight = 0;
+  let imageWidthDisplay = 0;
+   
+  if (imageUrl) {
+    // Náº¿u cÃ³ áº£nh, node sáº½ rá»™ng ra hoáº·c áº£nh fit theo width cá»§a node
+    // Máº·c Ä‘á»‹nh áº£nh sáº½ fit width cá»§a node (trá»« padding)
+    imageWidthDisplay = w - (PADDING_X * 2) - (borderWidth * 2);
+    // Giáº£ sá»­ tá»‰ lá»‡ 16:9 hoáº·c láº¥y tá»‰ lá»‡ tháº­t náº¿u Ä‘Ã£ lÆ°u trong node
+    // á»ž Ä‘Ã¢y táº¡m tÃ­nh chiá»u cao áº£nh khoáº£ng 2/3 chiá»u rá»™ng hiá»ƒn thá»‹ cho Ä‘áº¹p náº¿u chÆ°a load xong
+    // Náº¿u Ä‘Ã£ cÃ³ imageHeight tá»« store (sau khi load) thÃ¬ dÃ¹ng
+    imageHeight = imageWidthDisplay * 0.6; 
+    if (style.imageHeight && style.imageWidth) {
+       imageHeight = (style.imageHeight / style.imageWidth) * imageWidthDisplay;
+    }
+  }
+
+  // Náº¿u cÃ³ áº£nh, chiá»u cao tá»•ng sáº½ bao gá»“m áº£nh + khoáº£ng cÃ¡ch (10px) + text
+  // Náº¿u textHeight Ä‘Ã£ bao gá»“m padding, ta chá»‰ cáº§n cá»™ng thÃªm áº£nh
+  let totalH = h;
+  if (imageUrl) {
+      totalH = h + imageHeight + 10;
+  }
+
+  return { 
+    w, 
+    h: totalH, // Tráº£ vá» tá»•ng chiá»u cao
+    textToRender: wrappedLines.join('\n'), 
+    finalFontSize,
+    imageHeight,        
+    imageWidthDisplay   
+  };
 }
+
+const URLImage = ({ src, x, y, width, height, onImageLoad }: any) => {
+  const [image] = useImage(src);
+  
+  useEffect(() => {
+    if (image && onImageLoad) {
+      onImageLoad(image.width, image.height);
+    }
+  }, [image, onImageLoad]); 
+
+  if (!image) return null;
+  return <KonvaImage image={image} x={x} y={y} width={width} height={height} cornerRadius={4} />;
+};
 
 export default function Editor() {
   const { id } = useParams<{ id?: string }>();
@@ -4070,12 +4459,20 @@ export default function Editor() {
     activeColorThemeId,
     set: setGlobalStore,
     globalBranchColor,
-    isDirty
+    isDirty,
+    toggleNodeBoundary,
   } = useEditorStore();
 
-  // State ná»™i bá»™ (Láº¥y tá»« feature/tt, bao gá»“m logic UI má»›i)
+  const handleToggleBoundary = () => {
+    if (selectedNodeIds.length === 1) {
+      toggleNodeBoundary(selectedNodeIds[0]);
+    }
+  };
+
+  // State ná»™i bá»™
   const [name, setName] = useState('Loading...');
   const [isDataLoaded, setIsDataLoaded] = useState(false);
+  const [isReadyToShow, setIsReadyToShow] = useState(false);
   const [isFormattingToolbarOpen, setFormattingToolbarOpen] = useState(false); // UI Má»›i
   const [dimensions, setDimensions] = useState({
     width: window.innerWidth,
@@ -4101,6 +4498,7 @@ export default function Editor() {
   );
   const [rootCollapse, setRootCollapse] = useState({ left: false, right: false });
   const lastEditStopTime = useRef(0);
+  const pendingLayoutRef = useRef(false);
 
   const stageRef = useRef<any>(null);
   const editingInputRef = useRef<HTMLTextAreaElement>(null);
@@ -4123,12 +4521,12 @@ export default function Editor() {
       let currentBaseColor = inheritedColor;
 
       // Logic xÃ¡c Ä‘á»‹nh mÃ u táº¡i cáº¥p 1:
-      // LuÃ´n láº¥y mÃ u toÃ n cá»¥c náº¿u chÆ°a cÃ³ mÃ u thá»«a hÆ°á»Ÿng (nghÄ©a lÃ  tá»« root)
+      // Láº¥y mÃ u toÃ n cá»¥c náº¿u chÆ°a cÃ³ mÃ u thá»«a hÆ°á»Ÿng (lÃ  tá»« root)
       if (depth === 1 && !currentBaseColor) {
          currentBaseColor = globalBranchColor;
       }
 
-      // Náº¿u node nÃ y cÃ³ mÃ u riÃªng, nÃ³ sáº½ Ä‘Ã¨ mÃ u toÃ n cá»¥c/thá»«a hÆ°á»Ÿng
+      // Náº¿u node cÃ³ mÃ u riÃªng, nÃ³ sáº½ Ä‘Ã¨ mÃ u toÃ n cá»¥c/thá»«a hÆ°á»Ÿng
       if (node?.branchColor) {
         currentBaseColor = node.branchColor;
       }
@@ -4138,7 +4536,6 @@ export default function Editor() {
 
       topology.set(nodeId, { 
         depth, 
-        // [FIX 1] XÃ³a branchIndex vÃ¬ khÃ´ng cÃ²n trong type NodeTopology
         branchBaseColor: effectiveColor 
       });
       
@@ -4165,11 +4562,11 @@ export default function Editor() {
     visible: false,
   });
   const selectionStartPos = useRef({ x: 0, y: 0 });
-  const isSelecting = useRef(false); // ThÃªm cá» nÃ y Ä‘á»ƒ biáº¿t Ä‘ang kÃ©o chá»n vÃ¹ng
+  const isSelecting = useRef(false); //cá» Ä‘á»ƒ biáº¿t Ä‘ang kÃ©o chá»n vÃ¹ng
 
   const selectedIdsSet = useMemo(() => new Set(selectedNodeIds), [selectedNodeIds]);
 
-  // Láº¥y node Ä‘áº§u tiÃªn trong danh sÃ¡ch chá»n Ä‘á»ƒ hiá»ƒn thá»‹ style trÃªn toolbar
+  // Chá»n node Ä‘áº§u tiÃªn trong danh sÃ¡ch chá»n Ä‘á»ƒ hiá»ƒn thá»‹ style trÃªn toolbar
   const firstSelectedId = useMemo(() => selectedNodeIds[0], [selectedNodeIds]);
   const currentNode = useMemo(() => {
     if (!firstSelectedId) return null;
@@ -4179,7 +4576,7 @@ export default function Editor() {
   const setMindmapsStore = useMindmapsStore(s => s.set);
   const mindmapItems = useMindmapsStore(s => s.items);
 
-  // Logic tÃ­nh toÃ¡n (KhÃ´ng thay Ä‘á»•i)
+  // Logic tÃ­nh toÃ¡n
   const computedNodeStyles = useMemo(() => {
     const map = new Map<string, NodeData>();
     nodes.forEach((node) => {
@@ -4210,7 +4607,6 @@ export default function Editor() {
     return map;
   }, [nodes, computedNodeStyles]);
 
-  // [MERGE] Logic UI má»›i tá»« feature/tt (rootChildSides)
   const rootChildSides = useMemo(() => {
     const sides = { left: false, right: false };
     if (!nodesWithChildren.has('root')) return sides;
@@ -4233,7 +4629,6 @@ export default function Editor() {
   const debouncedPushHistory = useDebouncedCallback(() => {
     const { nodes, edges } = useEditorStore.getState();
     pushHistory(useEditorStore.getState().nodes, useEditorStore.getState().edges);
-    // console.log("v0.5: ÄÃ£ lÆ°u vÃ o Undo stack");
   }, 500);
 
   // 2. Luá»“ng LÆ°u trá»¯ (5s)
@@ -4320,7 +4715,11 @@ export default function Editor() {
             backgroundColor: data.backgroundColor || '#FAFAFB', 
           });
           setBackgroundColor(data.backgroundColor || '#FAFAFB');
-          setSelectedNodeIds(['root']);
+          if (data.nodes.length <= 1) {
+             setSelectedNodeIds(['root']);
+          } else {
+             setSelectedNodeIds([]); 
+          }
           setIsDataLoaded(true);
         }
       } catch (error) {
@@ -4366,6 +4765,8 @@ export default function Editor() {
   useEffect(() => {
     if (selectedNodeIds.length > 0) {
        setFormattingToolbarOpen(true);
+    } else {
+       setFormattingToolbarOpen(false);
     }
   }, [selectedNodeIds]);
 
@@ -4407,18 +4808,17 @@ export default function Editor() {
   // 2. Hook Káº¿t ná»‘i vÃ  Nháº­n Patch
   useEffect(() => {
     if (!id || !isAuthed || isGuest || !isDataLoaded) {
-      return; // Chá»‰ user Ä‘Äƒng nháº­p & khÃ´ng pháº£i Guest má»›i káº¿t ná»‘i WS
+      return; 
     }
 
     let isConnecting = true;
-    let isMounted = true; // Cá» cleanup
+    let isMounted = true; 
 
     const connect = async () => {
       try {
         const token = await getAccessToken();
         if (!token || !isMounted) return;
 
-        // TODO: Thay 'localhost:8081' báº±ng biáº¿n VITE_WS_URL
         const wsUrl = `ws://localhost:8081/ws/mindmap/${id}?token=${token}`;
         
         const ws = new WebSocket(wsUrl);
@@ -4432,18 +4832,15 @@ export default function Editor() {
         };
         ws.onerror = (err) => console.error('WebSocket error:', err);
 
-        // === [GÄ 9] LOGIC NHáº¬N PATCH ===
+        // === LOGIC NHáº¬N PATCH ===
         ws.onmessage = (event) => {
           try {
             const message: BroadcastPatch = JSON.parse(event.data);
             const { type, payload } = message;
 
-            // Láº¥y state Má»šI NHáº¤T tá»« store (Ráº¤T QUAN TRá»ŒNG)
+            // Láº¥y state Má»šI NHáº¤T tá»« store
             const { nodes: currentNodes, edges: currentEdges } =
               useEditorStore.getState();
-
-            // QUAN TRá»ŒNG: Chá»‰ gá»i setGraph, KHÃ”NG gá»i debouncedPushHistory
-
             switch (type) {
               case 'USER_JOINED':
                 addToast(`User ${payload.userId.substring(0, 6)}... Ä‘Ã£ tham gia.`, 'info');
@@ -4451,7 +4848,6 @@ export default function Editor() {
               case 'USER_LEFT':
                 addToast(`User ${payload.userId.substring(0, 6)}... Ä‘Ã£ rá»i Ä‘i.`, 'info');
                 break;
-              
               case 'NODE_MOVE': {
                 const { id: nodeId, x, y } = payload;
                 const newNodes = currentNodes.map((n) =>
@@ -4557,7 +4953,6 @@ export default function Editor() {
               }
               case 'ROOT_TOGGLE_COLLAPSE': {
                 const { side } = payload;
-                // [FIX TS ERROR] ThÃªm type guard
                 if (side === 'left' || side === 'right') {
                setRootCollapse(prev => ({ ...prev, [side as 'left' | 'right']: !prev[side as 'left' | 'right'] }));
                 } else {
@@ -4577,9 +4972,7 @@ export default function Editor() {
         addToast("Lá»—i xÃ¡c thá»±c WebSocket.", "error");
       }
     };
-
     connect();
-
     // HÃ m cleanup
     return () => {
       isMounted = false;
@@ -4590,16 +4983,33 @@ export default function Editor() {
       wsRef.current = null;
     };
   }, [id, isAuthed, isGuest, isDataLoaded, getAccessToken, addToast, setGraph]);
-  // (Bá» pushHistory khá»i deps)
 
   // ================================================
   // Style & Layout Logic
-  // [MERGE] Giá»¯ nguyÃªn logic 5 bÆ°á»›c cá»§a feature/tt
   // ================================================
 
-  
+const deepEqualNodes = (nodes1: NodeData[], nodes2: NodeData[]): boolean => {
+  if (nodes1.length !== nodes2.length) return false;
+  for (let i = 0; i < nodes1.length; i++) {
+    const n1 = nodes1[i];
+    const n2 = nodes2[i];
+    if (
+      n1.id !== n2.id ||
+      Math.abs(n1.x - n2.x) > 0.1 || 
+      Math.abs(n1.y - n2.y) > 0.1 ||
+      n1.parentId !== n2.parentId ||
+      n1.side !== n2.side ||
+      n1.collapsed !== n2.collapsed ||
+      n1.imageWidth !== n2.imageWidth || // Include image dimensions
+      n1.imageHeight !== n2.imageHeight
+    ) {
+      return false;
+    }
+  }
+  return true;
+};
 
-  const handleLayout = useCallback(
+const handleLayout = useCallback(
     (keepCamera: boolean = false) => {
       const { globalStructure, nodes, edges } = useEditorStore.getState();
       const layoutType = globalStructure;
@@ -4769,7 +5179,7 @@ export default function Editor() {
                 if (idx > 0) childrenWidth += 30;
               });
               w = Math.max(w, childrenWidth);
-         }
+           }
           }
           g.setNode(node.id, { label: node.nodeText, width: w, height: h });
         });
@@ -4786,33 +5196,26 @@ export default function Editor() {
       const finalNodesMap = new Map(newNodes.map(n => [n.id, n]));
       const allEdges = useEditorStore.getState().edges;
 
-      // 2. TÃ¬m táº¥t cáº£ cÃ¡c node gá»‘c (khÃ´ng cÃ³ cha) NGOáº I TRá»ª 'root'
       const floatingRoots = newNodes.filter(
         n => (n.parentId === undefined || n.parentId === null) && n.id !== 'root'
       );
 
-      // 3. Táº¡o má»™t map cÃ¡c cáº¡nh Ä‘á»ƒ tÃ¬m con (chá»‰ cáº§n lÃ m 1 láº§n)
       const adjMap = new Map<string, string[]>();
       allEdges.forEach(e => {
         if (!adjMap.has(e.from)) adjMap.set(e.from, []);
         adjMap.get(e.from)!.push(e.to);
       });
 
-      // 4. Duyá»‡t qua tá»«ng "Ä‘áº£o"
       for (const floatingRoot of floatingRoots) {
         const islandNodes = new Map<string, NodeData>();
         const islandEdges: EdgeData[] = [];
-        const q: NodeData[] = [floatingRoot]; // HÃ ng Ä‘á»£i cho BFS
-
-        // 5. TÃ¬m táº¥t cáº£ con chÃ¡u cá»§a Ä‘áº£o nÃ y (BFS)
+        const q: NodeData[] = [floatingRoot]; 
         while (q.length > 0) {
           const current = q.shift()!;
           if (!islandNodes.has(current.id)) {
             islandNodes.set(current.id, current);
-            
             const childrenIds = adjMap.get(current.id) || [];
             childrenIds.forEach(childId => {
-              // Láº¥y node tá»« map (Ä‘Ã£ Ä‘Æ°á»£c layout chÃ­nh cáº­p nháº­t)
               const childNode = finalNodesMap.get(childId); 
               if (childNode) {
                 q.push(childNode);
@@ -4822,9 +5225,8 @@ export default function Editor() {
           }
         }
 
-        if (islandNodes.size <= 1) continue; // KhÃ´ng cÃ³ con, bá» qua
+        if (islandNodes.size <= 1) continue; 
 
-        // 6. Táº¡o 1 graph Dagre *riÃªng* cho hÃ²n Ä‘áº£o nÃ y
         const g = new dagre.graphlib.Graph();
         const islandLayoutDir = 'LR';
         g.setGraph({ rankdir: islandLayoutDir, nodesep: 50, ranksep: 100 });
@@ -4840,17 +5242,13 @@ export default function Editor() {
         });
         islandEdges.forEach((edge) => g.setEdge(edge.from, edge.to));
         
-        // 7. Cháº¡y layout cá»¥c bá»™
         dagre.layout(g);
 
-        // 8. TÃ­nh toÃ¡n Ä‘á»™ dá»i (offset)
-        // Vá»‹ trÃ­ "neo" lÃ  vá»‹ trÃ­ hiá»‡n táº¡i cá»§a node ná»•i (do ngÆ°á»i dÃ¹ng kÃ©o)
         const anchorPos = finalNodesMap.get(floatingRoot.id)!; 
         const dagreRootPos = g.node(floatingRoot.id);
         const offsetX = anchorPos.x - dagreRootPos.x;
         const offsetY = anchorPos.y - dagreRootPos.y;
 
-        // 9. Ãp dá»¥ng vá»‹ trÃ­ má»›i (Ä‘Ã£ dá»i) cho táº¥t cáº£ con chÃ¡u
         islandNodes.forEach((node, id) => {
           const dagrePos = g.node(id);
           if (dagrePos) {
@@ -4859,22 +5257,26 @@ export default function Editor() {
               ...existingNode,
               x: dagrePos.x + offsetX,
               y: dagrePos.y + offsetY,
-              // GÃ¡n "side" Ä‘á»ƒ Ä‘Æ°á»ng káº» váº½ Ä‘Ãºng
               side: (islandLayoutDir === 'LR' ? (dagrePos.x < 0 ? 'left' : 'right') : 'right') as 'left' | 'right', 
             };
-            finalNodesMap.set(id, updatedNode); // Cáº­p nháº­t láº¡i map
+            finalNodesMap.set(id, updatedNode); 
           }
         });
-      } // Káº¿t thÃºc vÃ²ng láº·p for (duyá»‡t cÃ¡c Ä‘áº£o)
+      } 
       
-      // 10. Chuyá»ƒn map cuá»‘i cÃ¹ng vá» máº£ng newNodes
       newNodes = Array.from(finalNodesMap.values());
 
-      // Cáº­p nháº­t state VÃ€ reset collapse root (UI má»›i)
-      setGraph(newNodes, edges);
+      // Láº¥y tráº¡ng thÃ¡i hiá»‡n táº¡i cá»§a nodes tá»« store
+      const currentNodesInStore = useEditorStore.getState().nodes;
+
+      // Chá»‰ cáº­p nháº­t graph náº¿u cÃ³ sá»± thay Ä‘á»•i Ä‘Ã¡ng ká»ƒ vá» vá»‹ trÃ­/kÃ­ch thÆ°á»›c
+      if (!deepEqualNodes(newNodes, currentNodesInStore)) {
+        setGraph(newNodes, edges);
+      }
+      
       setRootCollapse({ left: false, right: false });
 
-      // Logic CÄƒn giá»¯a/Zoom (KhÃ´ng Ä‘á»•i)
+      // Logic CÄƒn giá»¯a/Zoom 
       if (newNodes.length === 0) {
         const currentWidth = window.innerWidth;
         const currentHeight = window.innerHeight - 48;
@@ -4921,40 +5323,35 @@ export default function Editor() {
         setPos({ x: newX, y: newY });
       }
     },
-    [nodeVisuals, setGraph, edges] // [GÄ 7] Bá» 'nodes'
+    [nodeVisuals, setGraph, edges] 
   );
 
-  // [Sá»¬A] THÃŠM CÃC HÃ€M Xá»¬ LÃ ZOOM NÃ€Y
-const zoomStep = 1.2; // Tá»‘c Ä‘á»™ zoom
+  const zoomStep = 1.2; 
+  const handleZoomIn = useCallback(() => {
+    handleSetZoom(scale * zoomStep);
+  }, [scale]); 
+  const handleZoomOut = useCallback(() => {
+    handleSetZoom(scale / zoomStep);
+  }, [scale]); 
 
-const handleZoomIn = useCallback(() => {
-  // Zoom vÃ o vá»‹ trÃ­ trung tÃ¢m mÃ n hÃ¬nh
-  handleSetZoom(scale * zoomStep);
-}, [scale]); // [Sá»¬A] ThÃªm scale vÃ o dependency
+  const handleSetZoom = useCallback((newScale: number) => {
+    const stage = stageRef.current;
+    if (!stage) {
+      setScale(newScale);
+      return;
+    }
 
-const handleZoomOut = useCallback(() => {
-  // Zoom ra tá»« vá»‹ trÃ­ trung tÃ¢m mÃ n hÃ¬nh
-  handleSetZoom(scale / zoomStep);
-}, [scale]); // [Sá»¬A] ThÃªm scale vÃ o dependency
+    const { width, height } = dimensions;
+    const oldScale = scale;
 
-const handleSetZoom = useCallback((newScale: number) => {
-  const stage = stageRef.current;
-  if (!stage) {
-    setScale(newScale);
-    return;
-  }
+    // Láº¥y vá»‹ trÃ­ trung tÃ¢m mÃ n hÃ¬nh
+    const center = { x: width / 2, y: height / 2 };
 
-  const { width, height } = dimensions;
-  const oldScale = scale;
-
-  // Láº¥y vá»‹ trÃ­ trung tÃ¢m mÃ n hÃ¬nh
-  const center = { x: width / 2, y: height / 2 };
-
-  // TÃ­nh toÃ¡n Ä‘iá»ƒm tháº¿ giá»›i (world point) mÃ  trung tÃ¢m mÃ n hÃ¬nh Ä‘ang trá» tá»›i
-  const mousePointTo = {
-    x: (center.x - pos.x) / oldScale,
-    y: (center.y - pos.y) / oldScale,
-  };
+    // TÃ­nh toÃ¡n world point mÃ  trung tÃ¢m mÃ n hÃ¬nh Ä‘ang trá» tá»›i
+    const mousePointTo = {
+      x: (center.x - pos.x) / oldScale,
+      y: (center.y - pos.y) / oldScale,
+    };
 
   // Äáº·t scale má»›i
   setScale(newScale);
@@ -4967,13 +5364,8 @@ const handleSetZoom = useCallback((newScale: number) => {
 }, [scale, pos.x, pos.y, dimensions.width, dimensions.height]);
 
 const handleFitToScreen = useCallback(() => {
-  // Gá»i handleLayout(false) sáº½ tá»± Ä‘á»™ng cÄƒn giá»¯a vÃ  zoom
   handleLayout(false); 
 }, [handleLayout]); 
-
-  // ================================================
-  // Node Actions [Cáº¬P NHáº¬T GÄ 7 + 9]
-  // ================================================
 
   const startEditing = useCallback((nodeId: string) => {
     setSelectedNodeIds([nodeId]);
@@ -4990,9 +5382,11 @@ const handleFitToScreen = useCallback(() => {
     if (!isDataLoaded || !justStoppedEditingRef.current) return;
     justStoppedEditingRef.current = false;
     setTimeout(() => {
-      handleLayout(true); // true = keepCamera
+      handleLayout(true); 
     }, 0);
   }, [nodes, isDataLoaded, handleLayout]);
+
+
 
   const stopEditing = useCallback(
     (save: boolean) => {
@@ -5017,52 +5411,42 @@ const handleFitToScreen = useCallback(() => {
     },
     [
       editingNodeId, nodes, edges, setGraph, 
-      debouncedPushHistory, debouncedPersistData, sendPatch, // GÄ 7 & 9
+      debouncedPushHistory, debouncedPersistData, sendPatch, 
     ]
   );
 
   const handleAddChild = useCallback((parentId: string) => {
-    const parentNode = nodeMap.get(parentId); // Láº¥y dá»¯ liá»‡u THÃ” cá»§a node cha
-    const parentVisual = nodeVisuals.get(parentId); // Láº¥y dá»¯ liá»‡u HÃŒNH áº¢NH cá»§a node cha
+    const parentNode = nodeMap.get(parentId); 
+    const parentVisual = nodeVisuals.get(parentId); 
     
     if (!parentNode || !parentVisual) return;
 
-    const parentComputedStyle = parentVisual.style; // DÃ¹ng Ä‘á»ƒ láº¥y vá»‹ trÃ­, "bÃªn" (side)
+    const parentComputedStyle = parentVisual.style; 
 
     const newId = "n" + Date.now();
 
-    // 1. Báº¯t Ä‘áº§u vá»›i cÃ¡c thuá»™c tÃ­nh cÆ¡ báº£n
     const newNodeData: NodeData = { 
       id: newId, 
       nodeText: "Ná»™i dung",
-      // Láº¥y vá»‹ trÃ­ vÃ  "bÃªn" (side) tá»« style Ä‘Ã£ tÃ­nh toÃ¡n cá»§a cha
       x: parentComputedStyle.x + 40,
       y: parentComputedStyle.y + 20,
       parentId,
       side: parentComputedStyle.side, 
     };
 
-    // 2. Láº¥y Táº¤T Cáº¢ cÃ¡c key style tá»« DEFAULT_NODE_STYLE
     const styleKeys = Object.keys(DEFAULT_NODE_STYLE) as Array<keyof typeof DEFAULT_NODE_STYLE>;
 
-    // 3. Sao chÃ©p Táº¤T Cáº¢ cÃ¡c giÃ¡ trá»‹ style tá»« node cha (parentNode)
+    const EXCLUDED_STYLES = ['color', 'borderColor', 'textColor', 'branchColor', 'quickStyleId'];
+
     styleKeys.forEach(key => {
-      // Náº¿u node cha (dá»¯ liá»‡u thÃ´) cÃ³ Ä‘á»‹nh nghÄ©a má»™t style cá»¥ thá»ƒ (khÃ´ng pháº£i undefined),
-      // thÃ¬ node con sáº½ káº¿ thá»«a nÃ³.
+      if (EXCLUDED_STYLES.includes(key)) return; 
+
       if (parentNode[key] !== undefined) {
         (newNodeData as any)[key] = parentNode[key];
       }
     });
 
-    // 4. Xá»­ lÃ½ trÆ°á»ng há»£p Ä‘áº·c biá»‡t: Káº¿ thá»«a tá»« ROOT
     if (parentId === 'root') {
-      // KhÃ´ng káº¿ thá»«a style hÃ¬nh dáº¡ng cá»§a root (root to, mÃ u khÃ¡c)
-      // Äáº·t láº¡i chÃºng vá» 'undefined' Ä‘á»ƒ chÃºng láº¥y tá»« theme/quickstyle
-      newNodeData.color = undefined;
-      newNodeData.textColor = undefined;
-      newNodeData.shape = undefined;
-      newNodeData.borderColor = undefined;
-      newNodeData.borderWidth = undefined;
       newNodeData.fontSize = undefined; 
       newNodeData.fontWeight = undefined;
       newNodeData.textCase = undefined;
@@ -5078,11 +5462,11 @@ const handleFitToScreen = useCallback(() => {
     setGraph(newNodes, newEdges);
     startEditing(newId);
     setTimeout(() => handleLayout(true), 50); 
-  }, [nodes, edges, pushHistory, setGraph, nodeMap, nodeVisuals, startEditing, handleLayout]); // Cáº¬P NHáº¬T: ThÃªm nodeMap
+  }, [nodes, edges, pushHistory, setGraph, nodeMap, nodeVisuals, startEditing, handleLayout]);
 
   const handleAddSibling = useCallback((nodeId: string) => {
     if (nodeId === 'root') { 
-      handleAddChild('root'); // TrÆ°á»ng há»£p Ä‘áº·c biá»‡t: thÃªm "anh em" cho root -> thÃªm con
+      handleAddChild('root'); 
       return; 
     }
 
@@ -5106,8 +5490,12 @@ const handleFitToScreen = useCallback(() => {
     };
 
     const styleKeys = Object.keys(DEFAULT_NODE_STYLE) as Array<keyof typeof DEFAULT_NODE_STYLE>;
+    
+    const EXCLUDED_STYLES = ['color', 'borderColor', 'textColor', 'branchColor', 'quickStyleId'];
 
     styleKeys.forEach(key => {
+      if (EXCLUDED_STYLES.includes(key)) return;
+
       if (siblingNode[key] !== undefined) {
         (newNodeData as any)[key] = siblingNode[key];
       }
@@ -5126,7 +5514,7 @@ const handleFitToScreen = useCallback(() => {
   }, [nodes, edges, pushHistory, setGraph, nodeMap, nodeVisuals, startEditing, handleLayout, handleAddChild]);
 
   const handleDeleteNode = useCallback(
-    () => { // Bá» tham sá»‘ nodeId
+    () => { 
       if (selectedNodeIds.length === 0) return;
 
       const idsToDelete = selectedNodeIds.filter(id => id !== 'root');
@@ -5147,21 +5535,20 @@ const handleFitToScreen = useCallback(() => {
         findChildren(id);
       });
 
-      // Chá»n cha cá»§a node Äáº¦U TIÃŠN bá»‹ xÃ³a
       const parentId = nodes.find((n) => n.id === idsToDelete[0])?.parentId ?? 'root';
       const newNodes = nodes.filter((n) => !nodesToDelete.has(n.id));
       const newEdges = edges.filter(
         (e) => !nodesToDelete.has(e.from) && !nodesToDelete.has(e.to)
       );
       setGraph(newNodes, newEdges);
-      setSelectedNodeIds([parentId]); // Chá»n node cha
+      setSelectedNodeIds([]);
       setTimeout(() => handleLayout(true), 50);
       debouncedPushHistory();
       debouncedPersistData();
       sendPatch('NODE_DELETE', { nodeIds: Array.from(nodesToDelete) });
     },
     [
-      nodes, edges, setGraph, selectedNodeIds, handleLayout, // Cáº­p nháº­t dependency
+      nodes, edges, setGraph, selectedNodeIds, handleLayout, 
       debouncedPushHistory, debouncedPersistData, sendPatch,
     ]
   );
@@ -5172,7 +5559,6 @@ const handleFitToScreen = useCallback(() => {
     let newNodes = [...nodes];
     const idSet = selectedIdsSet;
 
-    // [MERGE] Giá»¯ láº¡i logic `styleLocked` tá»« feature/tt
     const STYLE_KEYS: Array<keyof NodeData> = [
       'shape', 'color', 'borderColor', 'borderWidth', 'borderStyle',
       'fontFamily', 'fontSize', 'fontWeight', 'fontStyle', 'textDecoration', 'textAlign', 'textColor', 'textCase', 'nodeLength',
@@ -5182,17 +5568,14 @@ const handleFitToScreen = useCallback(() => {
 
     if (updates.branchColor !== undefined) {
       const updateBranchColorRecursive = (nodeId: string, color: string) => {
-        // Chá»‰ Ã¡p dá»¥ng cho node Ä‘ang Ä‘Æ°á»£c chá»n
         if (idSet.has(nodeId)) {
           newNodes = newNodes.map(n => n.id === nodeId ? { ...n, branchColor: color } : n);
         }
         edges.forEach(e => { if (e.from === nodeId) updateBranchColorRecursive(e.to, color); });
       };
-      // Láº·p qua táº¥t cáº£ node Ä‘Æ°á»£c chá»n
       selectedNodeIds.forEach(id => updateBranchColorRecursive(id, updates.branchColor as string));
     }
     
-    // Ãp dá»¥ng update cho táº¥t cáº£ node Ä‘Æ°á»£c chá»n
     newNodes = newNodes.map(n => idSet.has(n.id) ? { ...n, ...updates } : n);
     
     if (isStyleUpdate) {
@@ -5200,7 +5583,6 @@ const handleFitToScreen = useCallback(() => {
         newNodes = newNodes.map(n => n.id === nodeId ? { ...n, styleLocked: true } : n);
         edges.forEach(e => { if (e.from === nodeId) lockRec(e.to); });
       };
-      // Láº·p qua táº¥t cáº£ node Ä‘Æ°á»£c chá»n
       selectedNodeIds.forEach(id => lockRec(id));
     }
 
@@ -5210,7 +5592,6 @@ const handleFitToScreen = useCallback(() => {
     }
     debouncedPushHistory();
     debouncedPersistData();
-    // Gá»­i patch cho Tá»ªNG node
     selectedNodeIds.forEach(id => {
       sendPatch('NODE_STYLE_UPDATE', { id, updates });
     });
@@ -5225,17 +5606,12 @@ const handleFitToScreen = useCallback(() => {
         }
       }
       if (e.key === 'Tab') {
-        e.preventDefault(); // LUÃ”N LUÃ”N cháº·n trÃ¬nh duyá»‡t "nháº£y"
+        e.preventDefault(); 
 
-        // Chá»‰ thÃªm node con náº¿u:
-        // 1. KhÃ´ng Ä‘ang edit (editingNodeId lÃ  null)
-        // 2. Chá»‰ cÃ³ 1 node Ä‘Æ°á»£c chá»n
         if (!editingNodeId && selectedNodeIds.length === 1) {
           handleAddChild(selectedNodeIds[0]);
         }
-        // Náº¿u Ä‘ang edit, hoáº·c chá»n nhiá»u node, hoáº·c khÃ´ng chá»n node nÃ o,
-        // phÃ­m Tab sáº½ khÃ´ng lÃ m gÃ¬ cáº£ (vÃ¬ Ä‘Ã£ preventDefault).
-        return; // Káº¿t thÃºc xá»­ lÃ½ cho phÃ­m Tab
+        return; 
       }
       if (editingNodeId) return;
       if (
@@ -5244,29 +5620,26 @@ const handleFitToScreen = useCallback(() => {
       )
         return;
 
-      // [Sá»¬A 1] Di chuyá»ƒn Undo/Redo lÃªn TRÆ¯á»šC khi kiá»ƒm tra selectedNodeId
-      // Ä‘á»ƒ Ä‘áº£m báº£o chÃºng hoáº¡t Ä‘á»™ng toÃ n cá»¥c.
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
         e.preventDefault();
         undo();
-        return; // ThoÃ¡t sá»›m
+        return; 
       }
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y') {
         e.preventDefault();
         redo();
-        return; // ThoÃ¡t sá»›m
+        return; 
       }
 
       if (selectedNodeIds.length !== 1) {
-        // Ngoáº¡i trá»« phÃ­m Delete
         if (e.key === 'Delete' || e.key === 'Backspace') {
           e.preventDefault();
-          handleDeleteNode(); // Gá»i hÃ m khÃ´ng tham sá»‘
+          handleDeleteNode(); 
         }
         return;
       }
       
-      const singleSelectedId = selectedNodeIds[0]; // ÄÃ¢y lÃ  node duy nháº¥t Ä‘ang Ä‘Æ°á»£c chá»n
+      const singleSelectedId = selectedNodeIds[0]; 
 
       if (e.key === 'Tab') {
         e.preventDefault();
@@ -5276,7 +5649,7 @@ const handleFitToScreen = useCallback(() => {
         handleAddSibling(singleSelectedId);
       } else if (e.key === 'Delete' || e.key === 'Backspace') {
         e.preventDefault();
-        handleDeleteNode(); // Gá»i hÃ m khÃ´ng tham sá»‘
+        handleDeleteNode(); 
       } else if (e.key === 'F2') {
         e.preventDefault();
         startEditing(singleSelectedId);
@@ -5294,20 +5667,18 @@ const handleFitToScreen = useCallback(() => {
       }
     },
     [
-      editingNodeId, selectedNodeIds, handleAddChild, // Cáº­p nháº­t dependency
+      editingNodeId, selectedNodeIds, handleAddChild, 
       handleAddSibling, handleDeleteNode, undo, redo, startEditing,
     ]
   );
 
   const handleToolbarAddChild = useCallback(() => {
-    // Chá»‰ hoáº¡t Ä‘á»™ng náº¿u 1 node (vÃ  chá»‰ 1) Ä‘ang Ä‘Æ°á»£c chá»n
     if (selectedNodeIds.length === 1) { 
       handleAddChild(selectedNodeIds[0]);
     }
-  }, [selectedNodeIds, handleAddChild]); // handleAddChild Ä‘Ã£ Ä‘Æ°á»£c bá»c trong useCallback
+  }, [selectedNodeIds, handleAddChild]); 
 
   const handleToolbarAddSibling = useCallback(() => {
-    // Chá»‰ hoáº¡t Ä‘á»™ng náº¿u 1 node (vÃ  chá»‰ 1) Ä‘ang Ä‘Æ°á»£c chá»n
     if (selectedNodeIds.length === 1) { 
       handleAddSibling(selectedNodeIds[0]);
     }
@@ -5318,17 +5689,10 @@ const handleFitToScreen = useCallback(() => {
   const nodeId = selectedNodeIds[0];
   const node = nodeMap.get(nodeId);
   if (!node) return;
-
-  
-
-  // Láº¥y hyperlink hiá»‡n táº¡i (náº¿u cÃ³) tá»« node.
-  // Cáº§n Ä‘áº£m báº£o `node.hyperlink` tá»“n táº¡i trong kiá»ƒu NodeData cá»§a báº¡n.
   const currentUrl = (node as any).hyperlink || "";
   const url = window.prompt("Nháº­p URL cho liÃªn káº¿t (Ä‘á»ƒ trá»‘ng Ä‘á»ƒ xÃ³a):", currentUrl);
-  
-  if (url !== null) { // User clicked OK (null nghÄ©a lÃ  Cancel)
-    // ChÃºng ta gá»i handleUpdateNode, nÃ³ Ä‘Ã£ Ä‘Æ°á»£c refactor Ä‘á»ƒ xá»­ lÃ½ nhiá»u node
-    // nhÆ°ng á»Ÿ Ä‘Ã¢y nÃ³ sáº½ chá»‰ Ã¡p dá»¥ng cho 1 node Ä‘ang Ä‘Æ°á»£c chá»n
+   
+  if (url !== null) { 
     handleUpdateNode({ hyperlink: url || undefined });
   }
   }, [selectedNodeIds, nodeMap, handleUpdateNode]);
@@ -5338,10 +5702,6 @@ const handleFitToScreen = useCallback(() => {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [handleKeyDown]);
 
-  // ================================================
-  // Drag & Drop [Cáº¬P NHáº¬T GÄ 7 + 9]
-  // ================================================
-
   const handleDragStart = (nodeId: string) => {
     pushHistory(useEditorStore.getState().nodes, useEditorStore.getState().edges); // GÄ 7
     setDragStartState({ nodes, edges });
@@ -5350,6 +5710,40 @@ const handleFitToScreen = useCallback(() => {
       node.stopDrag();
     }
   };
+
+  // ...
+  const handleImageLoad = useCallback((nodeId: string, width: number, height: number) => {
+    const { nodes, edges } = useEditorStore.getState();
+    const node = nodes.find(n => n.id === nodeId);
+    
+    // Chá»‰ update náº¿u chÆ°a cÃ³ kÃ­ch thÆ°á»›c hoáº·c kÃ­ch thÆ°á»›c thay Ä‘á»•i
+    if (node && (node.imageWidth !== width || node.imageHeight !== height)) {
+        const newNodes = nodes.map(n => 
+            n.id === nodeId ? { ...n, imageWidth: width, imageHeight: height } : n
+        );
+        setGraph(newNodes, edges);
+        debouncedPersistData();
+       
+        pendingLayoutRef.current = true;
+    }
+  }, [setGraph, debouncedPersistData]); 
+
+  useEffect(() => {
+    if (pendingLayoutRef.current) {
+      handleLayout(true); 
+      pendingLayoutRef.current = false;
+    }
+  }, [handleLayout]);
+
+  useEffect(() => {
+    if (isDataLoaded) {
+      const t = setTimeout(() => {
+        handleFitToScreen();
+        setIsReadyToShow(true); 
+      }, 10); 
+      return () => clearTimeout(t);
+    }
+  }, [isDataLoaded, handleFitToScreen]);
 
   const handleDragMove = (e: any, draggedNodeId: string) => {
     const pos = e.target.position();
@@ -5379,7 +5773,6 @@ const handleFitToScreen = useCallback(() => {
     const finalY = e.target.y();
 
     if (dropTargetId && dropTargetId !== draggedNodeId) {
-      // Reparent
       const draggedNode = nodes.find((n) => n.id === draggedNodeId);
       if (!draggedNode) return;
       let isDroppingOnChild = false;
@@ -5423,12 +5816,10 @@ const handleFitToScreen = useCallback(() => {
           : n
       );
       setGraph(newNodes, newEdges);
-      // [GÄ 9] Gá»­i patch
       sendPatch('NODE_REPARENT', {
         nodeId: draggedNodeId, newParentId, x: finalX, y: finalY, side: parentSide,
       });
     } else {
-      // KÃ©o
       const newNodes = nodes.map((n) => {
         if (n.id === draggedNodeId) {
           if (n.parentId) {
@@ -5441,91 +5832,71 @@ const handleFitToScreen = useCallback(() => {
         return n;
       });
       setGraph(newNodes, edges);
-      // [GÄ 9] Gá»­i patch
       sendPatch('NODE_MOVE', { id: draggedNodeId, x: finalX, y: finalY });
     }
     setDropTargetId(null);
-    setTimeout(() => handleLayout(true), 50); // Giá»¯ camera
-    // [GÄ 7] Gá»i debouncer
-    // [Sá»¬A 2] XÃ³a debouncedPushHistory. ÄÃ£ push á»Ÿ handleDragStart.
-    // debouncedPushHistory();
+    setTimeout(() => handleLayout(true), 50); 
     debouncedPersistData();
   };
 
-  // ================================================
-  // Handlers cho Toolbar [Cáº¬P NHáº¬T GÄ 7 + 9]
-  // ================================================
-
-  // [MERGE] Giá»¯ láº¡i logic UI má»›i tá»« feature/tt
   const handleToggleColoredBranch = (state: boolean) => {
-    pushHistory(useEditorStore.getState().nodes, useEditorStore.getState().edges); // Logic nÃ y áº£nh hÆ°á»Ÿng toÃ n bá»™, push ngay
+    pushHistory(useEditorStore.getState().nodes, useEditorStore.getState().edges); 
     if (state) {
       const rootChildren = edges.filter(e => e.from === 'root').map(e => e.to);
       let newNodes = [...nodes];
       rootChildren.forEach((childId, idx) => {
         const color = BRANCH_COLORS_PALETTE[idx % BRANCH_COLORS_PALETTE.length];
         const assignRec = (nodeId: string) => {
-          newNodes = newNodes.map(n => n.id === nodeId ? (n.styleLocked ? n : { ...n, branchColor: color, color: mixWithWhite(color, 0.8), textColor: getContrastColor(mixWithWhite(color, 0.8)) }) : n);
+          newNodes = newNodes.map(n => n.id === nodeId ? (n.styleLocked ? n : { ...n, branchColor: color }) : n);
           edges.forEach(e => { if (e.from === nodeId) assignRec(e.to); });
         };
         assignRec(childId);
       });
       setGraph(newNodes, edges);
     } else {
-      const globalColor = useEditorStore.getState().globalBranchColor;
-      let newNodes = nodes.map(n => (n.styleLocked ? n : { ...n, branchColor: undefined, color: mixWithWhite(globalColor, 0.85), textColor: getContrastColor(mixWithWhite(globalColor, 0.85)) }));
+      const newNodes = nodes.map(n => {
+        if (n.styleLocked) return n;
+        return { 
+          ...n, 
+          branchColor: undefined, 
+          color: undefined, 
+          textColor: undefined, 
+          borderColor: undefined 
+        };
+      });
       setGraph(newNodes, edges);
     }
-    // [GÄ 7 & 9] KÃ­ch hoáº¡t lÆ°u vÃ  gá»­i patch
     debouncedPersistData();
     sendPatch('LINE_COLOR_TOGGLE', { state });
   };
 
-  // [MERGE] Giá»¯ láº¡i logic UI má»›i tá»« feature/tt
   const handleSetBackgroundColor = (color: string) => {
     setBackgroundColor(color);
-    const newNodes = nodes.map(n => {
-      if (n.styleLocked) return n;
-      const fill = mixWithWhite(color, 0.85);
-      const branchFill = color;
-      return { 
-        ...n, 
-        color: n.color || fill, 
-        branchColor: n.branchColor || branchFill,
-        textColor: getContrastColor(fill) 
-      };
-    });
-    pushHistory(useEditorStore.getState().nodes, useEditorStore.getState().edges); // Logic nÃ y áº£nh hÆ°á»Ÿng toÃ n bá»™, push ngay
-    setGraph(newNodes, edges);
-    // [GÄ 7 & 9] KÃ­ch hoáº¡t lÆ°u vÃ  gá»­i patch
+    pushHistory(useEditorStore.getState().nodes, useEditorStore.getState().edges);
     debouncedPersistData();
     sendPatch('BACKGROUND_CHANGE', { color });
   };
-  
+   
   const handleSetGlobalBranchColor = (color: string) => {
     pushHistory(useEditorStore.getState().nodes, useEditorStore.getState().edges);
-    
-    // 1. Cáº­p nháº­t store
     setGlobalStore({ globalBranchColor: color });
 
-    // 2. Reset overrides Ä‘á»ƒ cÃ¡c node nháº­n mÃ u toÃ n cá»¥c má»›i vÃ  Ã¡p dá»¥ng Fading
     const newNodes = nodes.map(n => {
       if (n.styleLocked) return n; 
       return { 
         ...n, 
-        branchColor: undefined, // Reset mÃ u nhÃ¡nh riÃªng -> Káº¿ thá»«a Global
-        color: undefined,       // Reset mÃ u ná»n cá»©ng -> Äá»ƒ tá»± Ä‘á»™ng tÃ­nh Fading
-        borderColor: undefined, // Reset mÃ u viá»n cá»©ng -> Äá»ƒ tá»± Ä‘á»™ng tÃ­nh Fading
+        branchColor: undefined,
+        color: undefined,        
+        borderColor: undefined, 
         textColor: undefined    
       };
     });
     
     setGraph(newNodes, edges);
-    
     // LÆ°u láº¡i
     useEditorStore.setState({ isDirty: true });
-    
     // Gá»­i patch
+    debouncedPersistData();
     sendPatch('GLOBAL_BRANCH_COLOR_CHANGE', { color });
   };
 
@@ -5547,9 +5918,8 @@ const handleFitToScreen = useCallback(() => {
     debouncedPersistData();
     
     // Gá»­i patch cho Tá»ªNG node
-    const tempResetStyle = applyNodeDefaults(nodes[0], activeTheme); // Táº¡m
+    const tempResetStyle = applyNodeDefaults(nodes[0], activeTheme);
     selectedNodeIds.forEach(id => {
-      // TODO: Cáº§n láº¥y resetStyle chÃ­nh xÃ¡c cho tá»«ng node
       sendPatch('NODE_QUICK_STYLE_APPLY', { id: id, styleId, resetStyle: tempResetStyle });
     });
   };
@@ -5576,7 +5946,7 @@ const handleFitToScreen = useCallback(() => {
     setTimeout(() => handleLayout(true), 50);
     debouncedPushHistory();
     debouncedPersistData();
-    sendPatch('NODE_STYLE_PASTE', { id: selectedNodeIds, style: styleClipboard }); // GÄ 9
+    sendPatch('NODE_STYLE_PASTE', { id: selectedNodeIds, style: styleClipboard }); 
   };
 
   const handleResetStyle = () => {
@@ -5590,41 +5960,32 @@ const handleFitToScreen = useCallback(() => {
     setTimeout(() => handleLayout(true), 50);
     debouncedPushHistory();
     debouncedPersistData();
-    sendPatch('NODE_STYLE_RESET', { id: selectedNodeIds, resetStyle }); // GÄ 9
+    sendPatch('NODE_STYLE_RESET', { id: selectedNodeIds, resetStyle }); 
   };
-
-  // ================================================
-  // Logic Collapse [MERGE GÄ 7 + 9]
-  // ================================================
 
   const handleToggleCollapse = useCallback(
     (e: any, nodeId: string, side?: 'left' | 'right') => {
       e.cancelBubble = true;
       
-      // [MERGE] Giá»¯ láº¡i logic UI má»›i (root collapse) tá»« feature/tt
       if (nodeId === 'root' && side) {
         setRootCollapse(prev => ({ ...prev, [side]: !prev[side] }));
-        // [GÄ 9] Gá»­i patch cho Root collapse
         sendPatch('ROOT_TOGGLE_COLLAPSE', { side });
-        // KhÃ´ng push history, khÃ´ng persist (Ä‘Ã¢y lÃ  UI state)
       } else if (nodeId !== 'root') {
-        // [MERGE] Giá»¯ láº¡i logic GÄ 7/9 (node con collapse)
         const newNodes = nodes.map(n => 
           n.id === nodeId ? { ...n, collapsed: !n.collapsed } : n
         );
         setGraph(newNodes, edges);
         debouncedPushHistory();
         debouncedPersistData();
-        sendPatch('NODE_TOGGLE_COLLAPSE', { id: nodeId }); // GÄ 9
+        sendPatch('NODE_TOGGLE_COLLAPSE', { id: nodeId }); 
       }
     },
     [
       nodes, edges, setGraph, debouncedPushHistory, 
-      debouncedPersistData, sendPatch, // GÄ 7 & 9
+      debouncedPersistData, sendPatch, 
     ]
   );
 
-  // [MERGE] Giá»¯ láº¡i logic UI má»›i (isNodeVisible) tá»« feature/tt
   const isNodeVisible = useCallback((nodeId: string): boolean => {
     const node = nodeMap.get(nodeId);
     if (!node) return false;
@@ -5656,7 +6017,6 @@ const handleFitToScreen = useCallback(() => {
     [edges, visibleNodeIds]
   );
 
-  // [MERGE] Giá»¯ láº¡i logic UI má»›i (descendantCounts) tá»« feature/tt
   const descendantCounts = useMemo(() => {
     const counts = new Map<string, number>();
     const rootCounts = { left: 0, right: 0 };
@@ -5700,7 +6060,7 @@ const handleFitToScreen = useCallback(() => {
       if (!visual || !el) return;
       el.style.height = 'auto';
       const unscaledScroll = el.scrollHeight / Math.max(scale, 0.0001);
-      const target = Math.max(visual.box.h, unscaledScroll);
+      const target = Math.max(visual.box.h, unscaledScroll)*0.8;
       el.style.height = `${target}px`;
     };
     resize();
@@ -5735,10 +6095,10 @@ const handleFitToScreen = useCallback(() => {
   }, [editingNodeId, nodeVisuals, nodeMap, scale, pos]);
 
   // ================================================
-  // Render (Há»£p nháº¥t JSX cá»§a feature/tt vá»›i Logic cá»§a chÃºng ta)
+  // Render 
   // ================================================
 
-  if (!isDataLoaded) {
+  if (!isReadyToShow) { 
     return (
       <div className="w-screen h-screen bg-white flex items-center justify-center text-gray-800 gap-2">
         <Spinner className="w-8 h-8 border-gray-400 border-t-gray-800" />
@@ -5753,9 +6113,9 @@ const handleFitToScreen = useCallback(() => {
         {fonts
           .map(
             (font) =>
-              `@import url('https://fonts.googleapis.com/css2?family=${
+              `..import url('https://fonts.googleapis.com/css2?family=${
                 font.value.split(',')[0].replace(/ /g, '+')
-              }:wght@400;700&display=swap');`
+              }:wght..400;700&display=swap');`
           )
           .join('\n')}
       </style>
@@ -5787,92 +6147,84 @@ const handleFitToScreen = useCallback(() => {
           onAddChild={handleToolbarAddChild}
           onAddSibling={handleToolbarAddSibling}
           onSetHyperlink={handleSetHyperlink}
+          onUpdateNode={handleUpdateNode}
+          onToggleBoundary={handleToggleBoundary}
         />
         <Sidebar />
 
         {editingNodeId &&
           (() => {
-            // [MERGE] Giá»¯ láº¡i logic textarea wrapper má»›i cá»§a feature/tt
             const visual = nodeVisuals.get(editingNodeId!);
             const node = nodeMap.get(editingNodeId!);
             if (!visual || !node || !stageRef.current) return null;
+
+            const { style, box } = visual;
             const stageRect = stageRef.current.container().getBoundingClientRect();
-            const wrapperStyle: React.CSSProperties = {
-              position: 'absolute',
-              left: stageRect.left,
-              top: stageRect.top,
-              width: stageRect.width,
-              height: stageRect.height,
-              transform: `translate(${pos.x}px, ${pos.y}px) scale(${scale})`,
-              transformOrigin: '0 0',
-              zIndex: 50,
-              pointerEvents: 'none',
-            };
-            const localLeft = visual.style.x - visual.box.w / 2;
-            const localTop = visual.style.y - visual.box.h / 2;
+            const absoluteX = stageRect.left + pos.x + style.x * scale;
+            const absoluteY = stageRect.top + pos.y + style.y * scale;
+
             return (
-              <div style={wrapperStyle}>
-                <textarea
-                  ref={editingInputRef}
-                  defaultValue={node.nodeText}
-                  onInput={(e) => {
-                    const el = e.currentTarget as HTMLTextAreaElement;
-                    const visualNow = visual;
-                    if (!visualNow) return;
-                    el.style.height = 'auto';
-                    const unscaledScroll = el.scrollHeight / Math.max(scale, 0.0001);
-                    const targetH = Math.max(visualNow.box.h, unscaledScroll);
-                    el.style.height = `${targetH}px`;
-                  }}
-                  onBlur={() => stopEditing(true)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' && !e.shiftKey) {
-                      e.preventDefault();
-                      stopEditing(true);
-                    } else if (e.key === 'Escape') {
-                      stopEditing(false);
-                    } else if (e.key === 'Tab') {
-                      e.preventDefault(); // NgÄƒn Tab nháº£y focus
-                      stopEditing(true); // LÆ°u vÃ  káº¿t thÃºc
+              <textarea
+                ref={editingInputRef}
+                defaultValue={node.nodeText}
+                onInput={(e) => {
+                  const el = e.currentTarget as HTMLTextAreaElement;
+                  el.style.height = 'auto';
+                  const newHeight = Math.max(visual.box.h, el.scrollHeight);
+                  el.style.height = `${newHeight}px`;
+                }}
+                onBlur={() => stopEditing(true)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    stopEditing(true);
+                  } else if (e.key === 'Escape') {
+                    stopEditing(false);
+                  } else if (e.key === 'Tab') {
+                    e.preventDefault();
+                    stopEditing(true);
                   }
-                  }}
-                  style={{
-                    position: 'absolute',
-                    left: localLeft,
-                    top: localTop,
-                    width: visual.box.w,
-                    height: visual.box.h,
-                    fontSize: `${visual.box.finalFontSize}px`,
-                    fontWeight: visual.style.fontWeight || 'normal',
-                    fontStyle: visual.style.fontStyle === 'italic' ? 'italic' : 'normal',
-                    fontFamily: visual.style.fontFamily || 'Inter',
-                    lineHeight: LINE_HEIGHT_MULTIPLIER,
-                    padding: `${PADDING_Y}px ${PADDING_X}px`,
-                    textAlign: visual.style.textAlign || 'center',
-                    textDecoration: visual.style.textDecoration || 'none',
-                    color: visual.style.textColor || '#333333',
-                    backgroundColor: visual.style.color,
-                    border: `${visual.style.borderWidth || 0}px ${
-                      visual.style.borderStyle === 'dashed' ? 'dashed'
-                      : visual.style.borderStyle === 'dotted' ? 'dotted'
-                      : 'solid'
-                    } ${visual.style.borderColor || 'transparent'}`,
-                    borderRadius: visual.style.shape === 'roundedRect' ? '8px' : '0px',
-                    boxSizing: 'border-box',
-                    outline: 'none',
-                    boxShadow: 'none',
-                    transition: 'none',
-                    pointerEvents: 'auto',
-                    overflow: 'hidden',
-                  }}
-                  className="z-50 rounded-md outline-none resize-none"
-                />
-              </div>
+                }}
+                style={{
+                  position: 'fixed',
+                  left: absoluteX,
+                  top: absoluteY,
+                  width: visual.box.w,
+                  height: visual.box.h,
+                  transform: `translate(-50%, -50%) scale(${scale})`,
+                  transformOrigin: 'center center',
+                  
+                  fontSize: `${visual.box.finalFontSize}px`,
+                  fontWeight: visual.style.fontWeight || 'normal',
+                  fontStyle: visual.style.fontStyle === 'italic' ? 'italic' : 'normal',
+                  fontFamily: visual.style.fontFamily || 'Inter',
+                  lineHeight: 1.3, 
+                  padding: `${PADDING_Y}px ${PADDING_X}px`,
+                  textAlign: visual.style.textAlign || 'center',
+                  textDecoration: visual.style.textDecoration || 'none',
+                  color: visual.style.textColor || '#333333',
+                  backgroundColor: visual.style.color,
+                  
+                  border: `${visual.style.borderWidth || 0}px ${
+                    visual.style.borderStyle === 'dashed' ? 'dashed'
+                    : visual.style.borderStyle === 'dotted' ? 'dotted'
+                    : 'solid'
+                  } ${visual.style.borderColor || 'transparent'}`,
+                  borderRadius: visual.style.shape === 'roundedRect' ? '8px' : '0px',
+                  
+                  boxSizing: 'border-box',
+                  outline: '2px solid #3b82f6', 
+                  zIndex: 100,
+                  overflow: 'hidden',
+                  resize: 'none',
+                }}
+                className="shadow-lg" 
+              />
             );
           })()}
 
         <div
-          className="w-full h-full pt-12 relative" // UI Má»›i (pt-12)
+          className="w-full h-full pt-12 relative" 
           style={{ backgroundColor }}
         >
           <Stage
@@ -5884,12 +6236,12 @@ const handleFitToScreen = useCallback(() => {
             x={pos.x}
             y={pos.y}
             onWheel={(e) => {
-              e.evt.preventDefault(); // NgÄƒn trang web cuá»™n
+              e.evt.preventDefault(); 
               const stage = e.target.getStage();
               if (!stage) return;
 
               if (e.evt.ctrlKey) {
-                // === LOGIC ZOOM (Giá»¯ nguyÃªn) ===
+                // === LOGIC ZOOM ===
                 const scaleBy = 1.05;
                 const oldScale = stage.scaleX();
                 const pointerPos = stage.getPointerPosition();
@@ -5907,10 +6259,9 @@ const handleFitToScreen = useCallback(() => {
                   y: pointerPos.y - mousePointTo.y * newScale,
                 });
               } else {
-                // === LOGIC PAN (ThÃªm má»›i) ===
-                // DÃ¹ng cho cuá»™n chuá»™t 2 ngÃ³n tay trÃªn touchpad
+                // === LOGIC PAN ===
                 setPos({
-                  x: pos.x - e.evt.deltaX, // DÃ¹ng dáº¥u trá»« Ä‘á»ƒ di chuyá»ƒn Ä‘Ãºng hÆ°á»›ng
+                  x: pos.x - e.evt.deltaX, 
                   y: pos.y - e.evt.deltaY,
                 });
               }
@@ -5920,21 +6271,15 @@ const handleFitToScreen = useCallback(() => {
               if (!stage) return;
 
               const isPanIntent = (e.evt.ctrlKey && e.evt.button === 0) || e.evt.button === 1;
-
-              // Chá»‰ xá»­ lÃ½ khi click vÃ o ná»n (Stage)
               if (e.target === stage) {
                 if (isPanIntent) {
                   setIsPanning(true);
                   isSelecting.current = false;
                 } else if (e.evt.button === 0) {
-                  // Click trÃ¡i bÃ¬nh thÆ°á»ng -> Báº¯t Ä‘áº§u chá»n vÃ¹ng
                   setIsPanning(false);
                   isSelecting.current = true;
-                  
                   const pos = stage.getPointerPosition();
                   if (!pos) return;
-                  
-                  // Láº¥y vá»‹ trÃ­ tÆ°Æ¡ng Ä‘á»‘i (un-scaled)
                   const unscaledPos = {
                     x: (pos.x - stage.x()) / stage.scaleX(),
                     y: (pos.y - stage.y()) / stage.scaleY(),
@@ -5948,8 +6293,6 @@ const handleFitToScreen = useCallback(() => {
                     height: 0,
                     visible: true,
                   });
-                  
-                  // Náº¿u khÃ´ng giá»¯ Shift, bá» chá»n táº¥t cáº£
                   if (!e.evt.shiftKey) {
                     setSelectedNodeIds([]);
                   }
@@ -5961,11 +6304,8 @@ const handleFitToScreen = useCallback(() => {
               setIsPanning(false);
 
               if (isSelecting.current && selectionRect.visible) {
-                // ÄÃ£ kÃ©o xong, áº©n hÃ¬nh chá»¯ nháº­t
                 isSelecting.current = false;
                 setSelectionRect({ ...selectionRect, visible: false });
-
-                // XÃ¡c Ä‘á»‹nh cÃ¡c node náº±m trong vÃ¹ng chá»n
                 const { x, y, width, height } = selectionRect;
                 const rect = {
                   x1: x,
@@ -5976,7 +6316,6 @@ const handleFitToScreen = useCallback(() => {
 
                 const newlySelectedIds = visibleNodes
                   .filter((node) => {
-                    // Chá»n náº¿u tÃ¢m node náº±m trong hÃ¬nh chá»¯ nháº­t
                     return (
                       node.x > rect.x1 &&
                       node.x < rect.x2 &&
@@ -5987,10 +6326,8 @@ const handleFitToScreen = useCallback(() => {
                   .map((node) => node.id);
 
                 if (e.evt.shiftKey) {
-                  // ThÃªm vÃ o danh sÃ¡ch cÅ©
                   setSelectedNodeIds(prevIds => [...new Set([...prevIds, ...newlySelectedIds])]);
                 } else {
-                  // Thay tháº¿ danh sÃ¡ch cÅ©
                   setSelectedNodeIds(newlySelectedIds);
                 }
               }
@@ -5999,7 +6336,6 @@ const handleFitToScreen = useCallback(() => {
               if (isPanning) {
                 setPos({ x: pos.x + e.evt.movementX, y: pos.y + e.evt.movementY });
               } else if (isSelecting.current) {
-                // Cáº­p nháº­t kÃ­ch thÆ°á»›c hÃ¬nh chá»¯ nháº­t chá»n
                 const stage = e.target.getStage();
                 if (!stage) return;
                 const pos = stage.getPointerPosition();
@@ -6022,7 +6358,7 @@ const handleFitToScreen = useCallback(() => {
             }}
             onDblClick={(e) => {
               const stage = e.target.getStage();
-              if (e.target !== stage || !stage) return;
+              if (e.target !== stage) return;
               const pointerPos = stage.getPointerPosition();
               if (!pointerPos) return;
               const worldX = (pointerPos.x - pos.x) / scale;
@@ -6040,7 +6376,6 @@ const handleFitToScreen = useCallback(() => {
               const newNodes = [...nodes, newNodeData];
               setGraph(newNodes, edges);
               startEditing(newId);
-              // [MERGE GÄ 7+9]
               debouncedPushHistory();
               debouncedPersistData();
               sendPatch('NODE_CREATE', { node: newNodeData, edge: null });
@@ -6053,7 +6388,17 @@ const handleFitToScreen = useCallback(() => {
             }}
           >
             <Layer>
-              {/* [MERGE] Giá»¯ láº¡i logic render Edge cá»§a feature/tt */}
+              {visibleNodes.map((node) =>
+                node.boundary ? (
+                  <Boundary
+                    key={`boundary-${node.id}`}
+                    nodeId={node.id}
+                    nodes={nodes}
+                    edges={edges}
+                    nodeVisuals={nodeVisuals}
+                  />
+                ) : null
+              )}
               {visibleEdges.map((edge) => {
                 const fromVisual = nodeVisuals.get(edge.from);
                 const toVisual = nodeVisuals.get(edge.to);
@@ -6086,7 +6431,7 @@ const handleFitToScreen = useCallback(() => {
                 let strokeColor = globalBranchColor;
                 strokeColor = globalBranchColor;
                 const strokeWidth = branchLineWidth || 2;
-                const isBezier = toStyle.branchLineStyle === 'bezier' && globalStructure !== 'org';
+                const isBezier = fromStyle.branchLineStyle === 'bezier' && globalStructure !== 'org'; // Changed to fromStyle
                 const lineProps = {
                   points: points,
                   stroke: strokeColor,
@@ -6095,18 +6440,17 @@ const handleFitToScreen = useCallback(() => {
                   lineCap: 'round' as const,
                   lineJoin: 'round' as const,
                 };
-                if (toStyle.branchLineEnd === 'arrow') {
+                if (fromStyle.branchLineEnd === 'arrow') { // Changed to fromStyle
                   return <Arrow {...lineProps} key={edge.id} pointerLength={8} pointerWidth={6} fill={strokeColor} />;
                 }
                 return <Line {...lineProps} key={edge.id} />;
               })}
 
-              {/* [MERGE] Giá»¯ láº¡i logic render Node cá»§a feature/tt */}
               {visibleNodes.map((node) => {
                 const visual = nodeVisuals.get(node.id);
                 if (!visual) return null;
                 const { style, box } = visual;
-                const { w, h, textToRender, finalFontSize } = box;
+                const { w, h, textToRender, finalFontSize, imageHeight, imageWidthDisplay } = box;
                 const isSelected = selectedIdsSet.has(node.id);
                 const isDropTarget = node.id === dropTargetId;
                 const hasChildren = nodesWithChildren.has(node.id);
@@ -6126,7 +6470,6 @@ const handleFitToScreen = useCallback(() => {
                     onClick={(e) => {
                       e.cancelBubble = true;
                       if (e.evt.shiftKey) {
-                        // Giá»¯ Shift: ThÃªm/bá»›t
                         setSelectedNodeIds(prevIds => {
                           const newSet = new Set(prevIds);
                           if (newSet.has(node.id)) {
@@ -6137,7 +6480,6 @@ const handleFitToScreen = useCallback(() => {
                           return Array.from(newSet);
                         });
                       } else {
-                        // Click thÆ°á»ng: Chá»‰ chá»n node nÃ y
                         setSelectedNodeIds([node.id]);
                       }
                     }}
@@ -6149,10 +6491,25 @@ const handleFitToScreen = useCallback(() => {
                       <Rect {...shapeProps} cornerRadius={style.shape === 'roundedRect' ? 8 : 0} />
                     )}
                     
+                    {/* [Má»šI] Hiá»ƒn thá»‹ áº£nh trong Node */}
+                    {style.imageUrl && (
+                      <URLImage 
+                        src={style.imageUrl}
+                        x={-w/2 + (style.borderWidth || 0) + PADDING_X} 
+                        y={-h/2 + (style.borderWidth || 0) + PADDING_Y} 
+                        width={imageWidthDisplay}
+                        height={imageHeight}
+                        onImageLoad={(imgW: number, imgH: number) => handleImageLoad(node.id, imgW, imgH)}
+                      />
+                    )}
+
                     <Text
                       visible={editingNodeId !== node.id}
                       text={textToRender || '(...)'}
-                      width={w} height={h} offsetX={w / 2} offsetY={h / 2}
+                      width={w} 
+                      height={style.imageUrl ? (h - imageHeight - 10) : h} 
+                      offsetX={w / 2} 
+                      offsetY={style.imageUrl ? (h / 2) - imageHeight - 10 : h / 2} 
                       align={style.textAlign}
                       verticalAlign="middle"
                       fill={style.textColor}
@@ -6164,7 +6521,6 @@ const handleFitToScreen = useCallback(() => {
                       lineHeight={LINE_HEIGHT_MULTIPLIER}
                     />
                     
-                    {/* [MERGE] Giá»¯ láº¡i logic UI má»›i (root collapse) tá»« feature/tt */}
                     {node.id === 'root' ? (
                       <>
                         {rootChildSides.left && (
@@ -6211,7 +6567,6 @@ const handleFitToScreen = useCallback(() => {
                         )}
                       </>
                     ) : (
-                      /* [MERGE] Giá»¯ láº¡i logic UI má»›i (node con collapse) tá»« feature/tt */
                       hasChildren && (
                         <Group
                           x={(style.side === 'left' ? -w / 2 : w / 2)}
@@ -6237,26 +6592,26 @@ const handleFitToScreen = useCallback(() => {
                     )}
                     {(style as any).hyperlink && (
                     <Group
-                      // Äáº·t icon á»Ÿ gÃ³c trÃªn bÃªn pháº£i, bÃªn ngoÃ i node
-                      x={w / 2 - 10} // Äiá»u chá»‰nh vá»‹ trÃ­
-                      y={-h / 2 + 10} // Äiá»u chá»‰nh vá»‹ trÃ­
+                      x={w / 2 - 20} 
+                      y={0} 
                       onClick={(e) => {
-                        e.cancelBubble = true; // NgÄƒn khÃ´ng cho click nÃ y chá»n node
+                        e.cancelBubble = true; 
                         window.open((style as any).hyperlink, '_blank', 'noopener,noreferrer');
                       }}
                       onMouseEnter={(e) => { const stage = e.target.getStage(); if (stage) stage.container().style.cursor = 'pointer'; }}
                       onMouseLeave={(e) => { const stage = e.target.getStage(); if (stage) stage.container().style.cursor = 'default'; }}
                       title={`Má»Ÿ link: ${(style as any).hyperlink}`}
                     >
-                      {/* VÃ²ng trÃ²n ná»n nhá» */}
-                      <Circle radius={9} fill="#E0E7FF" stroke="#4F46E5" strokeWidth={1} />
-                      {/* Icon Link (SVG Path) */}
+                      <Circle radius={8} fill="#5f85ffff" stroke="#ffffffff" strokeWidth={1} />
                       <Path 
-                        data="M9.25 10.75a.75.75 0 0 0 1.5 0v-1.5h1.5a.75.75 0 0 0 0-1.5h-1.5v-1.5a.75.75 0 0 0-1.5 0v1.5h-1.5a.75.75 0 0 0 0 1.5h1.5v1.5Z M3.75 5.5a2 2 0 0 1 2-2h4.5a2 2 0 0 1 2 2v1a.75.75 0 0 0 1.5 0v-1a3.5 3.5 0 0 0-3.5-3.5h-4.5A3.5 3.5 0 0 0 2.25 5.5v5A3.5 3.5 0 0 0 5.75 14h1a.75.75 0 0 0 0-1.5h-1a2 2 0 0 1-2-2v-5Z"
-                        fill="#4F46E5"
-                        scale={{ x: 0.8, y: 0.8 }}
-                        offsetX={10} // CÄƒn giá»¯a icon
-                        offsetY={10} // CÄƒn giá»¯a icon
+                        data="M21 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h6 M21 3l-9 9 M15 3h6v6"
+                        stroke="#ffffffff"      
+                        strokeWidth={2}       
+                        lineCap="round"
+                        lineJoin="round"
+                        scale={{ x: 0.4, y: 0.4 }} 
+                        offsetX={12}          
+                        offsetY={12}          
                       />
                     </Group>
                   )}
@@ -6301,7 +6656,6 @@ const handleFitToScreen = useCallback(() => {
                 pushHistory(useEditorStore.getState().nodes, useEditorStore.getState().edges);
                 useEditorStore.setState({ branchLineWidth: width, isDirty: true });
               }}
-              // Chá»‰ cÃ²n 1 hÃ m set mÃ u nhÃ¡nh
               onSetGlobalBranchColor={handleSetGlobalBranchColor}
               onSetActiveColorTheme={(themeName) => {
                 pushHistory(useEditorStore.getState().nodes, useEditorStore.getState().edges);
@@ -6315,7 +6669,6 @@ const handleFitToScreen = useCallback(() => {
               onPasteStyle={handlePasteStyle}
               onResetStyle={handleResetStyle}
               
-              // Dummy props Ä‘á»ƒ khÃ´ng lá»—i náº¿u interface chÆ°a ká»‹p xÃ³a
               onToggleColoredBranch={() => {}}
             />
           )}
@@ -6613,14 +6966,6 @@ export function isExpired(t?: Tokens | null, skewSeconds = 30): boolean {
 }
 
 ==== D:\Ver2_MM\mindmap-project copy 2\web\src\services\dataMapper.ts ====
-/**
- * Lá»šP PHIÃŠN Dá»ŠCH Dá»® LIá»†U (DATA MAPPER)
- *
- * [Cáº¬P NHáº¬T]
- * - ThÃªm `BeGlobalSettings` Ä‘á»ƒ lÆ°u cÃ¡c cÃ i Ä‘áº·t toÃ n cá»¥c (font, mÃ u ná»n, v.v.)
- * - Cáº­p nháº­t `normalizeContentFEtoBE` Ä‘á»ƒ Láº¤Y cÃ i Ä‘áº·t tá»« store vÃ  lÆ°u vÃ o `globalSettings`.
- * - Cáº­p nháº­t `normalizeContentBEtoFE` Ä‘á»ƒ TRáº¢ Vá»€ cÃ¡c cÃ i Ä‘áº·t Ä‘Ã£ lÆ°u.
- */
 
 // 1. IMPORT TYPES Cá»¦A FRONTEND
 import {
@@ -6675,6 +7020,7 @@ export type BeNodeData = {
   hyperlink?: string | null;
   notes?: string | null;
   externalReference?: any | null;
+  boundary?: boolean;
 };
 
 export type BeEdgeData = {
@@ -6761,6 +7107,7 @@ export function normalizeNodeFEtoBE(feNode: FeNodeData): BeNodeData {
     quickStyleId,
     hyperlink,
     styleLocked,
+    boundary,
   } = feNode;
 
   // Táº¡o object 'style' lá»“ng nhau
@@ -6799,6 +7146,7 @@ export function normalizeNodeFEtoBE(feNode: FeNodeData): BeNodeData {
     side: side,
     style: beStyle,
     hyperlink: hyperlink,
+    boundary: boundary,
   };
 
   return beNode;
@@ -6808,7 +7156,7 @@ export function normalizeNodeFEtoBE(feNode: FeNodeData): BeNodeData {
  * Dá»‹ch 1 Node: Backend (lá»“ng style) -> Frontend (pháº³ng)
  */
 export function normalizeNodeBEtoFE(beNode: BeNodeData): FeNodeData {
-  const { id, text, x, y, parentId, collapsed, side, style, hyperlink } = beNode;
+  const { id, text, x, y, parentId, collapsed, side, style, hyperlink, boundary } = beNode;
 
   const safeStyle = style || {};
 
@@ -6822,6 +7170,7 @@ export function normalizeNodeBEtoFE(beNode: BeNodeData): FeNodeData {
     collapsed: collapsed || false,
     side: side,
     hyperlink: hyperlink || undefined,
+    boundary: boundary || false,
     shape: safeStyle.shape,
     color: safeStyle.backgroundColor,
     borderColor: safeStyle.borderColor,
@@ -6867,7 +7216,6 @@ export function normalizeContentFEtoBE(
     globalStructure,
     globalFont,
     branchLineWidth,
-    isColoredBranch,
     globalBranchColor,
     backgroundColor,
     activeColorThemeId,
@@ -6876,7 +7224,6 @@ export function normalizeContentFEtoBE(
   const beGlobalSettings: BeGlobalSettings = {
     fontFamily: globalFont,
     branchLineWidth,
-    isColoredBranch,
     globalBranchColor,
     backgroundColor,
     activeColorThemeId,
@@ -6905,7 +7252,6 @@ export function normalizeContentBEtoFE(
   // [Má»šI] ThÃªm cÃ¡c trÆ°á»ng global
   fontFamily?: string;
   branchLineWidth?: number;
-  isColoredBranch?: boolean;
   globalBranchColor?: string;
   backgroundColor?: string;
   activeColorThemeId?: string;
@@ -6914,7 +7260,6 @@ export function normalizeContentBEtoFE(
   const defaults = {
     fontFamily: fonts[0].value,
     branchLineWidth: 2,
-    isColoredBranch: true,
     globalBranchColor: '#94A3B8',
     activeColorThemeId: 'dawn',
     backgroundColor: colorThemes['dawn'].background,
@@ -6934,8 +7279,9 @@ export function normalizeContentBEtoFE(
         backgroundColor: '#FFFFFF',
         textColor: '#1E293B',
         borderStyle: 'solid',
-        fontWeight: 'normal',
+        fontWeight: 'bold',
         fontStyle: 'normal',
+        textCase: 'uppercase',
       },
     });
     return {
@@ -6943,12 +7289,12 @@ export function normalizeContentBEtoFE(
       edges: [],
       layoutMode: 'mindmap',
       theme: 'light',
-      ...defaults, // [Má»šI] Tráº£ vá» máº·c Ä‘á»‹nh
+      ...defaults, 
     };
   }
 
   const feNodes = beContent.nodes.map(normalizeNodeBEtoFE);
-  const settings = beContent.globalSettings || {}; // [Má»šI] Láº¥y cÃ i Ä‘áº·t Ä‘Ã£ lÆ°u
+  const settings = beContent.globalSettings || {}; 
 
   return {
     nodes: feNodes,
@@ -6959,10 +7305,9 @@ export function normalizeContentBEtoFE(
     })),
     layoutMode: beContent.layoutMode || 'mindmap',
     theme: beContent.theme || 'light',
-    // [Má»šI] Tráº£ vá» cÃ i Ä‘áº·t Ä‘Ã£ lÆ°u, fallback vá» máº·c Ä‘á»‹nh
     fontFamily: settings.fontFamily || defaults.fontFamily,
     branchLineWidth: settings.branchLineWidth !== undefined ? settings.branchLineWidth : defaults.branchLineWidth,
-    isColoredBranch: settings.isColoredBranch !== undefined ? settings.isColoredBranch : defaults.isColoredBranch,
+
     globalBranchColor: settings.globalBranchColor || defaults.globalBranchColor,
     activeColorThemeId: settings.activeColorThemeId || defaults.activeColorThemeId,
     backgroundColor: settings.backgroundColor || colorThemes[settings.activeColorThemeId as keyof typeof colorThemes]?.background || defaults.backgroundColor,
@@ -6975,7 +7320,6 @@ export function normalizeContentBEtoFE(
 // (KhÃ´ng thay Ä‘á»•i)
 // =================================================================================
 
-// Äá»‹nh nghÄ©a cáº¥u trÃºc (cÅ©) cá»§a Guest Doc trong localStorage
 type OldFeGuestMapItem = {
   id: string;
   name: string;
@@ -7443,5 +7787,3 @@ interface ImportMeta {
   readonly env: ImportMetaEnv;
 }
 
-Hiện có hàm phân cấp màu node nhưng nó có vẻ không hoạt động, tôi muốn nó lúc nào cũng hoạt động, cái chọn màu ở Map chỉ là thay đổi màu toàn cục của trang nên vẫn có phân cấp
-Lưu ý khi gửi code chỉ gửi đoạn cần cập nhật, đánh dấu bắt đầu kết thúc đoạn chỉnh sửa cập nhật
