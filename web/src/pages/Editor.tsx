@@ -140,10 +140,12 @@ function saveGuestDoc(
   id: string,
   name: string,
   feNodes: FeNodeData[],
-  feEdges: EdgeData[]
+  feEdges: EdgeData[],
+  feRelationships?: any[], // [MỚI] Thêm relationships
+  feSummaries?: any[] // [MỚI] Thêm summaries
 ) {
   try {
-    const beContent = normalizeContentFEtoBE(feNodes, feEdges);
+    const beContent = normalizeContentFEtoBE(feNodes, feEdges, feRelationships, feSummaries);
     const all = JSON.parse(localStorage.getItem(GUEST_BUCKET) || '{}');
     const beDoc: BeGuestDoc = { id: id, name: name, content: beContent };
     all[id] = beDoc;
@@ -287,8 +289,10 @@ export default function Editor() {
     addRelationship,
     updateRelationship,
     updateRelationshipLabel,
+    removeRelationship,
     addSummary,
     updateSummary,
+    removeSummary,
     relationships,
     summaries,
   } = useEditorStore();
@@ -303,6 +307,7 @@ export default function Editor() {
   const [relationshipFrom, setRelationshipFrom] = useState<string | null>(null);
   const [selectedRelationshipId, setSelectedRelationshipId] = useState<string | null>(null);
   const [selectedSummaryId, setSelectedSummaryId] = useState<string | null>(null);
+  const [selectedBoundaryId, setSelectedBoundaryId] = useState<string | null>(null);
 
   const handleAddRelationship = () => {
     if (selectedNodeIds.length === 1) {
@@ -328,6 +333,39 @@ export default function Editor() {
 
   const handleUpdateRelationshipLabel = (relationshipId: string, label: string) => {
     updateRelationshipLabel(relationshipId, label);
+  };
+
+  const handleDeleteRelationship = (id: string) => {
+    const relationship = relationships.find(r => r.id === id);
+    if (!relationship) return;
+    
+    // Xóa label node nếu có
+    if (relationship.labelNodeId) {
+      const newNodes = nodes.filter(n => n.id !== relationship.labelNodeId);
+      setGraph(newNodes, edges);
+    }
+    
+    removeRelationship(id);
+    setSelectedRelationshipId(null);
+    debouncedPushHistory();
+    debouncedPersistData();
+  };
+
+  const handleDeleteSummary = (id: string) => {
+    removeSummary(id);
+    setSelectedSummaryId(null);
+    debouncedPushHistory();
+    debouncedPersistData();
+  };
+
+  const handleDeleteBoundary = (nodeId: string) => {
+    const newNodes = nodes.map(n => 
+      n.id === nodeId ? { ...n, boundary: false } : n
+    );
+    setGraph(newNodes, edges);
+    setSelectedBoundaryId(null);
+    debouncedPushHistory();
+    debouncedPersistData();
   };
 
   const handleUpdateSummaryRange = (summaryId: string, newStartNodeId: string, newEndNodeId: string) => {
@@ -574,18 +612,25 @@ export default function Editor() {
   // 2. Luồng Lưu trữ (5s)
   const debouncedPersistData = useDebouncedCallback(() => {
     if (!isDataLoaded || !id) return;
-    const { nodes: currentNodes, edges: currentEdges } =
+    const { nodes: currentNodes, edges: currentEdges, relationships, summaries } =
       useEditorStore.getState();
 
     if (isGuest) {
-      saveGuestDoc(id, name, currentNodes, currentEdges);
+      saveGuestDoc(id, name, currentNodes, currentEdges, relationships, summaries);
     } else if (isAuthed) {
       const docToSave = {
         name,
-        content: { nodes: currentNodes, edges: currentEdges },
+        content: { nodes: currentNodes, edges: currentEdges, relationships, summaries },
       };
+      console.log('[DEBUG] Saving data:', {
+        nodesCount: currentNodes.length,
+        edgesCount: currentEdges.length,
+        relationshipsCount: relationships?.length || 0,
+        summariesCount: summaries?.length || 0
+      });
       mindmapsApi.update(id, docToSave).catch((e) => {
         console.error('Lưu trữ (persist) ngầm thất bại:', e);
+        console.error('Error response:', e.response?.data);
       });
     }
   }, 5000, {
@@ -643,8 +688,88 @@ export default function Editor() {
         if (isMounted) {
           useEditorStore.setState({ currentMindmapId: id, currentMindmapName: data.name, isDirty: false });
           clearHistory();
-          setGraph(data.nodes, data.edges);
-          pushHistory(data.nodes, data.edges); 
+          
+          // [MỚI] Load relationships và summaries TRƯỚC setGraph để tránh bị ghi đè
+          const relationships = data.relationships || [];
+          const summaries = data.summaries || [];
+          
+          // [FIX] Tái tạo label nodes cho relationships nếu bị mất
+          const loadedNodes = [...data.nodes];
+          const loadedEdges = [...data.edges];
+          
+          relationships.forEach((rel: any) => {
+            if (rel.labelNodeId) {
+              // Kiểm tra xem label node có tồn tại không
+              const existingLabelNode = loadedNodes.find(n => n.id === rel.labelNodeId);
+              if (!existingLabelNode) {
+                // Tái tạo label node
+                const labelNode: NodeData = {
+                  id: rel.labelNodeId,
+                  parentId: rel.id,
+                  nodeText: rel.label || 'relationship',
+                  x: 0,
+                  y: 0,
+                  shape: 'roundedRect',
+                  color: 'transparent',
+                  borderColor: 'transparent',
+                  borderWidth: 0,
+                  fontSize: 11,
+                  fontWeight: 'normal',
+                  nodeLength: 'fit',
+                };
+                loadedNodes.push(labelNode);
+              } else {
+                // Đồng bộ label text từ relationship
+                existingLabelNode.nodeText = rel.label || existingLabelNode.nodeText;
+              }
+            }
+          });
+          
+          // [FIX] Tái tạo summary nodes nếu bị mất
+          summaries.forEach((sum: any) => {
+            if (sum.summaryNodeId) {
+              const existingSummaryNode = loadedNodes.find(n => n.id === sum.summaryNodeId);
+              if (!existingSummaryNode) {
+                const summaryNode: NodeData = {
+                  id: sum.summaryNodeId,
+                  parentId: sum.id,
+                  nodeText: sum.summaryText || 'Summary',
+                  x: 0,
+                  y: 0,
+                  shape: 'roundedRect',
+                  color: '#FFFBEB',
+                  borderColor: '#F59E0B',
+                  borderWidth: 2,
+                  fontSize: 12,
+                  nodeLength: 150,
+                };
+                loadedNodes.push(summaryNode);
+                
+                // Tạo edge từ summary -> summary node
+                const edgeExists = loadedEdges.some(e => e.from === sum.id && e.to === sum.summaryNodeId);
+                if (!edgeExists) {
+                  loadedEdges.push({
+                    id: `e-${sum.summaryNodeId}`,
+                    from: sum.id,
+                    to: sum.summaryNodeId,
+                  });
+                }
+              } else {
+                // Đồng bộ summary text từ summaryData
+                existingSummaryNode.nodeText = sum.summaryText || existingSummaryNode.nodeText;
+              }
+            }
+          });
+          
+          // Set tất cả cùng lúc
+          useEditorStore.setState({
+            nodes: loadedNodes,
+            edges: loadedEdges,
+            relationships,
+            summaries,
+          });
+          
+          pushHistory(loadedNodes, loadedEdges);
           setGlobalStore({
             globalStructure: (data.layoutMode as GlobalStructure) || 'mindmap',
             globalFont: data.fontFamily || fonts[0].value,
@@ -683,7 +808,13 @@ export default function Editor() {
       addToast('Vui lòng đăng nhập để lưu mindmap.', 'info');
       login();
     } else if (id) {
-      const content = { nodes: nodes, edges };
+      // [FIX] Phải gửi đầy đủ nodes, edges, relationships, summaries
+      const content = { 
+        nodes: nodes, 
+        edges,
+        relationships: relationships || [],
+        summaries: summaries || []
+      };
       mindmapsApi
         .update(id, { name, content })
         .then(() => {
@@ -1623,9 +1754,11 @@ const handleFitToScreen = useCallback(() => {
     // Lưu ngay lập tức khi thay đổi style node
     if (id) {
       if (isGuest) {
-        saveGuestDoc(id, name, newNodes, edges);
+        const { relationships, summaries } = useEditorStore.getState();
+        saveGuestDoc(id, name, newNodes, edges, relationships, summaries);
       } else if (isAuthed) {
-        const docToSave = { name, content: { nodes: newNodes, edges } };
+        const { relationships, summaries } = useEditorStore.getState();
+        const docToSave = { name, content: { nodes: newNodes, edges, relationships, summaries } };
         mindmapsApi.update(id, docToSave).catch((e) => {
           console.error('Lưu style node thất bại:', e);
         });
@@ -1671,6 +1804,37 @@ const handleFitToScreen = useCallback(() => {
         return; 
       }
 
+      // Handle Delete for relationship, summary, or boundary
+      if (e.key === 'Delete' || e.key === 'Backspace') {
+        e.preventDefault();
+        
+        // [FIX] Ưu tiên xóa boundary nếu đang chọn boundary
+        if (selectedBoundaryId) {
+          handleDeleteBoundary(selectedBoundaryId);
+          return;
+        }
+        
+        if (selectedRelationshipId) {
+          handleDeleteRelationship(selectedRelationshipId);
+          return;
+        }
+        
+        if (selectedSummaryId) {
+          handleDeleteSummary(selectedSummaryId);
+          return;
+        }
+        
+        // Check if any selected node has boundary to delete
+        if (selectedNodeIds.length === 1) {
+          const node = nodes.find(n => n.id === selectedNodeIds[0]);
+          if (node?.boundary) {
+            // If boundary is selected, just remove boundary, don't delete node
+            handleDeleteBoundary(node.id);
+            return;
+          }
+        }
+      }
+
       if (selectedNodeIds.length !== 1) {
         if (e.key === 'Delete' || e.key === 'Backspace') {
           e.preventDefault();
@@ -1707,8 +1871,11 @@ const handleFitToScreen = useCallback(() => {
       }
     },
     [
-      editingNodeId, selectedNodeIds, handleAddChild, 
-      handleAddSibling, handleDeleteNode, undo, redo, startEditing,
+      editingNodeId, selectedNodeIds, selectedBoundaryId, 
+      selectedRelationshipId, selectedSummaryId,
+      handleAddChild, handleAddSibling, handleDeleteNode, 
+      handleDeleteBoundary, handleDeleteRelationship, handleDeleteSummary,
+      undo, redo, startEditing, nodes,
     ]
   );
 
@@ -2130,9 +2297,11 @@ const handleFitToScreen = useCallback(() => {
     if (id) {
       const { nodes: currentNodes, edges: currentEdges } = useEditorStore.getState();
       if (isGuest) {
-        saveGuestDoc(id, name, currentNodes, currentEdges);
+        const { relationships, summaries } = useEditorStore.getState();
+        saveGuestDoc(id, name, currentNodes, currentEdges, relationships, summaries);
       } else if (isAuthed) {
-        const docToSave = { name, content: { nodes: currentNodes, edges: currentEdges } };
+        const { relationships, summaries } = useEditorStore.getState();
+        const docToSave = { name, content: { nodes: currentNodes, edges: currentEdges, relationships, summaries } };
         mindmapsApi.update(id, docToSave).catch((e) => {
           console.error('Lưu màu nền thất bại:', e);
         });
@@ -2162,10 +2331,11 @@ const handleFitToScreen = useCallback(() => {
     
     // Lưu ngay lập tức
     if (id) {
+      const { relationships, summaries } = useEditorStore.getState();
       if (isGuest) {
-        saveGuestDoc(id, name, newNodes, edges);
+        saveGuestDoc(id, name, newNodes, edges, relationships, summaries);
       } else if (isAuthed) {
-        const docToSave = { name, content: { nodes: newNodes, edges } };
+        const docToSave = { name, content: { nodes: newNodes, edges, relationships, summaries } };
         mindmapsApi.update(id, docToSave).catch((e) => {
           console.error('Lưu màu dây thất bại:', e);
         });
@@ -2206,10 +2376,11 @@ const handleFitToScreen = useCallback(() => {
     
     // Lưu ngay lập tức
     if (id) {
+      const { relationships, summaries } = useEditorStore.getState();
       if (isGuest) {
-        saveGuestDoc(id, name, newNodes, edges);
+        saveGuestDoc(id, name, newNodes, edges, relationships, summaries);
       } else if (isAuthed) {
-        const docToSave = { name, content: { nodes: newNodes, edges } };
+        const docToSave = { name, content: { nodes: newNodes, edges, relationships, summaries } };
         mindmapsApi.update(id, docToSave).catch((e) => {
           console.error('Lưu quick style thất bại:', e);
         });
@@ -2246,10 +2417,11 @@ const handleFitToScreen = useCallback(() => {
     
     // Lưu ngay lập tức
     if (id) {
+      const { relationships, summaries } = useEditorStore.getState();
       if (isGuest) {
-        saveGuestDoc(id, name, newNodes, edges);
+        saveGuestDoc(id, name, newNodes, edges, relationships, summaries);
       } else if (isAuthed) {
-        const docToSave = { name, content: { nodes: newNodes, edges } };
+        const docToSave = { name, content: { nodes: newNodes, edges, relationships, summaries } };
         mindmapsApi.update(id, docToSave).catch((e) => {
           console.error('Lưu paste style thất bại:', e);
         });
@@ -2272,10 +2444,11 @@ const handleFitToScreen = useCallback(() => {
     
     // Lưu ngay lập tức
     if (id) {
+      const { relationships, summaries } = useEditorStore.getState();
       if (isGuest) {
-        saveGuestDoc(id, name, newNodes, edges);
+        saveGuestDoc(id, name, newNodes, edges, relationships, summaries);
       } else if (isAuthed) {
-        const docToSave = { name, content: { nodes: newNodes, edges } };
+        const docToSave = { name, content: { nodes: newNodes, edges, relationships, summaries } };
         mindmapsApi.update(id, docToSave).catch((e) => {
           console.error('Lưu reset style thất bại:', e);
         });
@@ -2312,6 +2485,25 @@ const handleFitToScreen = useCallback(() => {
     const node = nodeMap.get(nodeId);
     if (!node) return false;
     if (nodeId === 'root' || !node.parentId) return true;
+    
+    // [FIX] Label nodes của relationships: ẩn nếu relationship ẩn
+    if (node.parentId?.startsWith('rel_')) {
+      const relationship = relationships.find(r => r.id === node.parentId);
+      if (!relationship) return false;
+      // Label node visible nếu cả 2 nodes của relationship đều visible
+      return isNodeVisible(relationship.from) && isNodeVisible(relationship.to);
+    }
+    
+    // [FIX] Summary nodes: ẩn nếu summary ẩn
+    if (node.parentId?.startsWith('sum_')) {
+      const summary = summaries.find(s => s.id === node.parentId);
+      if (!summary) return false;
+      // Summary node visible nếu parent và start/end đều visible
+      return isNodeVisible(summary.parentId) && 
+             isNodeVisible(summary.startNodeId) && 
+             isNodeVisible(summary.endNodeId);
+    }
+    
     if (node.parentId === 'root') {
       if (node.side === 'left' && rootCollapse.left) return false;
       if ((node.side === 'right' || !node.side) && rootCollapse.right) return false;
@@ -2321,7 +2513,7 @@ const handleFitToScreen = useCallback(() => {
     if (parent.collapsed) return false;
     if (parent.id === 'root') return true;
     return isNodeVisible(node.parentId);
-  }, [nodeMap, rootCollapse]);
+  }, [nodeMap, rootCollapse, relationships, summaries]);
 
   const visibleNodes = useMemo(
     () => nodes.filter((n) => isNodeVisible(n.id)),
@@ -2338,6 +2530,48 @@ const handleFitToScreen = useCallback(() => {
         (e) => visibleNodeIds.has(e.from) && visibleNodeIds.has(e.to)
       ),
     [edges, visibleNodeIds]
+  );
+  
+  // [MỚI] Lọc relationships: chỉ hiện nếu CẢ 2 node from/to đều visible
+  const visibleRelationships = useMemo(
+    () =>
+      relationships.filter(
+        (r) => visibleNodeIds.has(r.from) && visibleNodeIds.has(r.to)
+      ),
+    [relationships, visibleNodeIds]
+  );
+  
+  // [MỚI] Lọc summaries: chỉ hiện nếu TẤT CẢ nodes liên quan đều visible
+  const visibleSummaries = useMemo(
+    () =>
+      summaries.filter((s) => {
+        // Check parent node visible (đệ quy) - isNodeVisible đã kiểm tra collapsed đệ quy
+        if (!isNodeVisible(s.parentId)) return false;
+        
+        // Check start và end nodes visible (đệ quy)
+        if (!isNodeVisible(s.startNodeId)) return false;
+        if (!isNodeVisible(s.endNodeId)) return false;
+        
+        // Check tất cả nodes GIỮA start và end cũng phải visible
+        const parent = nodeMap.get(s.parentId);
+        if (!parent) return false;
+        
+        const siblings = nodes.filter(n => n.parentId === s.parentId);
+        const startIdx = siblings.findIndex(n => n.id === s.startNodeId);
+        const endIdx = siblings.findIndex(n => n.id === s.endNodeId);
+        
+        if (startIdx === -1 || endIdx === -1) return false;
+        
+        const [minIdx, maxIdx] = [Math.min(startIdx, endIdx), Math.max(startIdx, endIdx)];
+        
+        // Tất cả nodes trong range phải visible
+        for (let i = minIdx; i <= maxIdx; i++) {
+          if (!isNodeVisible(siblings[i].id)) return false;
+        }
+        
+        return true;
+      }),
+    [summaries, isNodeVisible, nodeMap, nodes]
   );
 
   const descendantCounts = useMemo(() => {
@@ -2452,7 +2686,8 @@ const handleFitToScreen = useCallback(() => {
                 console.error('Save name failed:', e);
               });
             } else if (isGuest && id) {
-              saveGuestDoc(id, name, nodes, edges);
+              const { relationships, summaries } = useEditorStore.getState();
+              saveGuestDoc(id, name, nodes, edges, relationships, summaries);
             }
             sendPatch('MAP_NAME_CHANGE', { name });
           }}
@@ -2629,9 +2864,10 @@ const handleFitToScreen = useCallback(() => {
                   if (!e.evt.shiftKey) {
                     setSelectedNodeIds([]);
                   }
-                  // Deselect relationship and summary when clicking canvas
+                  // Deselect relationship, summary, and boundary when clicking canvas
                   setSelectedRelationshipId(null);
                   setSelectedSummaryId(null);
+                  setSelectedBoundaryId(null);
                   if (editingNodeId) stopEditing(true);
                 }
               }
@@ -2735,6 +2971,14 @@ const handleFitToScreen = useCallback(() => {
                     nodes={nodes}
                     edges={edges}
                     nodeVisuals={nodeVisuals}
+                    isSelected={selectedBoundaryId === node.id}
+                    onClick={() => {
+                      setSelectedBoundaryId(node.id);
+                      setSelectedRelationshipId(null);
+                      setSelectedSummaryId(null);
+                      setSelectedNodeIds([]);
+                    }}
+                    onDelete={() => handleDeleteBoundary(node.id)}
                   />
                 ) : null
               )}
@@ -2813,17 +3057,20 @@ const handleFitToScreen = useCallback(() => {
                   const p4 = { x: toVisual.style.x + (isLeft ? toVisual.box.w / 2 : -toVisual.box.w / 2), y: toVisual.style.y };
                   const points = [p1.x, p1.y, (p1.x + p4.x) / 2, p1.y, (p1.x + p4.x) / 2, p4.y, p4.x, p4.y];
                   
+                  // Use summary color for arrow
+                  const summaryColor = summary.color || '#f59e0b';
+                  
                   return <Arrow
                     key={edge.id}
                     points={points}
-                    stroke={globalBranchColor}
+                    stroke={summaryColor}
                     strokeWidth={2}
                     bezier={true}
                     lineCap="round"
                     lineJoin="round"
                     pointerLength={8}
                     pointerWidth={6}
-                    fill={globalBranchColor}
+                    fill={summaryColor}
                   />;
                 }
                 
@@ -2875,8 +3122,8 @@ const handleFitToScreen = useCallback(() => {
                 return <Line {...lineProps} key={edge.id} />;
               })}
 
-              {/* Render Relationships */}
-              {relationships.map((rel) => (
+              {/* Render Relationships - CHỈ hiện những cái visible */}
+              {visibleRelationships.map((rel) => (
                 <Relationship
                   key={rel.id}
                   relationship={rel}
@@ -2885,12 +3132,18 @@ const handleFitToScreen = useCallback(() => {
                   isSelected={selectedRelationshipId === rel.id}
                   onUpdateControlPoints={handleUpdateRelationshipControlPoints}
                   onUpdateLabel={handleUpdateRelationshipLabel}
-                  onClick={(id) => setSelectedRelationshipId(id)}
+                  onClick={(id) => {
+                    setSelectedRelationshipId(id);
+                    setSelectedSummaryId(null);
+                    setSelectedBoundaryId(null);
+                    setSelectedNodeIds([]);
+                  }}
+                  onDelete={() => handleDeleteRelationship(rel.id)}
                 />
               ))}
 
-              {/* Render Summaries */}
-              {summaries.map((sum) => (
+              {/* Render Summaries - CHỈ hiện những cái visible */}
+              {visibleSummaries.map((sum) => (
                 <Summary
                   key={sum.id}
                   summary={sum}
@@ -2898,6 +3151,13 @@ const handleFitToScreen = useCallback(() => {
                   nodeVisuals={nodeVisuals}
                   isSelected={selectedSummaryId === sum.id}
                   onUpdateRange={handleUpdateSummaryRange}
+                  onClick={() => {
+                    setSelectedSummaryId(sum.id);
+                    setSelectedRelationshipId(null);
+                    setSelectedBoundaryId(null);
+                    setSelectedNodeIds([]);
+                  }}
+                  onDelete={() => handleDeleteSummary(sum.id)}
                 />
               ))}
 
@@ -3155,11 +3415,11 @@ const handleFitToScreen = useCallback(() => {
                 
                 // Lưu ngay lập tức
                 if (id) {
-                  const { nodes: currentNodes, edges: currentEdges } = useEditorStore.getState();
+                  const { nodes: currentNodes, edges: currentEdges, relationships, summaries } = useEditorStore.getState();
                   if (isGuest) {
-                    saveGuestDoc(id, name, currentNodes, currentEdges);
+                    saveGuestDoc(id, name, currentNodes, currentEdges, relationships, summaries);
                   } else if (isAuthed) {
-                    const docToSave = { name, content: { nodes: currentNodes, edges: currentEdges } };
+                    const docToSave = { name, content: { nodes: currentNodes, edges: currentEdges, relationships, summaries } };
                     mindmapsApi.update(id, docToSave).catch((e) => {
                       console.error('Lưu layout thất bại:', e);
                     });
@@ -3176,11 +3436,11 @@ const handleFitToScreen = useCallback(() => {
                 
                 // Lưu ngay lập tức
                 if (id) {
-                  const { nodes: currentNodes, edges: currentEdges } = useEditorStore.getState();
+                  const { nodes: currentNodes, edges: currentEdges, relationships, summaries } = useEditorStore.getState();
                   if (isGuest) {
-                    saveGuestDoc(id, name, currentNodes, currentEdges);
+                    saveGuestDoc(id, name, currentNodes, currentEdges, relationships, summaries);
                   } else if (isAuthed) {
-                    const docToSave = { name, content: { nodes: currentNodes, edges: currentEdges } };
+                    const docToSave = { name, content: { nodes: currentNodes, edges: currentEdges, relationships, summaries } };
                     mindmapsApi.update(id, docToSave).catch((e) => {
                       console.error('Lưu font thất bại:', e);
                     });
@@ -3193,11 +3453,11 @@ const handleFitToScreen = useCallback(() => {
                 
                 // Lưu ngay lập tức
                 if (id) {
-                  const { nodes: currentNodes, edges: currentEdges } = useEditorStore.getState();
+                  const { nodes: currentNodes, edges: currentEdges, relationships, summaries } = useEditorStore.getState();
                   if (isGuest) {
-                    saveGuestDoc(id, name, currentNodes, currentEdges);
+                    saveGuestDoc(id, name, currentNodes, currentEdges, relationships, summaries);
                   } else if (isAuthed) {
-                    const docToSave = { name, content: { nodes: currentNodes, edges: currentEdges } };
+                    const docToSave = { name, content: { nodes: currentNodes, edges: currentEdges, relationships, summaries } };
                     mindmapsApi.update(id, docToSave).catch((e) => {
                       console.error('Lưu độ dày dây thất bại:', e);
                     });
@@ -3213,11 +3473,11 @@ const handleFitToScreen = useCallback(() => {
                 
                 // Lưu ngay lập tức
                 if (id) {
-                  const { nodes: currentNodes, edges: currentEdges } = useEditorStore.getState();
+                  const { nodes: currentNodes, edges: currentEdges, relationships, summaries } = useEditorStore.getState();
                   if (isGuest) {
-                    saveGuestDoc(id, name, currentNodes, currentEdges);
+                    saveGuestDoc(id, name, currentNodes, currentEdges, relationships, summaries);
                   } else if (isAuthed) {
-                    const docToSave = { name, content: { nodes: currentNodes, edges: currentEdges } };
+                    const docToSave = { name, content: { nodes: currentNodes, edges: currentEdges, relationships, summaries } };
                     mindmapsApi.update(id, docToSave).catch((e) => {
                       console.error('Lưu theme thất bại:', e);
                     });

@@ -461,7 +461,6 @@ export const useEditorStore = create<State>((set, get) => ({
     const labelNode: NodeData = {
       id: labelNodeId,
       parentId: relationshipId, // Parent là relationship (special case)
-      text: 'relationship',
       nodeText: 'relationship',
       x: 0, // Sẽ được tính lại khi render
       y: 0,
@@ -541,6 +540,9 @@ export const useEditorStore = create<State>((set, get) => ({
       summaryX = avgX + (direction * 150); // 150px outward from average position
     }
     
+    // Lấy màu của parent node để áp dụng cho summary
+    const parentBorderColor = parentNode?.borderColor || '#f59e0b';
+    
     // Tạo summary node mới - parent là summaryId đặc biệt
     const summaryNodeId = `summary_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
     const summaryNode: NodeData = {
@@ -551,8 +553,8 @@ export const useEditorStore = create<State>((set, get) => ({
       parentId: summaryId, // Parent là chính summary ID
       side: startNode?.side,
       shape: 'roundedRect',
-      color: '#fef3c7',
-      borderColor: '#f59e0b',
+      color: 'transparent', // Transparent background
+      borderColor: parentBorderColor, // Inherit parent border color
       borderWidth: 2,
     };
     
@@ -564,7 +566,7 @@ export const useEditorStore = create<State>((set, get) => ({
       summaryText: text || 'Summary',
       summaryNodeId,
       braceStyle: 'curly',
-      color: '#f59e0b',
+      color: parentBorderColor, // Inherit parent border color for brace
     };
     
     // Tạo edge đặc biệt nối từ summary ID đến summary node

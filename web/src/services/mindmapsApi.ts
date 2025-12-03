@@ -50,6 +50,10 @@ export type FeMindmapDoc = {
   globalBranchColor?: string;
   backgroundColor?: string;
   activeColorThemeId?: string;
+  
+  // [MỚI] Thêm relationships và summaries
+  relationships?: any[];
+  summaries?: any[];
 };
 
 /**
@@ -129,15 +133,22 @@ export const mindmapsApi = {
     id: string,
     payload: {
       name: string;
-      content: { nodes: FeNodeData[]; edges: FeEdgeData[] };
+      content: { 
+        nodes: FeNodeData[]; 
+        edges: FeEdgeData[];
+        relationships?: any[];
+        summaries?: any[];
+      };
     }
   ) => {
     const feNodes: FeNodeData[] = payload.content.nodes || [];
     const feEdges: FeEdgeData[] = payload.content.edges || [];
+    const feRelationships = payload.content.relationships || [];
+    const feSummaries = payload.content.summaries || [];
 
     // 2. "Dịch" content FE (List) sang BE (List lồng)
     // Hàm này BÂY GIỜ tự động lấy cài đặt global từ store
-    const beContent = normalizeContentFEtoBE(feNodes, feEdges);
+    const beContent = normalizeContentFEtoBE(feNodes, feEdges, feRelationships, feSummaries);
 
     // 3. Gửi payload đã chuẩn hóa BE (chỉ 'name' và 'content')
     const response = await api.put<BeMindmapDoc>(`/mindmaps/${id}`, {

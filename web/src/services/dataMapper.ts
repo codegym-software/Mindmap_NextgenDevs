@@ -66,6 +66,32 @@ export type BeEdgeData = {
   style?: any;
 };
 
+// [MỚI] Type cho Relationship - PHẢI KHỚP với useEditorStore.ts
+export type BeRelationshipData = {
+  id: string;
+  from: string;
+  to: string;
+  label?: string;
+  labelNodeId?: string;
+  startMarker?: 'none' | 'arrow' | 'circle';
+  endMarker?: 'none' | 'arrow' | 'circle';
+  controlPoint1?: { x: number; y: number };
+  controlPoint2?: { x: number; y: number };
+  color?: string;
+};
+
+// [MỚI] Type cho Summary - PHẢI KHỚP với useEditorStore.ts
+export type BeSummaryData = {
+  id: string;
+  parentId: string;
+  startNodeId: string;
+  endNodeId: string;
+  summaryText: string;
+  summaryNodeId?: string;
+  braceStyle?: 'curly' | 'square';
+  color?: string;
+};
+
 // [MỚI] Type cho cài đặt global
 export type BeGlobalSettings = {
   fontFamily?: string;
@@ -81,6 +107,8 @@ export type BeMindmapContent = {
   theme: string;
   nodes: BeNodeData[];
   edges: BeEdgeData[];
+  relationships?: BeRelationshipData[]; // [MỚI] Thêm relationships
+  summaries?: BeSummaryData[]; // [MỚI] Thêm summaries
   globalSettings?: BeGlobalSettings; // [MỚI] Thêm trường này
 };
 
@@ -265,6 +293,8 @@ export function normalizeNodeBEtoFE(beNode: BeNodeData): FeNodeData {
 export function normalizeContentFEtoBE(
   feNodes: FeNodeData[],
   feEdges: FeEdgeData[],
+  feRelationships?: any[], // [SỬA] Dùng any[] để chấp nhận cả 2 types
+  feSummaries?: any[], // [SỬA] Dùng any[] để chấp nhận cả 2 types
 ): BeMindmapContent {
   const beNodes = feNodes.map(normalizeNodeFEtoBE);
 
@@ -291,6 +321,8 @@ export function normalizeContentFEtoBE(
     theme: 'light', // Theme 'light'/'dark' không còn dùng, nhưng vẫn giữ trường
     nodes: beNodes,
     edges: feEdges.map((edge) => ({ ...edge })),
+    relationships: feRelationships || [], // [SỬA] Đảm bảo luôn có mảng
+    summaries: feSummaries || [], // [SỬA] Đảm bảo luôn có mảng
     globalSettings: beGlobalSettings, // [MỚI] Thêm cài đặt global
   };
 }
@@ -312,6 +344,8 @@ export function normalizeContentBEtoFE(
   globalBranchColor?: string;
   backgroundColor?: string;
   activeColorThemeId?: string;
+  relationships?: BeRelationshipData[]; // [MỚI] Thêm relationships
+  summaries?: BeSummaryData[]; // [MỚI] Thêm summaries
 } {
   // Lấy cài đặt global mặc định từ store
   const defaults = {
@@ -346,6 +380,8 @@ export function normalizeContentBEtoFE(
       edges: [],
       layoutMode: 'mindmap',
       theme: 'light',
+      relationships: [], // [MỚI] Mặc định mảng rỗng
+      summaries: [], // [MỚI] Mặc định mảng rỗng
       ...defaults, 
     };
   }
@@ -368,6 +404,8 @@ export function normalizeContentBEtoFE(
     globalBranchColor: settings.globalBranchColor || defaults.globalBranchColor,
     activeColorThemeId: settings.activeColorThemeId || defaults.activeColorThemeId,
     backgroundColor: settings.backgroundColor || colorThemes[settings.activeColorThemeId as keyof typeof colorThemes]?.background || defaults.backgroundColor,
+    relationships: beContent.relationships || [], // [MỚI] Trả về relationships
+    summaries: beContent.summaries || [], // [MỚI] Trả về summaries
   };
 }
 

@@ -11,6 +11,10 @@ public class MindmapContent {
     private List<EdgeData> edges = new ArrayList<>();
     private MindmapTheme theme = MindmapTheme.LIGHT;
     private GlobalSettings globalSettings = new GlobalSettings();
+    
+    // [NEW] Thêm relationships và summaries
+    private List<Object> relationships = new ArrayList<>(); // Dùng Object để linh hoạt
+    private List<Object> summaries = new ArrayList<>();     // Dùng Object để linh hoạt
 
     // Getters and Setters
     public String getLayoutMode() { return layoutMode; }
@@ -27,6 +31,13 @@ public class MindmapContent {
     
     public GlobalSettings getGlobalSettings() { return globalSettings; }
     public void setGlobalSettings(GlobalSettings globalSettings) { this.globalSettings = globalSettings; }
+    
+    // [NEW] Getters and Setters cho relationships và summaries
+    public List<Object> getRelationships() { return relationships; }
+    public void setRelationships(List<Object> relationships) { this.relationships = relationships; }
+    
+    public List<Object> getSummaries() { return summaries; }
+    public void setSummaries(List<Object> summaries) { this.summaries = summaries; }
 
     public static class GlobalSettings {
         private String fontFamily;

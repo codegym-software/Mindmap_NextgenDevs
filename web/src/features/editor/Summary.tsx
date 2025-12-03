@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Path, Rect, Circle as KonvaCircle, Text as KonvaText } from 'react-konva';
+import { Path, Rect, Circle as KonvaCircle, Text as KonvaText, Group } from 'react-konva';
 import { SummaryData, NodeData } from '../../app/store/useEditorStore';
 
 type SummaryProps = {
@@ -8,6 +8,8 @@ type SummaryProps = {
   nodeVisuals: Map<string, { style: any; box: any }>;
   isSelected?: boolean;
   onUpdateRange?: (summaryId: string, newStartNodeId: string, newEndNodeId: string) => void;
+  onClick?: () => void;
+  onDelete?: () => void;
 };
 
 const Summary: React.FC<SummaryProps> = ({ 
@@ -15,7 +17,9 @@ const Summary: React.FC<SummaryProps> = ({
   nodes, 
   nodeVisuals, 
   isSelected = false,
-  onUpdateRange 
+  onUpdateRange,
+  onClick,
+  onDelete
 }) => {
   const startVisual = nodeVisuals.get(summary.startNodeId);
   const endVisual = nodeVisuals.get(summary.endNodeId);
@@ -48,7 +52,8 @@ const Summary: React.FC<SummaryProps> = ({
   const { style: currentStartStyle, box: currentStartBox } = currentStartVisual;
   const { style: currentEndStyle, box: currentEndBox } = currentEndVisual;
 
-  // Tìm tất cả leaf nodes trong range để đặt brace ở ngoài cùng
+  // [FIX] Tìm tất cả leaf nodes trong range
+  // Nếu node bị collapse, chỉ dùng chính node đó, không tìm con
   const getLeafNodesInRange = () => {
     const startIdx = siblings.findIndex(n => n.id === localStartNodeId);
     const endIdx = siblings.findIndex(n => n.id === localEndNodeId);
@@ -257,6 +262,18 @@ const Summary: React.FC<SummaryProps> = ({
         lineCap="round"
         lineJoin="round"
         fill="transparent"
+        onClick={(e) => {
+          e.cancelBubble = true;
+          if (onClick) onClick();
+        }}
+        onMouseEnter={(e) => {
+          const container = e.target.getStage()?.container();
+          if (container) container.style.cursor = 'pointer';
+        }}
+        onMouseLeave={(e) => {
+          const container = e.target.getStage()?.container();
+          if (container) container.style.cursor = 'default';
+        }}
       />
 
       {/* Summary text ở vị trí mũi nhọn giữa */}
