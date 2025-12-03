@@ -4,6 +4,8 @@ import {
   AlignHorizontalJustifyCenter, // Node con
   AlignStartVertical,  // Node anh em
   BoxSelect,  // Boundary
+  ArrowRightLeft,  // Relationship
+  BracesIcon,  // Summary
 } from 'lucide-react';
 import UserAvatarMenu from '../auth/UserAvatarMenu';
 import { useEditorStore, NodeData } from '../../app/store/useEditorStore'; 
@@ -34,6 +36,8 @@ type EditorToolbarProps = {
   onAddSibling: () => void;
   onSetHyperlink?: () => void; // Đánh dấu optional vì đã có logic mới
   onToggleBoundary: () => void;
+  onAddRelationship: () => void;
+  onAddSummary: () => void;
   onUpdateNode: (updates: Partial<NodeData>) => void; // [MỚI]
 };
 
@@ -74,6 +78,8 @@ export default function EditorToolbar({
   onAddSibling,
   onSetHyperlink,
   onToggleBoundary,
+  onAddRelationship,
+  onAddSummary,
   onUpdateNode
 }: EditorToolbarProps) {
   
@@ -182,7 +188,24 @@ export default function EditorToolbar({
           <BoxSelect size={20} />
         </ToolbarButton>
         
-        {/* [THAY ĐỔI] Sử dụng InsertDropdown thay vì nút Hyperlink cũ */}
+        <ToolbarButton
+          onClick={onAddRelationship}
+          disabled={!isSingleNodeFocused}
+          title="Tạo mối quan hệ (Relationship)"
+        >
+          <ArrowRightLeft size={20} />
+        </ToolbarButton>
+        
+        <ToolbarButton
+          onClick={onAddSummary}
+          disabled={!isSingleNodeFocused}
+          title="Tạo tóm tắt (Summary)"
+        >
+          <BracesIcon size={20} />
+        </ToolbarButton>
+        
+        <div className="w-px h-6 bg-gray-300 mx-2" />
+        
         <InsertDropdown 
           disabled={!isSingleNodeFocused}
           onInsertLink={() => setIsLinkModalOpen(true)}

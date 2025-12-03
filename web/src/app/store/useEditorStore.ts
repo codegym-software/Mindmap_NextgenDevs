@@ -120,6 +120,32 @@ export type NodeData = {
 
 export type EdgeData = { id: string; from: string; to: string };
 
+// Relationship - Đường mối quan hệ phi phân cấp
+export type RelationshipData = {
+  id: string;
+  from: string; // Node ID
+  to: string;   // Node ID
+  label?: string;
+  labelNodeId?: string; // Node ID cho label (có thể edit như node)
+  startMarker?: 'none' | 'arrow' | 'circle';
+  endMarker?: 'none' | 'arrow' | 'circle';
+  controlPoint1?: { x: number; y: number };
+  controlPoint2?: { x: number; y: number };
+  color?: string;
+};
+
+// Summary - Tóm tắt nhóm nodes anh em
+export type SummaryData = {
+  id: string;
+  parentId: string; // Parent của nhóm nodes được tóm tắt
+  startNodeId: string; // Node đầu tiên trong range
+  endNodeId: string;   // Node cuối cùng trong range
+  summaryText: string;
+  summaryNodeId?: string; // Node tóm tắt (tạo tự động)
+  braceStyle?: 'curly' | 'square';
+  color?: string;
+};
+
 type Snapshot = { nodes: NodeData[]; edges: EdgeData[] };
 
 const MAX_HISTORY = 100;
@@ -314,6 +340,8 @@ export function applyNodeDefaults(node: NodeData, theme: ColorTheme): Partial<No
 type State = {
   nodes: NodeData[];
   edges: EdgeData[];
+  relationships: RelationshipData[];
+  summaries: SummaryData[];
   history: Snapshot[];
   future: Snapshot[];
 
@@ -336,11 +364,20 @@ type State = {
   
   set: (p: Partial<State>) => void;
   toggleNodeBoundary: (nodeId: string) => void;
+  addRelationship: (from: string, to: string) => void;
+  updateRelationship: (id: string, updates: Partial<RelationshipData>) => void;
+  updateRelationshipLabel: (id: string, label: string) => void;
+  removeRelationship: (id: string) => void;
+  addSummary: (parentId: string, startNodeId: string, endNodeId: string, text: string) => void;
+  updateSummary: (id: string, updates: Partial<SummaryData>) => void;
+  removeSummary: (id: string) => void;
 };
 
 export const useEditorStore = create<State>((set, get) => ({
   nodes: [],
   edges: [],
+  relationships: [],
+  summaries: [],
   history: [],
   future: [],
 
@@ -412,5 +449,161 @@ export const useEditorStore = create<State>((set, get) => ({
     );
     set({ nodes: newNodes, isDirty: true });
     get().push(newNodes, edges);
+  },
+
+  addRelationship: (from: string, to: string) => {
+    const { relationships, nodes, edges } = get();
+    
+    const relationshipId = `rel_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    const labelNodeId = `label_${relationshipId}`;
+    
+    // Tạo node label nhỏ trong suốt với width fit-content
+    const labelNode: NodeData = {
+      id: labelNodeId,
+      parentId: relationshipId, // Parent là relationship (special case)
+      text: 'relationship',
+      nodeText: 'relationship',
+      x: 0, // Sẽ được tính lại khi render
+      y: 0,
+      shape: 'roundedRect',
+      color: 'transparent',
+      borderColor: 'transparent',
+      borderWidth: 0,
+      fontSize: 11,
+      fontWeight: 'normal',
+      nodeLength: 'fit', // Width tự động fit nội dung
+    };
+    
+    const newRelationship: RelationshipData = {
+      id: relationshipId,
+      from,
+      to,
+      labelNodeId,
+      startMarker: 'none',
+      endMarker: 'arrow',
+      color: '#3b82f6',
+    };
+    
+    set({ 
+      nodes: [...nodes, labelNode],
+      relationships: [...relationships, newRelationship], 
+      isDirty: true 
+    });
+  },
+
+  updateRelationship: (id: string, updates: Partial<RelationshipData>) => {
+    const { relationships } = get();
+    set({
+      relationships: relationships.map(r => r.id === id ? { ...r, ...updates } : r),
+      isDirty: true
+    });
+  },
+
+  updateRelationshipLabel: (id: string, label: string) => {
+    const { relationships } = get();
+    set({
+      relationships: relationships.map(r => r.id === id ? { ...r, label } : r),
+      isDirty: true
+    });
+  },
+
+  removeRelationship: (id: string) => {
+    const { relationships } = get();
+    set({ relationships: relationships.filter(r => r.id !== id), isDirty: true });
+  },
+
+  addSummary: (parentId: string, startNodeId: string, endNodeId: string, text: string) => {
+    const { summaries, nodes, edges } = get();
+    
+    const summaryId = `sum_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    
+    // Tính toán vị trí summary node dựa trên brace tip position
+    const parentNode = nodes.find(n => n.id === parentId);
+    const siblings = nodes.filter(n => n.parentId === parentId);
+    const startNode = nodes.find(n => n.id === startNodeId);
+    const endNode = nodes.find(n => n.id === endNodeId);
+    
+    // Calculate approximate position for summary node
+    // This will be refined by layout later, but gives a better initial position
+    let summaryX = 0;
+    let summaryY = 0;
+    
+    if (startNode && endNode) {
+      const isLeft = startNode.side === 'left';
+      const direction = isLeft ? -1 : 1;
+      
+      // Average Y position between start and end nodes
+      summaryY = (startNode.y + endNode.y) / 2;
+      
+      // Place summary node outward from the nodes
+      // Use a rough estimate - will be refined by layout
+      const avgX = (startNode.x + endNode.x) / 2;
+      summaryX = avgX + (direction * 150); // 150px outward from average position
+    }
+    
+    // Tạo summary node mới - parent là summaryId đặc biệt
+    const summaryNodeId = `summary_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    const summaryNode: NodeData = {
+      id: summaryNodeId,
+      nodeText: text || 'Summary',
+      x: summaryX,
+      y: summaryY,
+      parentId: summaryId, // Parent là chính summary ID
+      side: startNode?.side,
+      shape: 'roundedRect',
+      color: '#fef3c7',
+      borderColor: '#f59e0b',
+      borderWidth: 2,
+    };
+    
+    const newSummary: SummaryData = {
+      id: summaryId,
+      parentId,
+      startNodeId,
+      endNodeId,
+      summaryText: text || 'Summary',
+      summaryNodeId,
+      braceStyle: 'curly',
+      color: '#f59e0b',
+    };
+    
+    // Tạo edge đặc biệt nối từ summary ID đến summary node
+    const newEdge: EdgeData = {
+      id: `edge_${summaryNodeId}`,
+      from: summaryId,
+      to: summaryNodeId,
+    };
+    
+    set({ 
+      summaries: [...summaries, newSummary],
+      nodes: [...nodes, summaryNode],
+      edges: [...edges, newEdge],
+      isDirty: true 
+    });
+  },
+
+  updateSummary: (id: string, updates: Partial<SummaryData>) => {
+    const { summaries } = get();
+    set({
+      summaries: summaries.map(s => s.id === id ? { ...s, ...updates } : s),
+      isDirty: true
+    });
+  },
+
+  removeSummary: (id: string) => {
+    const { summaries, nodes, edges } = get();
+    const summary = summaries.find(s => s.id === id);
+    if (!summary) return;
+    
+    // Xóa summary node và edge
+    const newNodes = nodes.filter(n => n.id !== summary.summaryNodeId);
+    const newEdges = edges.filter(e => e.to !== summary.summaryNodeId);
+    
+    set({ 
+      summaries: summaries.filter(s => s.id !== id),
+      nodes: newNodes,
+      edges: newEdges,
+      isDirty: true 
+    });
   },
 }));

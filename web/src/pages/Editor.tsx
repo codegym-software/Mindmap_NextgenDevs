@@ -51,6 +51,8 @@ import Spinner from '../components/common/Spinner';
 import { useLocalMindmap } from '../hooks/useLocalMindmap';
 import { useMindmapsStore } from '../app/store/useMindmapsStore';
 import Boundary from '../features/editor/Boundary';
+import Relationship from '../features/editor/Relationship';
+import Summary from '../features/editor/Summary';
 
 import {
   BeMindmapContent,
@@ -282,12 +284,54 @@ export default function Editor() {
     globalBranchColor,
     isDirty,
     toggleNodeBoundary,
+    addRelationship,
+    updateRelationship,
+    updateRelationshipLabel,
+    addSummary,
+    updateSummary,
+    relationships,
+    summaries,
   } = useEditorStore();
 
   const handleToggleBoundary = () => {
     if (selectedNodeIds.length === 1) {
       toggleNodeBoundary(selectedNodeIds[0]);
     }
+  };
+
+  const [isRelationshipMode, setIsRelationshipMode] = useState(false);
+  const [relationshipFrom, setRelationshipFrom] = useState<string | null>(null);
+  const [selectedRelationshipId, setSelectedRelationshipId] = useState<string | null>(null);
+  const [selectedSummaryId, setSelectedSummaryId] = useState<string | null>(null);
+
+  const handleAddRelationship = () => {
+    if (selectedNodeIds.length === 1) {
+      setIsRelationshipMode(true);
+      setRelationshipFrom(selectedNodeIds[0]);
+    }
+  };
+
+  const handleAddSummary = () => {
+    if (selectedNodeIds.length === 1) {
+      const node = nodes.find(n => n.id === selectedNodeIds[0]);
+      if (node && node.parentId) {
+        addSummary(node.parentId, selectedNodeIds[0], selectedNodeIds[0], '');
+        // Trigger layout để summary node được đặt đúng vị trí
+        setTimeout(() => handleLayout(true), 50);
+      }
+    }
+  };
+
+  const handleUpdateRelationshipControlPoints = (relationshipId: string, cp1: { x: number; y: number }, cp2: { x: number; y: number }) => {
+    updateRelationship(relationshipId, { controlPoint1: cp1, controlPoint2: cp2 });
+  };
+
+  const handleUpdateRelationshipLabel = (relationshipId: string, label: string) => {
+    updateRelationshipLabel(relationshipId, label);
+  };
+
+  const handleUpdateSummaryRange = (summaryId: string, newStartNodeId: string, newEndNodeId: string) => {
+    updateSummary(summaryId, { startNodeId: newStartNodeId, endNodeId: newEndNodeId });
   };
 
   // State nội bộ - Lấy name từ store thay vì state local
@@ -413,18 +457,80 @@ export default function Editor() {
   // Logic tính toán
   const computedNodeStyles = useMemo(() => {
     const map = new Map<string, NodeData>();
-    nodes.forEach((node) => {
-      // Lấy thông tin topo của node hiện tại
-      const topo = nodeTopology.get(node.id);
+    
+    // Helper: tính vị trí label từ bezier curve
+    const getLabelPosition = (relationship: any, fromNode: NodeData, toNode: NodeData) => {
+      // Tính điểm trên cạnh node
+      const dx = toNode.x - fromNode.x;
+      const dy = toNode.y - fromNode.y;
+      const angle = Math.atan2(dy, dx);
       
-      // Truyền topo vào hàm tính style
+      const fromVisual = map.get(fromNode.id);
+      const toVisual = map.get(toNode.id);
+      const fromBox = fromVisual ? calculateNodeBox(fromNode, fromVisual) : { w: 100, h: 40 };
+      const toBox = toVisual ? calculateNodeBox(toNode, toVisual) : { w: 100, h: 40 };
+      
+      const p1 = { 
+        x: fromNode.x + Math.cos(angle) * (fromBox.w / 2), 
+        y: fromNode.y + Math.sin(angle) * (fromBox.h / 2) 
+      };
+      const p4 = { 
+        x: toNode.x - Math.cos(angle) * (toBox.w / 2), 
+        y: toNode.y - Math.sin(angle) * (toBox.h / 2) 
+      };
+      
+      // Control points
+      const cp1 = relationship.controlPoint1 || { 
+        x: p1.x + (p4.x - p1.x) / 3, 
+        y: p1.y 
+      };
+      const cp2 = relationship.controlPoint2 || { 
+        x: p1.x + 2 * (p4.x - p1.x) / 3, 
+        y: p4.y 
+      };
+      
+      // Trung điểm của 4 điểm bezier
+      return {
+        x: (p1.x + cp1.x + cp2.x + p4.x) / 4,
+        y: (p1.y + cp1.y + cp2.y + p4.y) / 4
+      };
+    };
+    
+    nodes.forEach((node) => {
+      // Kiểm tra nếu là label node của relationship
+      const isLabelNode = node.parentId?.startsWith('rel_');
+      
+      if (isLabelNode) {
+        // Label node: tính vị trí từ relationship bezier curve
+        const relationship = relationships.find(r => r.labelNodeId === node.id);
+        if (relationship) {
+          const fromNode = nodes.find(n => n.id === relationship.from);
+          const toNode = nodes.find(n => n.id === relationship.to);
+          
+          if (fromNode && toNode) {
+            const pos = getLabelPosition(relationship, fromNode, toNode);
+            
+            map.set(node.id, {
+              ...node,
+              x: pos.x,
+              y: pos.y,
+              fontSize: 11,
+              fontWeight: 'normal',
+            });
+            return;
+          }
+        }
+      }
+      
+      // Node bình thường
+      const topo = nodeTopology.get(node.id);
       map.set(
         node.id, 
         getNodeComputedStyle(node, activeTheme, globalFont, topo)
       );
     });
     return map;
-  }, [nodes, activeTheme, globalFont, nodeTopology]);
+  }, [nodes, activeTheme, globalFont, nodeTopology, relationships]);
 
   const nodeVisuals = useMemo(() => {
     const map = new Map<
@@ -1112,6 +1218,81 @@ const handleLayout = useCallback(
       } 
       
       newNodes = Array.from(finalNodesMap.values());
+
+      // Position summary nodes at brace tip positions
+      const { summaries } = useEditorStore.getState();
+      summaries.forEach(summary => {
+        if (!summary.summaryNodeId) return;
+        
+        const parentNode = newNodes.find(n => n.id === summary.parentId);
+        if (!parentNode) return;
+        
+        const siblings = newNodes.filter(n => n.parentId === summary.parentId);
+        const startIdx = siblings.findIndex(n => n.id === summary.startNodeId);
+        const endIdx = siblings.findIndex(n => n.id === summary.endNodeId);
+        if (startIdx === -1 || endIdx === -1) return;
+        
+        const [minIdx, maxIdx] = [Math.min(startIdx, endIdx), Math.max(startIdx, endIdx)];
+        
+        // Collect leaf nodes
+        const collectLeafNodes = (nodeId: string): string[] => {
+          const children = newNodes.filter(n => n.parentId === nodeId);
+          if (children.length === 0) return [nodeId];
+          return children.flatMap(child => collectLeafNodes(child.id));
+        };
+        
+        const leafNodes: string[] = [];
+        for (let i = minIdx; i <= maxIdx; i++) {
+          leafNodes.push(...collectLeafNodes(siblings[i].id));
+        }
+        
+        // Calculate brace position
+        const firstNode = newNodes.find(n => n.id === summary.startNodeId);
+        if (!firstNode) return;
+        
+        const isLeft = firstNode.side === 'left';
+        const direction = isLeft ? -1 : 1;
+        
+        let braceX = isLeft ? Infinity : -Infinity;
+        let startY = Infinity;
+        let endY = -Infinity;
+        
+        leafNodes.forEach(leafId => {
+          const node = newNodes.find(n => n.id === leafId);
+          const visual = nodeVisuals.get(leafId);
+          if (node && visual) {
+            const nodeLeft = node.x - visual.box.w / 2;
+            const nodeRight = node.x + visual.box.w / 2;
+            const nodeTop = node.y - visual.box.h / 2;
+            const nodeBottom = node.y + visual.box.h / 2;
+            
+            if (isLeft) {
+              braceX = Math.min(braceX, nodeLeft);
+            } else {
+              braceX = Math.max(braceX, nodeRight);
+            }
+            
+            startY = Math.min(startY, nodeTop);
+            endY = Math.max(endY, nodeBottom);
+          }
+        });
+        
+        const braceWidth = 15;
+        const startX = isLeft ? braceX - 20 : braceX + 20;
+        const midY = (startY + endY) / 2;
+        const xMid = startX + (braceWidth * direction * 1.5);
+        
+        // Update summary node position
+        const summaryNodeIndex = newNodes.findIndex(n => n.id === summary.summaryNodeId);
+        if (summaryNodeIndex !== -1) {
+          newNodes[summaryNodeIndex] = {
+            ...newNodes[summaryNodeIndex],
+            x: xMid + (direction * 80), // Offset outward from brace tip
+            y: midY,
+            side: firstNode.side
+          };
+        }
+      });
 
       // Lấy trạng thái hiện tại của nodes từ store
       const currentNodesInStore = useEditorStore.getState().nodes;
@@ -2299,6 +2480,8 @@ const handleFitToScreen = useCallback(() => {
           onSetHyperlink={handleSetHyperlink}
           onUpdateNode={handleUpdateNode}
           onToggleBoundary={handleToggleBoundary}
+          onAddRelationship={handleAddRelationship}
+          onAddSummary={handleAddSummary}
         />
         <Sidebar />
 
@@ -2446,6 +2629,9 @@ const handleFitToScreen = useCallback(() => {
                   if (!e.evt.shiftKey) {
                     setSelectedNodeIds([]);
                   }
+                  // Deselect relationship and summary when clicking canvas
+                  setSelectedRelationshipId(null);
+                  setSelectedSummaryId(null);
                   if (editingNodeId) stopEditing(true);
                 }
               }
@@ -2553,6 +2739,94 @@ const handleFitToScreen = useCallback(() => {
                 ) : null
               )}
               {visibleEdges.map((edge) => {
+                // Check if this is a summary edge (from a summary to its summary node)
+                const isSummaryEdge = edge.from.startsWith('sum_');
+                
+                if (isSummaryEdge) {
+                  // Find the summary data
+                  const summary = summaries.find(s => s.id === edge.from);
+                  if (!summary) return null;
+                  
+                  const toVisual = nodeVisuals.get(edge.to);
+                  if (!toVisual) return null;
+                  
+                  // Calculate brace position (same logic as Summary.tsx)
+                  const parentNode = nodes.find(n => n.id === summary.parentId);
+                  if (!parentNode) return null;
+                  
+                  const siblings = nodes.filter(n => n.parentId === summary.parentId);
+                  const startIdx = siblings.findIndex(n => n.id === summary.startNodeId);
+                  const endIdx = siblings.findIndex(n => n.id === summary.endNodeId);
+                  if (startIdx === -1 || endIdx === -1) return null;
+                  
+                  const [minIdx, maxIdx] = [Math.min(startIdx, endIdx), Math.max(startIdx, endIdx)];
+                  const parentVisual = nodeVisuals.get(parentNode.id);
+                  if (!parentVisual) return null;
+                  
+                  const isLeft = parentVisual.style.side === 'left';
+                  
+                  // Collect leaf nodes
+                  const collectLeafNodes = (nodeId: string): string[] => {
+                    const children = nodes.filter(n => n.parentId === nodeId);
+                    if (children.length === 0) return [nodeId];
+                    return children.flatMap(child => collectLeafNodes(child.id));
+                  };
+                  
+                  const leafNodes: string[] = [];
+                  for (let i = minIdx; i <= maxIdx; i++) {
+                    leafNodes.push(...collectLeafNodes(siblings[i].id));
+                  }
+                  
+                  // Calculate outermost X and Y range
+                  let braceX = isLeft ? Infinity : -Infinity;
+                  let startY = Infinity;
+                  let endY = -Infinity;
+                  
+                  leafNodes.forEach(leafId => {
+                    const visual = nodeVisuals.get(leafId);
+                    if (visual) {
+                      const { style, box } = visual;
+                      const nodeLeft = style.x - box.w / 2;
+                      const nodeRight = style.x + box.w / 2;
+                      const nodeTop = style.y - box.h / 2;
+                      const nodeBottom = style.y + box.h / 2;
+                      
+                      if (isLeft) {
+                        braceX = Math.min(braceX, nodeLeft);
+                      } else {
+                        braceX = Math.max(braceX, nodeRight);
+                      }
+                      
+                      startY = Math.min(startY, nodeTop);
+                      endY = Math.max(endY, nodeBottom);
+                    }
+                  });
+                  
+                  const direction = isLeft ? -1 : 1;
+                  const braceWidth = 15;
+                  const startX = isLeft ? braceX - 20 : braceX + 20;
+                  const midY = (startY + endY) / 2;
+                  const xMid = startX + (braceWidth * direction * 1.5);
+                  
+                  // Edge starts from brace tip, ends at summary node
+                  const p1 = { x: xMid, y: midY };
+                  const p4 = { x: toVisual.style.x + (isLeft ? toVisual.box.w / 2 : -toVisual.box.w / 2), y: toVisual.style.y };
+                  const points = [p1.x, p1.y, (p1.x + p4.x) / 2, p1.y, (p1.x + p4.x) / 2, p4.y, p4.x, p4.y];
+                  
+                  return <Arrow
+                    key={edge.id}
+                    points={points}
+                    stroke={globalBranchColor}
+                    strokeWidth={2}
+                    bezier={true}
+                    lineCap="round"
+                    lineJoin="round"
+                    pointerLength={8}
+                    pointerWidth={6}
+                    fill={globalBranchColor}
+                  />;
+                }
+                
                 const fromVisual = nodeVisuals.get(edge.from);
                 const toVisual = nodeVisuals.get(edge.to);
                 if (!fromVisual || !toVisual) return null;
@@ -2601,6 +2875,32 @@ const handleFitToScreen = useCallback(() => {
                 return <Line {...lineProps} key={edge.id} />;
               })}
 
+              {/* Render Relationships */}
+              {relationships.map((rel) => (
+                <Relationship
+                  key={rel.id}
+                  relationship={rel}
+                  nodes={nodes}
+                  nodeVisuals={nodeVisuals}
+                  isSelected={selectedRelationshipId === rel.id}
+                  onUpdateControlPoints={handleUpdateRelationshipControlPoints}
+                  onUpdateLabel={handleUpdateRelationshipLabel}
+                  onClick={(id) => setSelectedRelationshipId(id)}
+                />
+              ))}
+
+              {/* Render Summaries */}
+              {summaries.map((sum) => (
+                <Summary
+                  key={sum.id}
+                  summary={sum}
+                  nodes={nodes}
+                  nodeVisuals={nodeVisuals}
+                  isSelected={selectedSummaryId === sum.id}
+                  onUpdateRange={handleUpdateSummaryRange}
+                />
+              ))}
+
               {visibleNodes.map((node) => {
                 const visual = nodeVisuals.get(node.id);
                 if (!visual) return null;
@@ -2627,6 +2927,34 @@ const handleFitToScreen = useCallback(() => {
                     onDragEnd={(e) => handleDragEnd(e, node.id)}
                     onClick={(e) => {
                       e.cancelBubble = true;
+                      
+                      // Relationship mode: tạo relationship khi click node thứ 2
+                      if (isRelationshipMode && relationshipFrom && relationshipFrom !== node.id) {
+                        addRelationship(relationshipFrom, node.id);
+                        setIsRelationshipMode(false);
+                        setRelationshipFrom(null);
+                        return;
+                      }
+                      
+                      // Check if this is a label node of relationship
+                      const relatedRelationship = relationships.find(r => r.labelNodeId === node.id);
+                      if (relatedRelationship) {
+                        setSelectedRelationshipId(relatedRelationship.id);
+                        setSelectedSummaryId(null);
+                        setSelectedNodeIds([]);
+                        return;
+                      }
+                      
+                      // Check if this is a summary node
+                      const relatedSummary = summaries.find(s => s.summaryNodeId === node.id);
+                      if (relatedSummary) {
+                        setSelectedSummaryId(relatedSummary.id);
+                        setSelectedRelationshipId(null);
+                      } else {
+                        setSelectedSummaryId(null);
+                        setSelectedRelationshipId(null);
+                      }
+                      
                       if (e.evt.shiftKey) {
                         setSelectedNodeIds(prevIds => {
                           const newSet = new Set(prevIds);
