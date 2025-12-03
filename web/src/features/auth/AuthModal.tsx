@@ -91,6 +91,9 @@ const AuthModal: React.FC<Props> = ({ isOpen, onClose, initialMode = 'login' }) 
         };
         setAuthTokens(tokens);
         onClose();
+        
+        // [FIX] Chuyển hướng về dashboard sau khi login thành công
+        window.location.href = '/dashboard';
     } catch (err: any) {
         if (err.name === 'UserNotConfirmedException') {
             setUsernameForConfirm(formData.email);

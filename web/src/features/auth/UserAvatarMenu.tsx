@@ -3,15 +3,17 @@ import { useState } from 'react';
 import { useAuth } from '../../hooks/useAuth';
 import { User, KeyRound, LogOut, LogIn, UserPlus } from 'lucide-react';
 import { useToast } from '../../hooks/useToast';
+import ChangePasswordModal from './ChangePasswordModal';
 
 // [MERGE] Sử dụng phiên bản "light mode" từ feature/tt
 export default function UserAvatarMenu() {
     const { isAuthed, user, login, logout } = useAuth();
     const [isAvatarMenuOpen, setAvatarMenuOpen] = useState(false);
+    const [isChangePasswordOpen, setChangePasswordOpen] = useState(false);
     const { addToast } = useToast();
 
     const handleChangePassword = () => {
-        addToast("Chức năng đổi mật khẩu đang được phát triển.", "info");
+        setChangePasswordOpen(true);
         setAvatarMenuOpen(false);
     }
 
@@ -58,6 +60,11 @@ export default function UserAvatarMenu() {
                     )}
                 </div>
             )}
+            
+            <ChangePasswordModal 
+                isOpen={isChangePasswordOpen} 
+                onClose={() => setChangePasswordOpen(false)} 
+            />
         </div>
     );
 }

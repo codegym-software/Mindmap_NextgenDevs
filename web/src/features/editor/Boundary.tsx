@@ -60,12 +60,12 @@ const Boundary: React.FC<BoundaryProps> = ({
   const isCollapsed = node.collapsed;
   const descendantIds = isCollapsed ? [nodeId] : [nodeId, ...getDescendants(nodeId)];
   
-  // Filter out descendants that have their own boundaries (they will be rendered separately)
-  const boundaryNodes = descendantIds
+  // Lấy TẤT CẢ descendants (bao gồm cả những node có boundary)
+  const allDescendants = descendantIds
     .map(id => nodes.find(n => n.id === id))
-    .filter(n => n && (n.id === nodeId || !n.boundary)) as NodeData[];
+    .filter(Boolean) as NodeData[];
 
-  if (boundaryNodes.length === 0) {
+  if (allDescendants.length === 0) {
     return null;
   }
 
@@ -74,15 +74,33 @@ const Boundary: React.FC<BoundaryProps> = ({
   let maxX = -Infinity;
   let maxY = -Infinity;
 
-  boundaryNodes.forEach(n => {
+  // [FIX CRITICAL] Boundary cha phải bao gồm CẢ boundary của node con
+  allDescendants.forEach(n => {
     const visual = nodeVisuals.get(n.id);
     if (visual) {
       const { x, y } = visual.style;
       const { w, h } = visual.box;
-      minX = Math.min(minX, x - w / 2);
-      maxX = Math.max(maxX, x + w / 2);
-      minY = Math.min(minY, y - h / 2);
-      maxY = Math.max(maxY, y + h / 2);
+      
+      // Nếu node con có boundary, phải tính thêm padding của boundary đó
+      if (n.boundary && n.id !== nodeId) {
+        // Tính padding của boundary con
+        const childDepth = getBoundaryDepth(n.id);
+        const childBasePadding = 30;
+        const childDepthPadding = childDepth * -8;
+        const childPadding = Math.max(10, childBasePadding + childDepthPadding);
+        
+        // Expand bounds to include child boundary padding
+        minX = Math.min(minX, x - w / 2 - childPadding);
+        maxX = Math.max(maxX, x + w / 2 + childPadding);
+        minY = Math.min(minY, y - h / 2 - childPadding);
+        maxY = Math.max(maxY, y + h / 2 + childPadding);
+      } else {
+        // Node thông thường
+        minX = Math.min(minX, x - w / 2);
+        maxX = Math.max(maxX, x + w / 2);
+        minY = Math.min(minY, y - h / 2);
+        maxY = Math.max(maxY, y + h / 2);
+      }
     }
   });
 

@@ -52,14 +52,17 @@ const Summary: React.FC<SummaryProps> = ({
   const { style: currentStartStyle, box: currentStartBox } = currentStartVisual;
   const { style: currentEndStyle, box: currentEndBox } = currentEndVisual;
 
-  // [FIX] Tìm tất cả leaf nodes trong range
-  // Nếu node bị collapse, chỉ dùng chính node đó, không tìm con
+  // Nếu node bị collapse, dùng chính node đó
   const getLeafNodesInRange = () => {
     const startIdx = siblings.findIndex(n => n.id === localStartNodeId);
     const endIdx = siblings.findIndex(n => n.id === localEndNodeId);
     const [minIdx, maxIdx] = [Math.min(startIdx, endIdx), Math.max(startIdx, endIdx)];
 
     const collectLeafNodes = (nodeId: string): string[] => {
+      const node = nodes.find(n => n.id === nodeId);
+      // KHÔNG tìm các node con đã bị ẩn
+      if (node?.collapsed) return [nodeId];
+      
       const children = nodes.filter(n => n.parentId === nodeId);
       if (children.length === 0) return [nodeId];
       return children.flatMap(child => collectLeafNodes(child.id));
@@ -113,7 +116,6 @@ const Summary: React.FC<SummaryProps> = ({
     const xMid = startX + (braceWidth * direction * 1.5);
 
     if (summary.braceStyle === 'square') {
-      // Square bracket
       return `
         M ${x1} ${startY}
         L ${x2} ${startY}
@@ -121,7 +123,6 @@ const Summary: React.FC<SummaryProps> = ({
         L ${x1} ${endY}
       `;
     } else {
-      // Curly brace
       const controlY1 = startY + height * 0.3;
       const controlY2 = endY - height * 0.3;
 
@@ -135,13 +136,11 @@ const Summary: React.FC<SummaryProps> = ({
     }
   };
 
-  // Tính toán selection box - bao quanh tất cả nodes từ start đến end và children của chúng
   const getSelectionBox = () => {
     const startNode = nodes.find(n => n.id === localStartNodeId);
     const endNode = nodes.find(n => n.id === localEndNodeId);
     if (!startNode || !endNode) return null;
 
-    // Thu thập tất cả descendants của các nodes trong range
     const collectDescendants = (nodeId: string): string[] => {
       const children = nodes.filter(n => n.parentId === nodeId).map(n => n.id);
       return [nodeId, ...children.flatMap(collectDescendants)];
@@ -156,7 +155,6 @@ const Summary: React.FC<SummaryProps> = ({
       collectDescendants(siblings[i].id).forEach(id => allNodeIds.add(id));
     }
 
-    // Tìm bounding box
     let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
     allNodeIds.forEach(id => {
       const visual = nodeVisuals.get(id);
@@ -240,7 +238,6 @@ const Summary: React.FC<SummaryProps> = ({
 
   return (
     <>
-      {/* Selection box khi node summary được select */}
       {isSelected && selectionBox && (
         <Rect
           x={selectionBox.x}
@@ -254,7 +251,6 @@ const Summary: React.FC<SummaryProps> = ({
         />
       )}
 
-      {/* Brace */}
       <Path
         data={createCurlyBracePath()}
         stroke={summary.color || '#f59e0b'}
@@ -276,7 +272,6 @@ const Summary: React.FC<SummaryProps> = ({
         }}
       />
 
-      {/* Summary text ở vị trí mũi nhọn giữa */}
       {summary.summaryText && !summary.summaryNodeId && (
         <KonvaText
           x={isLeft ? startX - braceWidth - 60 : startX + braceWidth + 10}
@@ -290,10 +285,8 @@ const Summary: React.FC<SummaryProps> = ({
         />
       )}
 
-      {/* Resize handles - chỉ hiện khi selected */}
       {isSelected && (
         <>
-          {/* Top handle */}
           <KonvaCircle
             x={startX}
             y={startY}
@@ -306,7 +299,6 @@ const Summary: React.FC<SummaryProps> = ({
             onDragEnd={handleTopHandleDragEnd}
             dragBoundFunc={(pos) => ({ x: startX, y: pos.y })}
           />
-          {/* Bottom handle */}
           <KonvaCircle
             x={startX}
             y={endY}

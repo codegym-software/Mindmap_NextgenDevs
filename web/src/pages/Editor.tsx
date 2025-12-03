@@ -411,6 +411,10 @@ export default function Editor() {
   const editingInputRef = useRef<HTMLTextAreaElement>(null);
   const wsRef = useRef<WebSocket | null>(null);
 
+  // [DOCKING SIDEBAR] Panel width constant - must be before useEffect that uses it
+  const PANEL_WIDTH = 300;
+  const prevPanelStateRef = useRef(isFormattingToolbarOpen);
+
   const activeTheme =
   colorThemes[activeColorThemeId as keyof typeof colorThemes];
   const nodeTopology = useMemo(() => {
@@ -636,16 +640,34 @@ export default function Editor() {
   }, 5000, {
   });
 
+  // [RESIZE OBSERVER] Update canvas dimensions accounting for panel width
+  // [OPTIMIZATION] Debounce resize để tránh layout liên tục (theo spec: 100-200ms)
   useEffect(() => {
+    let resizeTimer: number;
+    
     const handleResize = () => {
-      setDimensions({
-        width: window.innerWidth,
-        height: window.innerHeight - 48, 
-      });
+      clearTimeout(resizeTimer);
+      resizeTimer = setTimeout(() => {
+        const panelOffset = isFormattingToolbarOpen ? PANEL_WIDTH : 0;
+        setDimensions({
+          width: window.innerWidth - panelOffset,
+          height: window.innerHeight - 48, 
+        });
+      }, 200); // Debounce 200ms
     };
+    
+    const panelOffset = isFormattingToolbarOpen ? PANEL_WIDTH : 0;
+    setDimensions({
+      width: window.innerWidth - panelOffset,
+      height: window.innerHeight - 48,
+    }); // Initial calculation (immediate)
+    
     window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
-  }, []);
+    return () => {
+      clearTimeout(resizeTimer);
+      window.removeEventListener('resize', handleResize);
+    };
+  }, [isFormattingToolbarOpen]);
 
   useEffect(() => {
     let isMounted = true;
@@ -832,13 +854,51 @@ export default function Editor() {
     }
   };
 
+  // [REMOVED] Auto open/close panel logic - now only controlled by toolbar button
+  // useEffect(() => {
+  //   if (selectedNodeIds.length > 0) {
+  //      setFormattingToolbarOpen(true);
+  //   } else {
+  //      setFormattingToolbarOpen(false);
+  //   }
+  // }, [selectedNodeIds]);
+
+  // [VIEWPORT RE-CENTERING] Smart re-centering when panel opens/closes
   useEffect(() => {
-    if (selectedNodeIds.length > 0) {
-       setFormattingToolbarOpen(true);
-    } else {
-       setFormattingToolbarOpen(false);
+    const prevState = prevPanelStateRef.current;
+    const currentState = isFormattingToolbarOpen;
+    
+    // Only re-center if state actually changed
+    if (prevState !== currentState) {
+      prevPanelStateRef.current = currentState;
+      
+      // Calculate delta shift
+      const deltaX = currentState ? -(PANEL_WIDTH / 2) : (PANEL_WIDTH / 2);
+      
+      // Get anchor point (selected node or viewport center)
+      let anchorX = 0;
+      let anchorY = 0;
+      
+      if (selectedNodeIds.length > 0) {
+        // Use selected node as anchor
+        const firstNode = nodes.find(n => n.id === selectedNodeIds[0]);
+        if (firstNode) {
+          anchorX = firstNode.x;
+          anchorY = firstNode.y;
+        }
+      } else {
+        // Use current viewport center as anchor
+        anchorX = (dimensions.width / 2 - pos.x) / scale;
+        anchorY = (dimensions.height / 2 - pos.y) / scale;
+      }
+      
+      // Apply smooth camera shift to keep anchor centered
+      setPos(prevPos => ({
+        x: prevPos.x + deltaX,
+        y: prevPos.y
+      }));
     }
-  }, [selectedNodeIds]);
+  }, [isFormattingToolbarOpen, selectedNodeIds, dimensions, scale, pos, nodes]);
 
   const handleCreateNew = useCallback(async () => {
     try {
@@ -1129,9 +1189,30 @@ const handleLayout = useCallback(
         const calculateSubtreeHeights = (node: TreeNode): number => {
           const visual = nodeVisuals.get(node.id);
           const selfHeight = visual?.box.h || 60;
+          
+          // [SUPER-NODE] Tính boundary padding nếu node có boundary
+          let boundaryPaddingVertical = 0;
+          if (node.boundary) {
+            // Padding cho boundary: base 30px, giảm theo depth
+            const depth = (() => {
+              let d = 0;
+              let parentId = node.parentId;
+              while (parentId) {
+                const parent = nodes.find(n => n.id === parentId);
+                if (parent?.boundary) d++;
+                parentId = parent?.parentId;
+              }
+              return d;
+            })();
+            const basePadding = 30;
+            const depthPadding = depth * -8;
+            const padding = Math.max(10, basePadding + depthPadding);
+            boundaryPaddingVertical = padding * 2; // Top + Bottom
+          }
+          
           if (node.children.length === 0) {
-            node.subtreeHeight = selfHeight;
-            return selfHeight;
+            node.subtreeHeight = selfHeight + boundaryPaddingVertical;
+            return node.subtreeHeight;
           }
           let childrenTotalHeight = 0;
           node.children.forEach((child, index) => {
@@ -1140,7 +1221,7 @@ const handleLayout = useCallback(
               childrenTotalHeight += VERTICAL_GAP;
             }
           });
-          node.subtreeHeight = Math.max(selfHeight, childrenTotalHeight);
+          node.subtreeHeight = Math.max(selfHeight, childrenTotalHeight) + boundaryPaddingVertical;
           return node.subtreeHeight;
         };
         const positionBranch = (
@@ -1156,7 +1237,26 @@ const handleLayout = useCallback(
           branchNodes.forEach((node) => {
             const blockHeight = node.subtreeHeight;
             const nodeVisual = nodeVisuals.get(node.id);
-            const nodeWidth = nodeVisual?.box.w || 150;
+            let nodeWidth = nodeVisual?.box.w || 150;
+            
+            // [SUPER-NODE] Expand width if node has boundary
+            if (node.boundary) {
+              const depth = (() => {
+                let d = 0;
+                let parentId = node.parentId;
+                while (parentId) {
+                  const parent = nodes.find(n => n.id === parentId);
+                  if (parent?.boundary) d++;
+                  parentId = parent?.parentId;
+                }
+                return d;
+              })();
+              const basePadding = 30;
+              const depthPadding = depth * -8;
+              const padding = Math.max(10, basePadding + depthPadding);
+              nodeWidth += padding * 2; // Left + Right padding
+            }
+            
             const parentVisual = nodeVisuals.get(parent.id);
             const parentWidth = parentVisual?.box.w || 150;
             node.x =
@@ -1183,7 +1283,26 @@ const handleLayout = useCallback(
           children.forEach((node) => {
             const blockHeight = node.subtreeHeight;
             const nodeVisual = nodeVisuals.get(node.id);
-            const nodeWidth = nodeVisual?.box.w || 150;
+            let nodeWidth = nodeVisual?.box.w || 150;
+            
+            // [SUPER-NODE] Expand width if node has boundary
+            if (node.boundary) {
+              const depth = (() => {
+                let d = 0;
+                let parentId = node.parentId;
+                while (parentId) {
+                  const parent = nodes.find(n => n.id === parentId);
+                  if (parent?.boundary) d++;
+                  parentId = parent?.parentId;
+                }
+                return d;
+              })();
+              const basePadding = 30;
+              const depthPadding = depth * -8;
+              const padding = Math.max(10, basePadding + depthPadding);
+              nodeWidth += padding * 2;
+            }
+            
             const parentVisual = nodeVisuals.get(parent.id);
             const parentWidth = parentVisual?.box.w || 150;
             node.x =
@@ -1367,6 +1486,11 @@ const handleLayout = useCallback(
         
         // Collect leaf nodes
         const collectLeafNodes = (nodeId: string): string[] => {
+          const node = newNodes.find(n => n.id === nodeId);
+          // [CRITICAL FIX] Nếu node bị collapse, chỉ trả về chính node đó
+          // KHÔNG tìm con vì các node con đã bị ẩn (không còn visible)
+          if (node?.collapsed) return [nodeId];
+          
           const children = newNodes.filter(n => n.parentId === nodeId);
           if (children.length === 0) return [nodeId];
           return children.flatMap(child => collectLeafNodes(child.id));
@@ -1435,9 +1559,10 @@ const handleLayout = useCallback(
       
       setRootCollapse({ left: false, right: false });
 
-      // Logic Căn giữa/Zoom 
+      // Logic Căn giữa/Zoom - [FIX] Account for panel width
       if (newNodes.length === 0) {
-        const currentWidth = window.innerWidth;
+        const panelOffset = isFormattingToolbarOpen ? PANEL_WIDTH : 0;
+        const currentWidth = window.innerWidth - panelOffset;
         const currentHeight = window.innerHeight - 48;
         setDimensions({ width: currentWidth, height: currentHeight });
         setScale(1);
@@ -1457,9 +1582,13 @@ const handleLayout = useCallback(
       });
       const boundsWidth = maxX - minX + 80;
       const boundsHeight = maxY - minY + 80;
-      const currentWidth = window.innerWidth;
+      
+      // [FIX] Use actual visible width (minus panel)
+      const panelOffset = isFormattingToolbarOpen ? PANEL_WIDTH : 0;
+      const currentWidth = window.innerWidth - panelOffset;
       const currentHeight = window.innerHeight - 48;
       setDimensions({ width: currentWidth, height: currentHeight });
+      
       if (boundsWidth <= 0 || boundsHeight <= 0) {
         if (!keepCamera) {
           setScale(1);
@@ -1482,7 +1611,7 @@ const handleLayout = useCallback(
         setPos({ x: newX, y: newY });
       }
     },
-    [nodeVisuals, setGraph, edges] 
+    [nodeVisuals, setGraph, edges, isFormattingToolbarOpen, PANEL_WIDTH] 
   );
 
   const zoomStep = 1.2; 
@@ -1526,14 +1655,73 @@ const handleFitToScreen = useCallback(() => {
   handleLayout(false); 
 }, [handleLayout]); 
 
+  // [AUTO-PAN] Ensure node is visible in viewport (not hidden behind panel)
+  const ensureNodeVisible = useCallback((nodeId: string) => {
+    const node = nodes.find(n => n.id === nodeId);
+    const visual = nodeVisuals.get(nodeId);
+    if (!node || !visual) return;
+
+    const { x, y } = node;
+    const { w, h } = visual.box;
+    
+    // Calculate node bounds in screen coordinates
+    const nodeScreenX = pos.x + x * scale;
+    const nodeScreenY = pos.y + y * scale;
+    const nodeScreenW = w * scale;
+    const nodeScreenH = h * scale;
+    
+    // Calculate visible area (accounting for panel)
+    const panelOffset = isFormattingToolbarOpen ? PANEL_WIDTH : 0;
+    const visibleLeft = 0;
+    const visibleRight = dimensions.width - panelOffset;
+    const visibleTop = 48; // Toolbar height
+    const visibleBottom = dimensions.height;
+    
+    // Calculate margins for comfortable viewing
+    const margin = 50;
+    
+    // Check if node is outside visible area
+    let needsPan = false;
+    let newPosX = pos.x;
+    let newPosY = pos.y;
+    
+    // Check right boundary (most important for panel overlay)
+    if (nodeScreenX + nodeScreenW / 2 > visibleRight - margin) {
+      needsPan = true;
+      newPosX = visibleRight - margin - x * scale - nodeScreenW / 2;
+    }
+    // Check left boundary
+    else if (nodeScreenX - nodeScreenW / 2 < visibleLeft + margin) {
+      needsPan = true;
+      newPosX = visibleLeft + margin - x * scale + nodeScreenW / 2;
+    }
+    
+    // Check bottom boundary
+    if (nodeScreenY + nodeScreenH / 2 > visibleBottom - margin) {
+      needsPan = true;
+      newPosY = visibleBottom - margin - y * scale - nodeScreenH / 2;
+    }
+    // Check top boundary
+    else if (nodeScreenY - nodeScreenH / 2 < visibleTop + margin) {
+      needsPan = true;
+      newPosY = visibleTop + margin - y * scale + nodeScreenH / 2;
+    }
+    
+    if (needsPan) {
+      setPos({ x: newPosX, y: newPosY });
+    }
+  }, [nodes, nodeVisuals, pos, scale, dimensions, isFormattingToolbarOpen, PANEL_WIDTH]);
+
   const startEditing = useCallback((nodeId: string) => {
     setSelectedNodeIds([nodeId]);
     setEditingNodeId(nodeId);
+    // Ensure node is visible before editing
     setTimeout(() => {
+      ensureNodeVisible(nodeId);
       editingInputRef.current?.focus();
       editingInputRef.current?.select();
     }, 50);
-  }, []);
+  }, [ensureNodeVisible]);
 
   const justStoppedEditingRef = useRef(false);
 
@@ -1563,6 +1751,11 @@ const handleFitToScreen = useCallback(() => {
         setGraph(newNodes, edges);
         justStoppedEditingRef.current = true; 
         useEditorStore.setState({ isDirty: true });
+        
+        // [OPTIMIZATION] Layout sẽ tự động trigger khi nodeVisuals thay đổi
+        // Không cần trigger thủ công ở đây vì text change sẽ update nodeVisuals
+        // và handleLayout đã có dependency vào nodeVisuals
+        
         debouncedPushHistory();
         debouncedPersistData();
         sendPatch('NODE_TEXT_CHANGE', { id: editingNodeId, text: newText }); 
@@ -1620,8 +1813,12 @@ const handleFitToScreen = useCallback(() => {
     pushHistory(nodes, edges);
     setGraph(newNodes, newEdges);
     startEditing(newId);
-    setTimeout(() => handleLayout(true), 50); 
-  }, [nodes, edges, pushHistory, setGraph, nodeMap, nodeVisuals, startEditing, handleLayout]);
+    setTimeout(() => {
+      handleLayout(true);
+      // Ensure new node is visible after layout
+      setTimeout(() => ensureNodeVisible(newId), 100);
+    }, 50); 
+  }, [nodes, edges, pushHistory, setGraph, nodeMap, nodeVisuals, startEditing, handleLayout, ensureNodeVisible]);
 
   const handleAddSibling = useCallback((nodeId: string) => {
     if (nodeId === 'root') { 
@@ -1668,9 +1865,13 @@ const handleFitToScreen = useCallback(() => {
     pushHistory(nodes, edges);
     setGraph(newNodes, newEdges);
     startEditing(newId);
-    setTimeout(() => handleLayout(true), 50); 
+    setTimeout(() => {
+      handleLayout(true);
+      // Ensure new node is visible after layout
+      setTimeout(() => ensureNodeVisible(newId), 100);
+    }, 50); 
     
-  }, [nodes, edges, pushHistory, setGraph, nodeMap, nodeVisuals, startEditing, handleLayout, handleAddChild]);
+  }, [nodes, edges, pushHistory, setGraph, nodeMap, nodeVisuals, startEditing, handleLayout, handleAddChild, ensureNodeVisible]);
 
   const handleDeleteNode = useCallback(
     () => { 
@@ -1746,9 +1947,17 @@ const handleFitToScreen = useCallback(() => {
     }
 
     setGraph(newNodes, edges);
-    if (updates.nodeLength) {
+    
+    // [OPTIMIZATION] Dirty Checking - chỉ layout khi có thay đổi dimension
+    // Theo spec: fontSize, padding, borderWidth, nodeLength ảnh hưởng đến kích thước
+    const needsLayout = updates.nodeLength !== undefined || 
+                        updates.fontSize !== undefined || 
+                        updates.borderWidth !== undefined;
+    
+    if (needsLayout) {
       setTimeout(() => handleLayout(true), 50);
     }
+    
     debouncedPushHistory();
     
     // Lưu ngay lập tức khi thay đổi style node
@@ -2408,11 +2617,22 @@ const handleFitToScreen = useCallback(() => {
   const handlePasteStyle = () => {
     if (!selectedNodeIds || !styleClipboard) return;
     const idSet = selectedIdsSet;
+    
+    // [OPTIMIZATION] Dirty checking - chỉ layout nếu có style ảnh hưởng đến kích thước
+    const needsLayout = styleClipboard.fontSize !== undefined || 
+                        styleClipboard.borderWidth !== undefined;
+    
     const newNodes = nodes.map((n) =>
       idSet.has(n.id) ? { ...n, ...styleClipboard } : n
     );
     setGraph(newNodes, edges);
-    setTimeout(() => handleLayout(true), 50);
+    
+    // Chỉ trigger layout nếu style ảnh hưởng đến dimension (fontSize, padding, border)
+    // Theo spec: màu sắc chỉ cần Repaint
+    if (needsLayout) {
+      setTimeout(() => handleLayout(true), 50);
+    }
+    
     debouncedPushHistory();
     
     // Lưu ngay lập tức
@@ -2435,11 +2655,21 @@ const handleFitToScreen = useCallback(() => {
     if (!selectedNodeIds || !currentNode) return;
     const idSet = selectedIdsSet;
     const resetStyle = applyNodeDefaults(currentNode, activeTheme);
+    
+    // [OPTIMIZATION] Reset style có thể thay đổi fontSize, borderWidth -> cần layout
+    const needsLayout = resetStyle.fontSize !== undefined || 
+                        resetStyle.borderWidth !== undefined;
+    
     const newNodes = nodes.map((n) =>
       idSet.has(n.id) ? { ...n, ...resetStyle } : n
     );
     setGraph(newNodes, edges);
-    setTimeout(() => handleLayout(true), 50);
+    
+    // Chỉ layout nếu có thay đổi dimension
+    if (needsLayout) {
+      setTimeout(() => handleLayout(true), 50);
+    }
+    
     debouncedPushHistory();
     
     // Lưu ngay lập tức
@@ -2466,18 +2696,74 @@ const handleFitToScreen = useCallback(() => {
         setRootCollapse(prev => ({ ...prev, [side]: !prev[side] }));
         sendPatch('ROOT_TOGGLE_COLLAPSE', { side });
       } else if (nodeId !== 'root') {
-        const newNodes = nodes.map(n => 
-          n.id === nodeId ? { ...n, collapsed: !n.collapsed } : n
-        );
-        setGraph(newNodes, edges);
+        const node = nodeMap.get(nodeId);
+        if (!node) return;
+        
+        const wasCollapsed = node.collapsed;
+        
+        // [SMART ANCHOR] Lưu vị trí hiện tại của node để giữ anchor point
+        const visual = nodeVisuals.get(nodeId);
+        if (visual) {
+          const nodeScreenX = pos.x + node.x * scale;
+          const nodeScreenY = pos.y + node.y * scale;
+          
+          const newNodes = nodes.map(n => 
+            n.id === nodeId ? { ...n, collapsed: !n.collapsed } : n
+          );
+          setGraph(newNodes, edges);
+          
+          // Sau khi layout, giữ node ở cùng vị trí screen
+          setTimeout(() => {
+            const updatedNode = useEditorStore.getState().nodes.find(n => n.id === nodeId);
+            if (updatedNode) {
+              const newPosX = nodeScreenX - updatedNode.x * scale;
+              const newPosY = nodeScreenY - updatedNode.y * scale;
+              setPos({ x: newPosX, y: newPosY });
+              
+              // [AUTO-SCROLL TO CHILDREN] Nếu đang expand, pan đến children
+              if (wasCollapsed) {
+                // Tính toán bounding box của các children mới hiện ra
+                const children = edges.filter(e => e.from === nodeId).map(e => e.to);
+                if (children.length > 0) {
+                  const childNodes = useEditorStore.getState().nodes.filter(n => children.includes(n.id));
+                  if (childNodes.length > 0) {
+                    let minChildX = Infinity, maxChildX = -Infinity;
+                    childNodes.forEach(child => {
+                      const childVisual = nodeVisuals.get(child.id);
+                      if (childVisual) {
+                        const childLeft = child.x - childVisual.box.w / 2;
+                        const childRight = child.x + childVisual.box.w / 2;
+                        minChildX = Math.min(minChildX, childLeft);
+                        maxChildX = Math.max(maxChildX, childRight);
+                      }
+                    });
+                    
+                    // Kiểm tra xem children có nằm ngoài viewport không
+                    const panelOffset = isFormattingToolbarOpen ? PANEL_WIDTH : 0;
+                    const visibleWidth = window.innerWidth - panelOffset;
+                    const rightEdge = maxChildX * scale + newPosX;
+                    
+                    // Nếu children bị overflow, pan sang phải
+                    if (rightEdge > visibleWidth - 50) {
+                      const adjustX = visibleWidth - rightEdge - 50;
+                      setPos({ x: newPosX + adjustX, y: newPosY });
+                    }
+                  }
+                }
+              }
+            }
+          }, 60); // Đợi layout hoàn tất
+        }
+        
         debouncedPushHistory();
         debouncedPersistData();
         sendPatch('NODE_TOGGLE_COLLAPSE', { id: nodeId }); 
       }
     },
     [
-      nodes, edges, setGraph, debouncedPushHistory, 
-      debouncedPersistData, sendPatch, 
+      nodes, edges, setGraph, nodeMap, nodeVisuals, scale, pos, 
+      isFormattingToolbarOpen, PANEL_WIDTH,
+      debouncedPushHistory, debouncedPersistData, sendPatch, 
     ]
   );
 
@@ -2676,6 +2962,7 @@ const handleFitToScreen = useCallback(() => {
           )
           .join('\n')}
       </style>
+      {/* [FLEXBOX LAYOUT] Main container with flex layout for docking sidebar */}
       <div className="w-screen h-screen bg-white overflow-hidden flex flex-col">
         <EditorToolbar
           onCommitName={() => {
@@ -2791,11 +3078,17 @@ const handleFitToScreen = useCallback(() => {
             );
           })()}
 
-        <div
-          className="w-full h-full pt-12 relative" 
-          style={{ backgroundColor }}
-        >
-          <Stage
+        {/* [FLEXBOX LAYOUT] Canvas + Panel container */}
+        <div className="flex flex-row flex-1 overflow-hidden">
+          {/* [CANVAS AREA] Flex: 1 auto, adjusts when panel opens */}
+          <div
+            className="flex-1 pt-12 relative transition-all duration-300 ease-in-out"
+            style={{ 
+              backgroundColor,
+              width: isFormattingToolbarOpen ? `calc(100% - ${PANEL_WIDTH}px)` : '100%'
+            }}
+          >
+            <Stage
             ref={stageRef}
             width={dimensions.width}
             height={dimensions.height}
@@ -3398,9 +3691,20 @@ const handleFitToScreen = useCallback(() => {
                 visible={selectionRect.visible}
               />
             </Layer>
-          </Stage>
-          {isFormattingToolbarOpen && (
-            <FormattingToolbar
+            </Stage>
+          </div>
+
+          {/* [PROPERTIES PANEL] Docked sidebar with fixed width and smooth transition */}
+          <div
+            className="transition-all duration-300 ease-in-out overflow-hidden"
+            style={{
+              width: isFormattingToolbarOpen ? `${PANEL_WIDTH}px` : '0px',
+              flexShrink: 0,
+              borderLeft: isFormattingToolbarOpen ? '1px solid #e5e7eb' : 'none'
+            }}
+          >
+            {isFormattingToolbarOpen && (
+              <FormattingToolbar
               selectedIds={selectedNodeIds}
               currentNode={currentNode}
               currentBackgroundColor={backgroundColor}
@@ -3492,8 +3796,9 @@ const handleFitToScreen = useCallback(() => {
               onResetStyle={handleResetStyle}
               
               onToggleColoredBranch={() => {}}
-            />
-          )}
+              />
+            )}
+          </div>
         </div>
       </div>
     </>
