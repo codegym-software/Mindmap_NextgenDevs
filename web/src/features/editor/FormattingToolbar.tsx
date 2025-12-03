@@ -7,12 +7,11 @@ import {
   Palette, Square, Circle, Diamond, Minus,
   ArrowRight, GitBranch, GitCommit, GitMerge, Type,
   LayoutGrid, LayoutList, Layout,
-  Binary, // Sửa: Thay thế LogicTree
-  Users, // Sửa: Thay thế Sitemap
+  Binary, 
+  Users, 
   Paintbrush,
-  Type as TextIcon // Sửa: Alias
+  Type as TextIcon 
 } from 'lucide-react';
-// SỬA: Đổi lại đường dẫn import sang tương đối
 import {
   useEditorStore, NodeData, GlobalStructure, QuickStyleId,
   ColorTheme,
@@ -26,9 +25,8 @@ import {
 // Props
 // =================================================================================
 type FormattingToolbarProps = {
-  // [SỬA] Thay đổi từ string sang mảng string
   selectedIds: string[]; 
-  currentNode: NodeData | null; // Vẫn là node đầu tiên được chọn
+  currentNode: NodeData | null; 
   currentBackgroundColor: string;
   globalStructure: GlobalStructure;
   activeColorThemeId: keyof typeof colorThemes;
@@ -41,12 +39,12 @@ type FormattingToolbarProps = {
   onSetGlobalBranchColor: (color: string) => void;
   onSetActiveColorTheme: (themeName: keyof typeof colorThemes) => void;
 
-  // [SỬA] Bỏ tham số 'id'
   onUpdateNode: (updates: Partial<NodeData>) => void; 
   onApplyQuickStyle: (styleId: QuickStyleId) => void;
   onCopyStyle: () => void;
   onPasteStyle: () => void;
   onResetStyle: () => void;
+  onLayoutAll?: () => void; 
 };
 
 // =================================================================================
@@ -60,7 +58,7 @@ const BUTTON_ACTIVE_BG = "bg-blue-500 text-white";
 // Main Component
 // =================================================================================
 export default function FormattingToolbar({
-  selectedIds, // [SỬA]
+  selectedIds, 
   currentNode,
   currentBackgroundColor,
   globalStructure,
@@ -72,22 +70,21 @@ export default function FormattingToolbar({
   onToggleColoredBranch,
   onSetGlobalBranchColor,
   onSetActiveColorTheme,
-  onUpdateNode, // [SỬA]
+  onUpdateNode, 
   onApplyQuickStyle,
   onCopyStyle,
   onPasteStyle,
   onResetStyle,
+  onLayoutAll,
 }: FormattingToolbarProps) {
   const [activeTab, setActiveTab] = useState<'style' | 'map'>('map');
   const activeTheme = colorThemes[activeColorThemeId];
   
-  // [SỬA] Logic cấm/tắt tab Style
   const isDisabled = useMemo(() => {
     if (selectedIds.length === 0) return true;
     return false;
   }, [selectedIds]);
 
-  // [SỬA] Auto-switch tabs based on node selection
   useEffect(() => {
     if (isDisabled) {
       // Không có node nào được chọn HOẶC chỉ chọn 'root'
@@ -130,6 +127,7 @@ export default function FormattingToolbar({
             onToggleColoredBranch={onToggleColoredBranch}
             // [SỬA] Truyền prop fix lỗi từ bước trước
             onSetGlobalBranchColor={onSetGlobalBranchColor}
+            onLayoutAll={onLayoutAll}
           />
         )}
       </div>
@@ -178,6 +176,7 @@ type MapPanelProps = {
   onToggleColoredBranch: (state: boolean) => void;
   // [SỬA] Thêm prop
   onSetGlobalBranchColor: (color: string) => void;
+  onLayoutAll?: () => void; // Thêm callback để layout toàn bộ cây
 };
 function MapPanel({
   globalStructure,
@@ -191,6 +190,7 @@ function MapPanel({
   onToggleColoredBranch,
   // [SỬA] Nhận prop
   onSetGlobalBranchColor,
+  onLayoutAll,
 }: MapPanelProps) {
   const currentFont = useEditorStore((s) => s.globalFont);
   const currentLineWidth = useEditorStore((s) => s.branchLineWidth);
@@ -199,6 +199,16 @@ function MapPanel({
 
   return (
     <div className="p-4 space-y-4">
+      {/* 1. Layout toàn cục */}
+      
+          <button
+            onClick={onLayoutAll}
+            className={`w-full py-2 rounded-lg text-gray font-medium bg-gradient-to-r from-purple-100 to-blue-100 hover:from-blue-200 hover:to-purple-200 transition-all flex items-center justify-center gap-2`}
+          >
+            {/* <Layout size={19} /> */}
+            Layout toàn bộ
+          </button>
+
       {/* 2. Cấu trúc */}
       <RowItem label="Cấu trúc">
         <div className="flex justify-between gap-1 w-full">
@@ -219,7 +229,6 @@ function MapPanel({
           />
         </div>
       </RowItem>
-
 
       {/* 3. Màu nền */}
       <ColorItem

@@ -116,6 +116,9 @@ export type NodeData = {
   branchLineEnd?: 'none' | 'arrow';
   branchLineThickness?: 'thin' | 'normal' | 'thick';
   boundary?: boolean;
+  
+  // Transition state (temporary flag for smooth node creation)
+  isTransitioning?: boolean;
 };
 
 export type EdgeData = { id: string; from: string; to: string };
@@ -192,25 +195,49 @@ export function getNodeComputedStyle(
 
   if (!node) return baseStyle as NodeData;
 
-  // 2. Áp dụng màu theo context (root/topology/floating)
+  // 2. Áp dụng style theo Level (depth)
   if (node.id === 'root') {
-    baseStyle.color = theme.root.fill || '#000000';
-    baseStyle.textColor = theme.root.textColor || '#FFFFFF';
+    // Level 0: Central Topic
+    baseStyle.color = theme.root.fill || '#FFFFFF';
+    baseStyle.textColor = theme.root.textColor || '#000000';
     baseStyle.borderColor = theme.root.stroke || '#000000';
     baseStyle.borderWidth = 4;
     baseStyle.fontSize = 28;
     baseStyle.fontWeight = 'bold';
-    baseStyle.textCase = 'uppercase';
+    baseStyle.shape = 'roundedRect';
   } else if (topology) {
-    // Nodes có parent - apply màu theo depth
+    // Nodes có parent - apply style theo depth/level
     const { depth, branchBaseColor } = topology;
     const smartColors = getBranchColorByDepth(branchBaseColor, depth);
     
-    baseStyle.color = smartColors.bg;
-    baseStyle.borderColor = smartColors.border;
-    baseStyle.textColor = getContrastingTextColor(smartColors.bg);
-    
-    if (depth >= 6) baseStyle.borderWidth = 2;
+    if (depth === 1) {
+      // Level 1: Main Topic
+      baseStyle.color = smartColors.bg;
+      baseStyle.borderColor = smartColors.border;
+      baseStyle.textColor = getContrastingTextColor(smartColors.bg);
+      baseStyle.shape = 'roundedRect';
+      baseStyle.fontSize = 18;
+      baseStyle.fontWeight = 'normal';
+      baseStyle.borderWidth = 2;
+    } else if (depth === 2) {
+      // Level 2: Subtopic - Kế thừa màu cha nhưng nhạt hơn
+      baseStyle.color = smartColors.bg;
+      baseStyle.borderColor = smartColors.border;
+      baseStyle.textColor = getContrastingTextColor(smartColors.bg);
+      baseStyle.shape = 'roundedRect';
+      baseStyle.fontSize = 16;
+      baseStyle.fontWeight = 'normal';
+      baseStyle.borderWidth = 1;
+    } else {
+      // Level 3+: Underline style - Không có fill, chỉ có underline
+      baseStyle.color = 'transparent'; // Transparent background
+      baseStyle.borderColor = smartColors.border;
+      baseStyle.textColor = '#2D3748'; // Text màu tối để đọc được trên nền trắng
+      baseStyle.shape = 'rectangle'; // Sẽ render đặc biệt
+      baseStyle.fontSize = 14;
+      baseStyle.fontWeight = 'normal';
+      baseStyle.borderWidth = 0; // Không có border box
+    }
   } else {
     // Floating nodes - dùng theme default (sẽ được override bởi quick style nếu có)
     const defaultStyle = theme.quickStyles.default;
