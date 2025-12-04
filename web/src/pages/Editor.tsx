@@ -63,7 +63,7 @@ import {
 
 type BroadcastPatch = {
   type: string;
-  payload: any; // Dữ liệu là JSON, do FE gửi và FE nhận
+  payload: any; 
   senderId: string;
 };
 type BeGuestDoc = {
@@ -79,10 +79,7 @@ const PADDING_X = 20,
   PADDING_Y = 12;
 const LINE_HEIGHT_MULTIPLIER = 1.3;
 
-const BRANCH_COLORS_PALETTE = [
-  '#475569','#EF4444', '#F97316', '#FACC15', '#22C55E',
-  '#06B6D4', '#3B82F6', '#8B5CF6', '#EC4899',
-];
+const BRANCH_COLORS_PALETTE = ['#264979ff'];
 
 function hexToRgb(hex: string) {
   const h = hex.replace('#', '');
@@ -567,10 +564,22 @@ export default function Editor() {
       
       // Node bình thường
       const topo = nodeTopology.get(node.id);
-      map.set(
-        node.id, 
-        getNodeComputedStyle(node, activeTheme, globalFont, topo)
-      );
+      let style = getNodeComputedStyle(node, activeTheme, globalFont, topo);
+      // [ORG STRUCTURE] Level 3+ vẫn là box, không underline
+      const gs = useEditorStore.getState().globalStructure;
+      if (gs === 'org' && topo && topo.depth >= 3) {
+        if (style.color === 'transparent') {
+          style = {
+            ...style,
+            color: activeTheme.quickStyles.default.fill || '#FFFFFF',
+            borderColor: activeTheme.quickStyles.default.stroke || '#CBD5E0',
+            textColor: style.textColor || '#333333',
+            borderWidth: 1,
+            shape: 'roundedRect',
+          } as NodeData;
+        }
+      }
+      map.set(node.id, style);
     });
     return map;
   }, [nodes, activeTheme, globalFont, nodeTopology, relationships]);
@@ -1385,9 +1394,9 @@ const handleLayout = useCallback(
           });
         }
       } else {
-        // Logic Dagre cho 'org' và 'logic'
+        // Dagre layout cho 'org' (chỉ org)
         const g = new dagre.graphlib.Graph();
-        const rankdir = layoutType === 'org' ? 'TB' : 'LR';
+        const rankdir = 'TB';
         g.setGraph({ rankdir: rankdir, nodesep: 50, ranksep: 120 });
         g.setDefaultEdgeLabel(() => ({}));
         const adjMap = new Map<string, string[]>();
@@ -1399,18 +1408,7 @@ const handleLayout = useCallback(
           const visual = nodeVisuals.get(node.id);
          let w = visual?.box.w || 100;
           let h = visual?.box.h || 50;
-          if (layoutType === 'logic') {
-            const children = adjMap.get(node.id) || [];
-            if (children.length > 0) {
-              let childrenHeight = 0;
-              children.forEach((childId, idx) => {
-                childrenHeight += nodeVisuals.get(childId)?.box.h || 50;
-                if (idx > 0) childrenHeight += 30;
-              });
-              h = Math.max(h, childrenHeight);
-            }
-          }
-          if (layoutType === 'org') {
+          {
             const children = adjMap.get(node.id) || [];
             if (children.length > 0) {
               let childrenWidth = 0;
@@ -1427,8 +1425,7 @@ const handleLayout = useCallback(
         dagre.layout(g);
         newNodes = nodes.map((n): NodeData => {
           const pos = g.node(n.id);
-          const side =
-            layoutType === 'org' ? 'right' : pos.x < 0 ? 'left' : 'right';
+          const side = 'right';
           return pos ? { ...n, x: pos.x, y: pos.y, side: side } : n;
         });
       }
@@ -4134,11 +4131,10 @@ const handleFitToScreen = useCallback(() => {
                       const topology = nodeTopology.get(node.id);
                       const depth = topology?.depth || 0;
                       
-                      // Level 3+: Render underline thay vì box
-                      if (depth >= 3 && node.id !== 'root') {
+                      // Level 3+: Render underline (ngoại trừ org)
+                      if (depth >= 3 && node.id !== 'root' && useEditorStore.getState().globalStructure !== 'org') {
                         return (
                           <>
-                            {/* Invisible hit area để có thể select/drag */}
                             <Rect 
                               width={w} 
                               height={h} 
@@ -4149,7 +4145,6 @@ const handleFitToScreen = useCallback(() => {
                               strokeWidth={isSelected ? 2 : 0}
                             />
                             
-                            {/* Underline - đường kẻ dưới text, kéo dài ra 2 bên để nối với branch */}
                             <Line
                               points={[-w/2 - 10, h/2 - 2, w/2 + 10, h/2 - 2]}
                               stroke={topology?.branchBaseColor || style.borderColor}
@@ -4161,14 +4156,12 @@ const handleFitToScreen = useCallback(() => {
                         );
                       }
                       
-                      // Level 0-2: Render box bình thường
                       return (
                         <>
                           {(style.shape === 'rectangle' || style.shape === 'roundedRect') && (
                             <Rect {...shapeProps} cornerRadius={style.shape === 'roundedRect' ? 8 : 0} />
                           )}
                           
-                          {/* [MỚI] Hiển thị ảnh trong Node */}
                           {style.imageUrl && (
                             <URLImage 
                               src={style.imageUrl}
@@ -4201,7 +4194,6 @@ const handleFitToScreen = useCallback(() => {
                       lineHeight={LINE_HEIGHT_MULTIPLIER}
                     />
                     
-                    {/* Drop Target Indicator */}
                     {isDropTarget && (
                       <Group 
                         x={

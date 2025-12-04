@@ -1,8 +1,3 @@
-/**
- * Module tiện ích xử lý màu sắc cho Visualization
- * Sử dụng toán học Native để tối ưu hiệu năng, không dùng thư viện ngoài.
- */
-
 // Chuyển đổi Hex sang HSL
 export function hexToHSL(hex: string): { h: number; s: number; l: number } {
   let result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
@@ -42,47 +37,40 @@ export function hslToHex(h: number, s: number, l: number): string {
   return `#${f(0)}${f(8)}${f(4)}`;
 }
 
-/**
- * Tính toán màu nền thông minh dựa trên độ sâu (Depth-based Lightness).
- * Sử dụng nội suy tuyến tính (Lerp) để làm nhạt màu dần đều.
- */
+//Tính toán màu nền dựa trên độ sâu (Depth-based Lightness).
+// Sử dụng nội suy tuyến tính (Lerp) để làm nhạt màu dần đều.
 export function getBranchColorByDepth(
   baseHex: string, 
   depth: number, 
-  cutoffLevel: number = 6
+  cutoffLevel: number = 3
 ): { bg: string; border: string } {
   // 1. Base Color (Gốc)
   if (depth <= 1) {
     return { bg: baseHex, border: baseHex };
   }
 
-  // 2. The White Threshold (Cấp >= 6)
   if (depth >= cutoffLevel) {
-    // Nền trắng, Viền giữ màu gốc của nhánh để nhận diện
     return { bg: '#FFFFFF', border: baseHex };
   }
 
-  // 3. Gradient Fading (Cấp 2 -> 5)
   const { h, s, l: startL } = hexToHSL(baseHex);
-  const targetL = 96; // Gần trắng tuyệt đối
-  
-  // Tính toán phần trăm tiến trình (t) từ 0 (Level 1) đến 1 (Level Cutoff)
-  // depth 1 -> t=0
-  // depth 6 -> t=1
-  const t = (depth - 1) / (cutoffLevel - 1);
+  const targetL = 96; 
+
+  let t = (depth - 1) / (cutoffLevel - 1);
+  if (depth === 2) {
+    t = 0.4;
+  }
   
   // Công thức Lerp cho Lightness: L_new = L_start + (L_target - L_start) * t
   const currentL = startL + (targetL - startL) * t;
 
   const fadedColor = hslToHex(h, s, currentL);
   
-  // Với các node nhạt, viền nên đậm hơn nền một chút hoặc dùng chính màu đó
+  // Với các node nhạt, viền nên đậm hơn nền hoặc dùng chính màu đó
   return { bg: fadedColor, border: fadedColor };
 }
 
-/**
- * Tính toán độ tương phản để chọn màu chữ (Đen/Trắng) chuẩn WCAG.
- */
+ // Tính toán độ tương phản để chọn màu chữ (Đen/Trắng) chuẩn WCAG.
 export function getContrastingTextColor(hex: string): '#000000' | '#FFFFFF' {
   const { r, g, b } = hexToRgbSimple(hex);
   // Công thức YIQ standard
