@@ -98,7 +98,7 @@ const ChangePasswordModal: React.FC<Props> = ({ isOpen, onClose }) => {
 
   return (
     <div 
-      className="fixed inset-0 bg-black/10 backdrop-blur-sm flex items-center justify-center z-[100] p-4" 
+      className="fixed inset-0 bg-transparent backdrop-blur-sm flex justify-center items-start z-[100] pt-[12vh] px-4 pb-4" 
       onClick={handleClose}
     >
       <div className="w-full max-w-md max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
