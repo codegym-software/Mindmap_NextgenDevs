@@ -99,7 +99,7 @@ export default function FormattingToolbar({
   }, [isDisabled]); // [SỬA] Dùng isDisabled làm dependency
 
   return (
-    <div className="fixed top-16 right-0 h-[calc(100vh-4rem)] w-72 bg-white border-l border-gray-200 shadow-sm z-30 flex flex-col text-gray-700"> 
+    <div className="absolute top-11 right-0 h-[calc(100vh-2.75rem)] w-72 bg-white border-l border-gray-200 shadow-sm z-30 flex flex-col text-gray-700"> {/* Changed top-14 -> top-12 AND h-[calc(100vh-3.5rem)] -> h-[calc(100vh-3rem)] */}
       {/* 1. Header (Tabs) */}
       <TabHeader activeTab={activeTab} setActiveTab={setActiveTab} isDisabled={isDisabled} />
 
@@ -147,7 +147,7 @@ type TabHeaderProps = {
 };
 function TabHeader({ activeTab, setActiveTab, isDisabled }: TabHeaderProps) {
   return (
-    <div className="flex border-b border-gray-200 bg-gray-50">
+    <div className="flex justify-center border-b border-gray-200 bg-gray-50">
       <TabButton
         label="Style"
         isActive={activeTab === 'style'}
@@ -620,12 +620,11 @@ function StructureButton({ label, isActive, onClick }: StructureButtonProps) {
   return (
     <button
       onClick={onClick}
-      className={`flex-1 flex flex-col items-center justify-center gap-2 p-2 rounded-md border-2 text-center
-        ${isActive ? 'border-blue-500 bg-blue-50 text-blue-600' : 'border-gray-200 bg-gray-50 hover:bg-gray-100'}`}
+      className={`flex-1 flex flex-col items-center justify-center gap-2 p-2 rounded-md border-2
+        ${isActive ? 'border-blue-500 bg-blue-50 text-blue-600' : 'border-gray-200 bg-gray-50 hover:bg-gray-100'}
+section      `}
     >
-      <div className="flex items-center justify-center">
-        {label}
-      </div>
+      <span className="text-xs font-medium">{label}</span>
     </button>
   );
 }
@@ -633,9 +632,9 @@ function StructureButton({ label, isActive, onClick }: StructureButtonProps) {
 // Wrapper hàng
 function RowItem({ label, children }: { label: string, children: React.ReactNode }) {
   return (
-    <div className="flex items-start gap-3 w-full">
-      <label className="text-sm font-medium text-gray-500 whitespace-nowrap min-w-[90px] mt-1">{label}</label>
-      <div className="flex-1">{children}</div>
+    <div className="flex items-center justify-between gap-4">
+      <label className="text-sm font-medium text-gray-500 whitespace-nowrap">{label}</label>
+       {children}
     </div>
   );
 }
@@ -673,16 +672,15 @@ function ColorItem({ label, color, onChange, children }: ColorItemProps) {
   ];
 
   return (
-    <div className="flex items-start gap-3 w-full relative">
-      <label className="text-sm font-medium text-gray-500 whitespace-nowrap min-w-[90px] mt-1">{label}</label>
-      <div className="flex-1 flex items-center justify-between">
-        <div className="flex items-center gap-2">{children}
-          <button
-            className="w-8 h-6 rounded border border-gray-400"
-            style={{ backgroundColor: color }}
-            onClick={() => setShowPicker(!showPicker)}
-          />
-        </div>
+    <div className="flex items-center justify-between relative">
+      <label className="text-sm font-medium text-gray-500">{label}</label>
+      <div className="flex items-center gap-2">
+        {children}
+        <button
+          className="w-8 h-6 rounded border border-gray-400"
+          style={{ backgroundColor: color }}
+          onClick={() => setShowPicker(!showPicker)}
+        />
       </div>
       {showPicker && (
         <div ref={pickerRef} className="absolute right-0 top-full mt-1 w-48 bg-white shadow-lg rounded-md border border-gray-300 p-2 z-10">
@@ -779,7 +777,7 @@ function CustomSelect({ value, onChange, children }: CustomSelectProps) {
   }, [ref]);
 
   return (
-    <div className="relative w-full" ref={ref}>
+    <div className="relative w-36" ref={ref}>
       <button
         onClick={() => setIsOpen(!isOpen)}
         className={`w-full p-1.5 ${INPUT_BG} rounded text-sm text-left flex items-center justify-between border border-transparent focus:border-blue-500 focus:ring-1 focus:ring-blue-500`}

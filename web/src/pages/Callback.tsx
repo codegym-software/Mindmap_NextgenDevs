@@ -1,11 +1,11 @@
-
+// src/pages/Callback.tsx
 import { useEffect, useContext, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { exchangeCodeForTokens } from "../auth/cognito";
 import { AuthContext } from "../app/providers/AuthProvider";
 import Spinner from "../components/common/Spinner";
 
-
+// [MERGE] Sử dụng phiên bản "light mode" từ feature/tt
 export default function Callback() {
   const navigate = useNavigate();
   const { setAuthTokens } = useContext(AuthContext);
