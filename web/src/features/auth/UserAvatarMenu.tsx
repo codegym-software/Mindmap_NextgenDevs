@@ -49,10 +49,10 @@ export default function UserAvatarMenu() {
         <div className="relative">
             <button 
                 onClick={() => setAvatarMenuOpen(!isAvatarMenuOpen)} 
-                className="w-8 h-8 rounded-full bg-gray-200 hover:bg-gray-300 flex items-center justify-center font-bold text-blue-600 ring-2 ring-transparent hover:ring-blue-500 transition-all"
+                className="w-10 h-10 rounded-full bg-gray-200 hover:bg-gray-300 flex items-center justify-center font-bold text-blue-600 ring-2 ring-transparent hover:ring-blue-500 transition-all"
                 title="Tài khoản"
             >
-                {isAuthed && user?.email ? user.email[0].toUpperCase() : <User size={20} />}
+                {isAuthed && user?.email ? user.email[0].toUpperCase() : <User size={22} />}
             </button>
 
             {isAvatarMenuOpen && (

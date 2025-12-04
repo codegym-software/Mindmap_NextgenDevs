@@ -153,7 +153,7 @@ export default function Sidebar() {
         <button
           onClick={() => setOpen(!open)}
           onMouseEnter={() => !pinned && setOpen(true)}
-          className="fixed top-3 left-3 z-50 w-5 h-5 rounded-lg bg-white/50 hover:bg-gray-100/80 text-gray-800 flex items-center justify-center transition-colors backdrop-blur-sm" 
+          className="fixed top-3 left-0 z-50 w-5 h-5 rounded-lg bg-white/50 hover:bg-gray-100/80 text-gray-800 flex items-center justify-center transition-colors backdrop-blur-sm" 
           aria-label="Toggle sidebar"
         >
           <PanelLeftOpen />
