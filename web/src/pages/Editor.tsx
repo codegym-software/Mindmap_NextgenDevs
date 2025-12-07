@@ -410,7 +410,7 @@ export default function Editor() {
   const wsRef = useRef<WebSocket | null>(null);
 
   // [DOCKING SIDEBAR] Panel width constant - must be before useEffect that uses it
-  const PANEL_WIDTH = 300;
+  const PANEL_WIDTH = 350;
   const prevPanelStateRef = useRef(isFormattingToolbarOpen);
 
   const activeTheme =
@@ -3622,7 +3622,6 @@ const handleFitToScreen = useCallback(() => {
             );
           })()}
 
-        {/* [FLEXBOX LAYOUT] Canvas + Panel container */}
         <div className="flex flex-row flex-1 overflow-hidden">
           {/* [CANVAS AREA] Flex: 1 auto, adjusts when panel opens */}
           <div

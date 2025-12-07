@@ -87,16 +87,14 @@ export default function FormattingToolbar({
 
   useEffect(() => {
     if (isDisabled) {
-      // Không có node nào được chọn HOẶC chỉ chọn 'root'
       setActiveTab('map');
     } else {
-      // Có ít nhất một node (không phải root) được chọn
       setActiveTab('style');
     }
-  }, [isDisabled]); // [SỬA] Dùng isDisabled làm dependency
+  }, [isDisabled]); 
 
   return (
-    <div className="fixed top-16 right-0 h-[calc(100vh-4rem)] w-72 bg-white border-l border-gray-200 shadow-sm z-30 flex flex-col text-gray-700"> 
+    <div className="fixed top-14 right-0 h-[calc(100vh-3rem)] bg-white border-l border-gray-200 shadow-sm z-30 flex flex-col text-gray-700" style={{ width: '350px' }}> 
       {/* 1. Header (Tabs) */}
       <TabHeader activeTab={activeTab} setActiveTab={setActiveTab} isDisabled={isDisabled} />
 
@@ -104,10 +102,10 @@ export default function FormattingToolbar({
       <div className="flex-1 overflow-y-auto">
         {activeTab === 'style' && (
           <NodeStylePanel
-            selectedIds={selectedIds} // [SỬA]
+            selectedIds={selectedIds} 
             currentNode={currentNode}
             activeTheme={activeTheme}
-            onUpdateNode={onUpdateNode} // [SỬA]
+            onUpdateNode={onUpdateNode} 
             onApplyQuickStyle={onApplyQuickStyle}
             onCopyStyle={onCopyStyle}
             onPasteStyle={onPasteStyle}
@@ -125,7 +123,6 @@ export default function FormattingToolbar({
             onSetGlobalFont={onSetGlobalFont}
             onSetBranchLineWidth={onSetBranchLineWidth}
             onToggleColoredBranch={onToggleColoredBranch}
-            // [SỬA] Truyền prop fix lỗi từ bước trước
             onSetGlobalBranchColor={onSetGlobalBranchColor}
             onLayoutAll={onLayoutAll}
           />
@@ -150,7 +147,7 @@ function TabHeader({ activeTab, setActiveTab, isDisabled }: TabHeaderProps) {
         label="Style"
         isActive={activeTab === 'style'}
         onClick={() => setActiveTab('style')}
-        disabled={isDisabled} // [SỬA] Logic cấm/tắt đã được cập nhật
+        disabled={isDisabled} 
       />
       <TabButton
         label="Map"
@@ -174,9 +171,8 @@ type MapPanelProps = {
   onSetGlobalFont: (font: string) => void;
   onSetBranchLineWidth: (width: number) => void;
   onToggleColoredBranch: (state: boolean) => void;
-  // [SỬA] Thêm prop
   onSetGlobalBranchColor: (color: string) => void;
-  onLayoutAll?: () => void; // Thêm callback để layout toàn bộ cây
+  onLayoutAll?: () => void; 
 };
 function MapPanel({
   globalStructure,
