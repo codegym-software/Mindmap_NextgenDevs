@@ -94,7 +94,7 @@ export default function FormattingToolbar({
   }, [isDisabled]); 
 
   return (
-    <div className="fixed top-14 right-0 h-[calc(100vh-3rem)] bg-white border-l border-gray-200 shadow-sm z-30 flex flex-col text-gray-700" style={{ width: '350px' }}> 
+    <div className="fixed top-14 right-0 h-[calc(100vh-3rem)] bg-white border-l border-gray-200 shadow-sm z-30 flex flex-col text-gray-700" style={{ width: '280px' }}> 
       {/* 1. Header (Tabs) */}
       <TabHeader activeTab={activeTab} setActiveTab={setActiveTab} isDisabled={isDisabled} />
 
@@ -196,7 +196,6 @@ function MapPanel({
   return (
     <div className="p-4 space-y-4">
       {/* 1. Layout toàn cục */}
-      
           <button
             onClick={onLayoutAll}
             className={`w-full py-2 rounded-lg text-gray font-medium bg-gradient-to-r from-purple-100 to-blue-100 hover:from-blue-200 hover:to-purple-200 transition-all flex items-center justify-center gap-2`}
@@ -277,11 +276,9 @@ function MapPanel({
 // Tab "Style" (Cài đặt Node)
 // =================================================================================
 type NodeStylePanelProps = {
-  // [SỬA]
   selectedIds: string[];
   currentNode: NodeData | null;
   activeTheme: ColorTheme;
-  // [SỬA]
   onUpdateNode: (updates: Partial<NodeData>) => void;
   onApplyQuickStyle: (styleId: QuickStyleId) => void;
   onCopyStyle: () => void;
@@ -289,7 +286,6 @@ type NodeStylePanelProps = {
   onResetStyle: () => void;
 };
 function NodeStylePanel({
-  // [SỬA]
   selectedIds,
   currentNode,
   activeTheme,
@@ -300,8 +296,7 @@ function NodeStylePanel({
   onResetStyle,
 }: NodeStylePanelProps) {
   
-  // Tính toán style (vẫn dựa trên node đầu tiên)
-  // [FIX] Dùng computed style cho hiển thị màu/border, nhưng dùng actual values cho các field có thể override
+  // Tính toán style dựa trên node đầu được chọn
   const computedStyle = useMemo(() => {
     return getNodeComputedStyle(currentNode, activeTheme, useEditorStore.getState().globalFont);
   }, [currentNode, activeTheme]);
@@ -312,7 +307,6 @@ function NodeStylePanel({
     
     return {
       ...computedStyle,
-      // Dùng actual values (không computed) cho các field này để user có thể override
       fontFamily: currentNode.fontFamily ?? computedStyle.fontFamily,
       fontSize: currentNode.fontSize ?? computedStyle.fontSize,
       fontWeight: currentNode.fontWeight ?? computedStyle.fontWeight,
@@ -328,18 +322,14 @@ function NodeStylePanel({
     };
   }, [currentNode, computedStyle]);
   
-  // State cục bộ cho "Độ dài" (vẫn dựa trên node đầu tiên)
   const [localLength, setLocalLength] = useState<number | string>(style.nodeLength || 'fit');
   
   useEffect(() => {
-    // Cập nhật state cục bộ khi node thay đổi
     setLocalLength(style.nodeLength || 'fit');
   }, [style.nodeLength]);
 
 
-  // [SỬA] Handler chung
   const handleUpdate = (updates: Partial<NodeData>) => {
-    // onUpdateNode giờ đã xử lý mảng
     if (selectedIds.length > 0) {
       onUpdateNode(updates);
     }
@@ -857,3 +847,5 @@ function CollapsiblePanel({ label, children, defaultOpen = true }: CollapsiblePa
     </div>
   );
 }
+
+

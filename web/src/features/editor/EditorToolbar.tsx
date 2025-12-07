@@ -141,7 +141,7 @@ export default function EditorToolbar({
 
   return (
     <>
-    <div className="fixed top-0 left-0 right-0 h-14 bg-[#F5F5F5] border-b border-gray-200 flex items-center px-4 z-40">
+    <div className="fixed top-0 left-0 right-0 h-12 bg-[#F5F5F5] border-b border-gray-200 flex items-center px-4 z-40">
 
       {/* 1. PHẦN BÊN TRÁI (Logo, Tên) */}
       <div className="flex items-center gap-2 flex-shrink-0" style={{ minWidth: '300px' }}>

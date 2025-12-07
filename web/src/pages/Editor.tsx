@@ -410,7 +410,7 @@ export default function Editor() {
   const wsRef = useRef<WebSocket | null>(null);
 
   // [DOCKING SIDEBAR] Panel width constant - must be before useEffect that uses it
-  const PANEL_WIDTH = 350;
+  const PANEL_WIDTH = 280;
   const prevPanelStateRef = useRef(isFormattingToolbarOpen);
 
   const activeTheme =
@@ -4348,7 +4348,7 @@ const handleFitToScreen = useCallback(() => {
               globalStructure={globalStructure}
               activeColorThemeId={activeColorThemeId}
 
-              onApplyLayout={(structure) => {
+              onApplyLayout={(structure: GlobalStructure) => {
                 pushHistory(useEditorStore.getState().nodes, useEditorStore.getState().edges);
                 setGlobalStore({ globalStructure: structure });
                 
@@ -4378,11 +4378,11 @@ const handleFitToScreen = useCallback(() => {
                   }
                 }
               }}
-              onSetBackgroundColor={(color) => {
+              onSetBackgroundColor={(color: string) => {
                  handleSetBackgroundColor(color);
                  useEditorStore.setState({ isDirty: true });
               }}
-              onSetGlobalFont={(font) => {
+              onSetGlobalFont={(font: string) => {
                 pushHistory(useEditorStore.getState().nodes, useEditorStore.getState().edges);
                 useEditorStore.setState({ globalFont: font, isDirty: true });
                 
@@ -4399,7 +4399,7 @@ const handleFitToScreen = useCallback(() => {
                   }
                 }
               }}
-              onSetBranchLineWidth={(width) => {
+              onSetBranchLineWidth={(width: number) => {
                 pushHistory(useEditorStore.getState().nodes, useEditorStore.getState().edges);
                 useEditorStore.setState({ branchLineWidth: width, isDirty: true });
                 
@@ -4417,7 +4417,7 @@ const handleFitToScreen = useCallback(() => {
                 }
               }}
               onSetGlobalBranchColor={handleSetGlobalBranchColor}
-              onSetActiveColorTheme={(themeName) => {
+              onSetActiveColorTheme={(themeName: keyof typeof colorThemes) => {
                 pushHistory(useEditorStore.getState().nodes, useEditorStore.getState().edges);
                 setGlobalStore({ activeColorThemeId: themeName });
                 setBackgroundColor(colorThemes[themeName as keyof typeof colorThemes].background);
