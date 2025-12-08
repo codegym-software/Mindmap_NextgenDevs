@@ -10,6 +10,7 @@ import {
 import UserAvatarMenu from '../auth/UserAvatarMenu';
 import { useEditorStore, NodeData } from '../../app/store/useEditorStore'; 
 import { useMindmapsStore } from '../../app/store/useMindmapsStore';
+import ExportButton from './ExportButton';
 
 // New components
 import InsertDropdown from './InsertDropdown';
@@ -39,6 +40,7 @@ type EditorToolbarProps = {
   onAddRelationship: () => void;
   onAddSummary: () => void;
   onUpdateNode: (updates: Partial<NodeData>) => void; // [MỚI]
+  stageRef?: any; // [MỚI] Thêm stageRef cho export PNG
 };
 
 const ToolbarButton = ({
@@ -80,7 +82,8 @@ export default function EditorToolbar({
   onToggleBoundary,
   onAddRelationship,
   onAddSummary,
-  onUpdateNode
+  onUpdateNode,
+  stageRef
 }: EditorToolbarProps) {
   
   const setMindmapsItems = useMindmapsStore(s => s.set);
@@ -255,6 +258,14 @@ export default function EditorToolbar({
         <div className="w-px h-6 bg-gray-300 mx-2" />
 
         <button onClick={onShare} className="p-2 rounded-md hover:bg-gray-300/50 text-gray-700" title="Chia sẻ"><Share2 size={20} /></button>
+        
+        <ExportButton 
+          nodes={useEditorStore.getState().nodes}
+          edges={useEditorStore.getState().edges}
+          stageRef={stageRef}
+          mindmapName={name || 'mindmap'}
+        />
+        
         <button onClick={onToggleFormattingToolbar} className="p-2 rounded-md hover:bg-gray-300/50 text-gray-700" title="Bật/tắt thanh định dạng"><PanelRight size={20} /></button>
 
         <div className="w-px h-6 bg-gray-300 mx-2" />
