@@ -30,7 +30,7 @@ export default function ExportButton({ nodes, edges, stageRef, mindmapName = 'mi
           break;
         case 'pdf':
           if (stageRef?.current) {
-            downloadAsPDF(stageRef, `${filename}.pdf`);
+            downloadAsPDF(stageRef, nodes, `${filename}.pdf`);
           } else {
             console.error('Stage reference not available for PDF export');
             alert('Không thể xuất PDF - tham chiếu Stage không khả dụng');

@@ -126,6 +126,7 @@ export function downloadAsImagePNG(
 
 export function downloadAsPDF(
   stageRef: any,
+  nodes?: NodeData[],
   filename: string = 'mindmap.pdf'
 ): void {
   if (!stageRef || !stageRef.current) {
@@ -136,18 +137,52 @@ export function downloadAsPDF(
 
   try {
     const stage = stageRef.current;
-    const width = stage.width ? stage.width() : 1200;
-    const height = stage.height ? stage.height() : 800;
-    const dataURL = stage.toDataURL({ pixelRatio: 2, mimeType: 'image/png' });
+    stage.draw();
+    // Xác định bbox nội dung từ nodes để crop chính xác
+    let minX = Number.POSITIVE_INFINITY;
+    let minY = Number.POSITIVE_INFINITY;
+    let maxX = Number.NEGATIVE_INFINITY;
+    let maxY = Number.NEGATIVE_INFINITY;
 
-    const orientation = width >= height ? 'l' : 'p';
-    const doc = new jsPDF({
-      orientation,
-      unit: 'px',
-      format: [width, height]
+    if (nodes && nodes.length > 0) {
+      nodes.forEach(n => {
+        minX = Math.min(minX, n.x);
+        minY = Math.min(minY, n.y);
+        maxX = Math.max(maxX, n.x);
+        maxY = Math.max(maxY, n.y);
+      });
+    }
+
+    const hasBBox = isFinite(minX) && isFinite(minY) && isFinite(maxX) && isFinite(maxY);
+    const padding = 60;
+    const cropX = hasBBox ? minX - padding : 0;
+    const cropY = hasBBox ? minY - padding : 0;
+    const cropW = hasBBox ? maxX - minX + padding * 2 : (stage.width ? stage.width() : 1200);
+    const cropH = hasBBox ? maxY - minY + padding * 2 : (stage.height ? stage.height() : 800);
+
+    const dataURL = stage.toDataURL({
+      pixelRatio: 3,
+      mimeType: 'image/png',
+      x: cropX,
+      y: cropY,
+      width: cropW,
+      height: cropH,
     });
 
-    doc.addImage(dataURL, 'PNG', 0, 0, width, height, undefined, 'FAST');
+    const orientation = cropW >= cropH ? 'l' : 'p';
+    const doc = new jsPDF({ orientation, unit: 'px', format: 'a4' });
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const pageHeight = doc.internal.pageSize.getHeight();
+    const margin = 24;
+    const targetW = Math.max(pageWidth - margin * 2, 120);
+    const targetH = Math.max(pageHeight - margin * 2, 120);
+    const ratio = Math.min(targetW / cropW, targetH / cropH);
+    const renderWidth = cropW * ratio;
+    const renderHeight = cropH * ratio;
+    const offsetX = (pageWidth - renderWidth) / 2;
+    const offsetY = (pageHeight - renderHeight) / 2;
+
+    doc.addImage(dataURL, 'PNG', offsetX, offsetY, renderWidth, renderHeight, undefined, 'FAST');
     doc.save(filename);
   } catch (error) {
     console.error('Error exporting as PDF:', error);
