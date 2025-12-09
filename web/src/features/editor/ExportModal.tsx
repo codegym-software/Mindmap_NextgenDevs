@@ -5,11 +5,18 @@ import Modal from '../../components/common/Modal';
 interface ExportModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onExport: (format: 'text' | 'png' | 'svg') => void;
+  onExport: (format: 'text' | 'png' | 'pdf') => void;
 }
 
 export default function ExportModal({ isOpen, onClose, onExport }: ExportModalProps) {
   const exportOptions = [
+    {
+      id: 'pdf',
+      label: 'PDF (.pdf)',
+      description: 'Xuất dưới dạng PDF',
+      icon: Image,
+      color: 'text-red-600'
+    },
     {
       id: 'text',
       label: 'Text (.txt)',
@@ -24,13 +31,6 @@ export default function ExportModal({ isOpen, onClose, onExport }: ExportModalPr
       icon: Image,
       color: 'text-green-600'
     },
-    {
-      id: 'svg',
-      label: 'Vector SVG (.svg)',
-      description: 'Xuất dưới dạng vector',
-      icon: Image,
-      color: 'text-purple-600'
-    },
   ];
 
   return (
@@ -42,7 +42,7 @@ export default function ExportModal({ isOpen, onClose, onExport }: ExportModalPr
             <button
               key={option.id}
               onClick={() => {
-                onExport(option.id as 'text' | 'png' | 'svg');
+                onExport(option.id as 'text' | 'png' | 'pdf');
                 onClose();
               }}
               className="w-full flex items-center gap-4 p-4 rounded-lg border border-gray-200 hover:border-blue-500 hover:bg-blue-50 transition-all"

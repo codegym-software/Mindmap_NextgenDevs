@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Download } from 'lucide-react';
 import ExportModal from './ExportModal';
-import { downloadAsText, downloadAsImagePNG, downloadAsSVG } from '../../services/exportService';
+import { downloadAsText, downloadAsImagePNG, downloadAsPDF } from '../../services/exportService';
 import { NodeData, EdgeData } from '../../app/store/useEditorStore';
 
 interface ExportButtonProps {
@@ -14,7 +14,7 @@ interface ExportButtonProps {
 export default function ExportButton({ nodes, edges, stageRef, mindmapName = 'mindmap' }: ExportButtonProps) {
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
 
-  const handleExport = (format: 'text' | 'pdf' | 'png' | 'svg') => {
+  const handleExport = (format: 'text' | 'pdf' | 'png') => {
     const timestamp = new Date().toISOString().split('T')[0];
     const filename = `${mindmapName}_${timestamp}`;
 
@@ -23,6 +23,14 @@ export default function ExportButton({ nodes, edges, stageRef, mindmapName = 'mi
         case 'text':
           downloadAsText(nodes, edges, `${filename}.txt`);
           break;
+        case 'pdf':
+          if (stageRef?.current) {
+            downloadAsPDF(stageRef, `${filename}.pdf`);
+          } else {
+            console.error('Stage reference not available for PDF export');
+            alert('Không thể xuất PDF - tham chiếu Stage không khả dụng');
+          }
+          break;
         case 'png':
           if (stageRef?.current) {
             downloadAsImagePNG(stageRef, `${filename}.png`);
@@ -30,9 +38,6 @@ export default function ExportButton({ nodes, edges, stageRef, mindmapName = 'mi
             console.error('Stage reference not available for PNG export');
             alert('Không thể xuất PNG - tham chiếu Stage không khả dụng');
           }
-          break;
-        case 'svg':
-          downloadAsSVG(nodes, edges, `${filename}.svg`);
           break;
       }
     } catch (error) {

@@ -121,6 +121,41 @@ export function downloadAsImagePNG(
 }
 
 // =====================================
+// 3. XUẤT SANG PDF (Chụp canvas vào PDF)
+// =====================================
+
+export function downloadAsPDF(
+  stageRef: any,
+  filename: string = 'mindmap.pdf'
+): void {
+  if (!stageRef || !stageRef.current) {
+    console.error('Stage reference not found');
+    alert('Không thể xuất PDF - tham chiếu Stage không khả dụng');
+    return;
+  }
+
+  try {
+    const stage = stageRef.current;
+    const width = stage.width ? stage.width() : 1200;
+    const height = stage.height ? stage.height() : 800;
+    const dataURL = stage.toDataURL({ pixelRatio: 2, mimeType: 'image/png' });
+
+    const orientation = width >= height ? 'l' : 'p';
+    const doc = new jsPDF({
+      orientation,
+      unit: 'px',
+      format: [width, height]
+    });
+
+    doc.addImage(dataURL, 'PNG', 0, 0, width, height, undefined, 'FAST');
+    doc.save(filename);
+  } catch (error) {
+    console.error('Error exporting as PDF:', error);
+    alert('Lỗi khi xuất PDF: ' + (error instanceof Error ? error.message : 'Không xác định'));
+  }
+}
+
+// =====================================
 // 4. XUẤT SANG SVG (Layer tách biệt - Editable)
 // =====================================
 
@@ -346,5 +381,5 @@ export default {
   exportAsText,
   downloadAsText,
   downloadAsImagePNG,
-  downloadAsSVG,
+  downloadAsPDF,
 };
