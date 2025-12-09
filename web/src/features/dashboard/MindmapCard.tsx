@@ -62,8 +62,4 @@ export default function MindmapCard({ item, onRename, onDelete, onShare }: Props
       </div>
     </div>
   );
-<<<<<<< HEAD
 }
-=======
-}
->>>>>>> ft/share

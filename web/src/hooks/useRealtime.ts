@@ -2,7 +2,7 @@ import { useEffect, useRef, useCallback, useState } from 'react';
 import { useAuth } from './useAuth';
 import { useToast } from './useToast';
 import { EdgeData, useEditorStore } from '../app/store/useEditorStore';
-import { throttle } from 'lodash'; // Nếu đã cài lodash, có thể dùng lodash.throttle thay cho throttleFunc để mượt hơn
+// Nếu đã cài lodash, có thể thay throttleFunc bằng lodash.throttle, còn hiện tại dùng helper tự viết
 
 type BroadcastPatch = {
   type: string;
@@ -15,44 +15,54 @@ type UseRealtimeProps = {
   isGuest: boolean;
   isDataLoaded: boolean;
   isOwner: boolean;
-  // [MỚI] Thông tin người dùng hiện tại để gửi Presence (tên và màu)
+  // Thông tin người dùng hiện tại để gửi Presence (tên và màu)
   userInfo: { name: string; color: string };
   onLayoutRequest: (keepCamera: boolean) => void;
   onSetRootCollapse: (side: 'left' | 'right', collapsed: boolean) => void;
+
+  // Cờ để kiểm soát việc có kết nối WS hay không
+  shouldConnect: boolean;
 };
 
 // Helper throttle (thay thế cho lodash.throttle nếu chưa cài lodash)
 // Giới hạn tần suất gọi hàm để tránh spam WebSocket
 const throttleFunc = (func: Function, limit: number) => {
   let inThrottle: boolean;
-  return function(this: any, ...args: any[]) {
+  return function (this: any, ...args: any[]) {
     if (!inThrottle) {
       func.apply(this, args);
       inThrottle = true;
-      setTimeout(() => inThrottle = false, limit);
+      setTimeout(() => (inThrottle = false), limit);
     }
-  }
-}
+  };
+};
 
 export function useRealtime({
   mindmapId,
   isGuest,
   isDataLoaded,
   isOwner,
-  userInfo, // [MỚI] Prop mới để gửi thông tin user khi join
+  userInfo, // Prop để gửi thông tin user khi join
   onLayoutRequest,
   onSetRootCollapse,
+  shouldConnect,
 }: UseRealtimeProps) {
   const { getAccessToken, isAuthed, user } = useAuth();
   const { addToast } = useToast();
-  const { setGraph, setPeerInfo, updatePeerCursor, removePeer } = useEditorStore(); // [MỚI] Sử dụng actions tối ưu cho peers (set info, update cursor riêng)
+  const { setGraph, setPeerInfo, updatePeerCursor, removePeer } = useEditorStore(); // actions tối ưu cho peers
 
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimeoutRef = useRef<any>(null);
   const [isConnected, setIsConnected] = useState(false);
 
-  // Dùng ref để lưu props mới nhất, tránh re-connect liên tục do dependency changes
-  const latestProps = useRef({ isOwner, userInfo, onLayoutRequest, onSetRootCollapse });
+  // Dùng ref để lưu props mới nhất, tránh stale closures trong onmessage/onopen
+  const latestProps = useRef({
+    isOwner,
+    userInfo,
+    onLayoutRequest,
+    onSetRootCollapse,
+  });
+
   useEffect(() => {
     latestProps.current = { isOwner, userInfo, onLayoutRequest, onSetRootCollapse };
   }, [isOwner, userInfo, onLayoutRequest, onSetRootCollapse]);
@@ -68,33 +78,53 @@ export function useRealtime({
     }
   }, []);
 
-  // 2. [MỚI] Hàm gửi Presence (Tên & Màu) - Chỉ gửi 1 lần khi join hoặc reconnect
-  // Giúp người khác biết tên và màu của mình mà không cần gửi lặp lại trong cursor move
+  // 2. Hàm gửi Presence (Tên & Màu) - gửi khi join/reconnect
   const sendPresence = useCallback(() => {
     const { name, color } = latestProps.current.userInfo;
     if (wsRef.current?.readyState === WebSocket.OPEN) {
-      wsRef.current.send(JSON.stringify({
-        type: 'USER_PRESENCE',
-        payload: { name, color }
-      }));
+      wsRef.current.send(
+        JSON.stringify({
+          type: 'USER_PRESENCE',
+          payload: { name, color },
+        }),
+      );
     }
   }, []);
 
-  // 3. [MỚI] Hàm gửi vị trí chuột (Payload gọn nhẹ chỉ x, y)
-  // Throttle 50ms = 20 updates/giây (Đủ mượt mà không spam server)
+  // [MỚI] 3. Nếu userInfo thay đổi sau khi đã connect, gửi USER_PRESENCE cập nhật
+  useEffect(() => {
+    if (!isConnected || !wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
+
+    try {
+      wsRef.current.send(
+        JSON.stringify({
+          type: 'USER_PRESENCE',
+          payload: { name: userInfo.name, color: userInfo.color },
+        }),
+      );
+    } catch (e) {
+      console.error('Lỗi khi gửi USER_PRESENCE cập nhật:', e);
+    }
+  }, [userInfo.name, userInfo.color, isConnected]);
+
+  // 4. Hàm gửi vị trí chuột (Payload gọn nhẹ chỉ x, y) với throttle
   const sendCursor = useRef(
     throttleFunc((x: number, y: number) => {
       if (wsRef.current?.readyState === WebSocket.OPEN) {
-        wsRef.current.send(JSON.stringify({
-          type: 'CURSOR_MOVE',
-          payload: { x, y } // Payload tối ưu, không gửi name/color lặp lại
-        }));
+        wsRef.current.send(
+          JSON.stringify({
+            type: 'CURSOR_MOVE',
+            payload: { x, y },
+          }),
+        );
       }
-    }, 50)
+    }, 50),
   ).current;
 
+  // 5. Connect WebSocket + xử lý message
   useEffect(() => {
-    if (!mindmapId || !isAuthed || isGuest || !isDataLoaded) {
+    // [CẬP NHẬT] Thêm !shouldConnect vào điều kiện
+    if (!mindmapId || !isAuthed || isGuest || !isDataLoaded || !shouldConnect) {
       return;
     }
 
@@ -114,7 +144,7 @@ export function useRealtime({
           console.log(`🟢 WebSocket connected: ${mindmapId}`);
           setIsConnected(true);
           retryCount = 0;
-          // [MỚI] Gửi thông tin Presence ngay khi kết nối (tên và màu)
+          // Gửi thông tin Presence ngay khi kết nối (tên và màu)
           sendPresence();
         };
 
@@ -124,10 +154,15 @@ export function useRealtime({
             const { type, payload, senderId } = message;
 
             // Lấy props mới nhất từ ref để tránh stale closures
-            const { isOwner: currentIsOwner, onLayoutRequest: currentLayoutRequest, onSetRootCollapse: currentSetRootCollapse, userInfo: currentUserInfo } = latestProps.current;
+            const {
+              isOwner: currentIsOwner,
+              onLayoutRequest: currentLayoutRequest,
+              onSetRootCollapse: currentSetRootCollapse,
+              userInfo: currentUserInfo,
+            } = latestProps.current;
 
             // Bỏ qua message từ chính mình
-            if (user?.sub === senderId || user?.id === senderId) return;
+            if (user?.sub === senderId || (user as any)?.id === senderId) return;
 
             // Lấy state hiện tại từ store
             const { nodes: currentNodes, edges: currentEdges } = useEditorStore.getState();
@@ -138,27 +173,29 @@ export function useRealtime({
                 // Nếu mình là Owner, gửi full snapshot dữ liệu
                 if (currentIsOwner) {
                   if (ws.readyState === WebSocket.OPEN) {
-                    ws.send(JSON.stringify({
-                      type: 'FULL_SYNC',
-                      payload: { nodes: currentNodes, edges: currentEdges }
-                    }));
+                    ws.send(
+                      JSON.stringify({
+                        type: 'FULL_SYNC',
+                        payload: { nodes: currentNodes, edges: currentEdges },
+                      }),
+                    );
                   }
                 }
-                // [MỚI] Gửi lại Presence của mình để người mới biết (tránh thiếu info)
+                // Gửi lại Presence của mình để người mới biết (tránh thiếu info)
                 if (ws.readyState === WebSocket.OPEN) {
-                  ws.send(JSON.stringify({
-                    type: 'USER_PRESENCE',
-                    payload: currentUserInfo
-                  }));
+                  ws.send(
+                    JSON.stringify({
+                      type: 'USER_PRESENCE',
+                      payload: currentUserInfo,
+                    }),
+                  );
                 }
                 break;
 
-              // [MỚI] Nhận Presence từ người khác (tên và màu)
               case 'USER_PRESENCE':
                 setPeerInfo(senderId, { name: payload.name, color: payload.color });
                 break;
 
-              // [MỚI] Nhận tọa độ chuột (chỉ update x/y, giữ nguyên name/color)
               case 'CURSOR_MOVE':
                 updatePeerCursor(senderId, payload.x, payload.y);
                 break;
@@ -169,7 +206,7 @@ export function useRealtime({
                 break;
 
               case 'FULL_SYNC':
-                console.log("🔄 Received FULL_SYNC snapshot. Updating store...");
+                console.log('🔄 Received FULL_SYNC snapshot. Updating store...');
                 setGraph(payload.nodes, payload.edges);
                 setTimeout(() => currentLayoutRequest(true), 50);
                 addToast('Đã đồng bộ dữ liệu mới nhất.', 'success');
@@ -178,7 +215,7 @@ export function useRealtime({
               case 'NODE_MOVE': {
                 const { id: nodeId, x, y } = payload;
                 const newNodes = currentNodes.map((n) =>
-                  n.id === nodeId ? { ...n, x, y } : n
+                  n.id === nodeId ? { ...n, x, y } : n,
                 );
                 setGraph(newNodes, currentEdges);
                 break;
@@ -187,7 +224,7 @@ export function useRealtime({
               case 'NODE_TEXT_CHANGE': {
                 const { id: nodeId, text } = payload;
                 const newNodes = currentNodes.map((n) =>
-                  n.id === nodeId ? { ...n, nodeText: text } : n
+                  n.id === nodeId ? { ...n, nodeText: text } : n,
                 );
                 setGraph(newNodes, currentEdges);
                 setTimeout(() => currentLayoutRequest(true), 0);
@@ -196,7 +233,6 @@ export function useRealtime({
 
               case 'NODE_CREATE': {
                 const { node: feNode, edge: feEdge } = payload;
-                // [FIX LỖI] Chỉ thêm edge nếu tồn tại (không null)
                 const nextEdges = feEdge ? [...currentEdges, feEdge] : currentEdges;
                 setGraph([...currentNodes, feNode], nextEdges);
                 setTimeout(() => currentLayoutRequest(true), 0);
@@ -208,7 +244,7 @@ export function useRealtime({
                 const set = new Set(nodeIds as string[]);
                 const newNodes = currentNodes.filter((n) => !set.has(n.id));
                 const newEdges = currentEdges.filter(
-                  (e) => !set.has(e.from) && !set.has(e.to)
+                  (e) => !set.has(e.from) && !set.has(e.to),
                 );
                 setGraph(newNodes, newEdges);
                 setTimeout(() => currentLayoutRequest(true), 0);
@@ -218,15 +254,13 @@ export function useRealtime({
               case 'NODE_REPARENT': {
                 const { nodeId, newParentId, x, y, side } = payload;
                 const newNodes = currentNodes.map((n) =>
-                  n.id === nodeId
-                    ? { ...n, parentId: newParentId, x, y, side }
-                    : n
+                  n.id === nodeId ? { ...n, parentId: newParentId, x, y, side } : n,
                 );
                 const oldEdge = currentEdges.find((e) => e.to === nodeId);
                 let newEdges: EdgeData[];
                 if (oldEdge) {
                   newEdges = currentEdges.map((e) =>
-                    e.id === oldEdge.id ? { ...e, from: newParentId } : e
+                    e.id === oldEdge.id ? { ...e, from: newParentId } : e,
                   );
                 } else {
                   newEdges = [
@@ -242,7 +276,7 @@ export function useRealtime({
               case 'NODE_STYLE_UPDATE': {
                 const { id: nodeId, updates } = payload;
                 const newNodes = currentNodes.map((n) =>
-                  n.id === nodeId ? { ...n, ...updates } : n
+                  n.id === nodeId ? { ...n, ...updates } : n,
                 );
                 setGraph(newNodes, currentEdges);
                 if (updates.nodeLength) setTimeout(() => currentLayoutRequest(true), 0);
@@ -252,9 +286,7 @@ export function useRealtime({
               case 'NODE_QUICK_STYLE_APPLY': {
                 const { id: nodeId, styleId, resetStyle } = payload;
                 const newNodes = currentNodes.map((n) =>
-                  n.id === nodeId
-                    ? { ...n, ...resetStyle, quickStyleId: styleId }
-                    : n
+                  n.id === nodeId ? { ...n, ...resetStyle, quickStyleId: styleId } : n,
                 );
                 setGraph(newNodes, currentEdges);
                 setTimeout(() => currentLayoutRequest(true), 0);
@@ -264,7 +296,7 @@ export function useRealtime({
               case 'NODE_STYLE_PASTE': {
                 const { id: nodeId, style } = payload;
                 const newNodes = currentNodes.map((n) =>
-                  n.id === nodeId ? { ...n, ...style } : n
+                  n.id === nodeId ? { ...n, ...style } : n,
                 );
                 setGraph(newNodes, currentEdges);
                 setTimeout(() => currentLayoutRequest(true), 0);
@@ -274,7 +306,7 @@ export function useRealtime({
               case 'NODE_STYLE_RESET': {
                 const { id: nodeId, resetStyle } = payload;
                 const newNodes = currentNodes.map((n) =>
-                  n.id === nodeId ? { ...n, ...resetStyle } : n
+                  n.id === nodeId ? { ...n, ...resetStyle } : n,
                 );
                 setGraph(newNodes, currentEdges);
                 setTimeout(() => currentLayoutRequest(true), 0);
@@ -283,8 +315,8 @@ export function useRealtime({
 
               case 'NODE_TOGGLE_COLLAPSE': {
                 const { id: nodeId } = payload;
-                const newNodes = currentNodes.map(n =>
-                  n.id === nodeId ? { ...n, collapsed: !n.collapsed } : n
+                const newNodes = currentNodes.map((n) =>
+                  n.id === nodeId ? { ...n, collapsed: !n.collapsed } : n,
                 );
                 setGraph(newNodes, currentEdges);
                 break;
@@ -334,13 +366,13 @@ export function useRealtime({
           setIsConnected(false);
           if (isMounted) {
             // Exponential backoff cho reconnect (tối đa 10s)
-            const timeout = Math.min(1000 * (2 ** retryCount), 10000);
+            const timeout = Math.min(1000 * 2 ** retryCount, 10000);
             retryCount++;
             reconnectTimeoutRef.current = setTimeout(connect, timeout);
           }
         };
       } catch (err) {
-        console.error("WS Connect Error", err);
+        console.error('WS Connect Error', err);
         setIsConnected(false);
       }
     };
@@ -356,7 +388,20 @@ export function useRealtime({
         clearTimeout(reconnectTimeoutRef.current);
       }
     };
-  }, [mindmapId, isAuthed, isGuest, isDataLoaded, getAccessToken, addToast, setGraph, setPeerInfo, updatePeerCursor, removePeer, sendPresence]);
+  }, [
+    mindmapId,
+    isAuthed,
+    isGuest,
+    isDataLoaded,
+    shouldConnect,
+    getAccessToken,
+    addToast,
+    setGraph,
+    setPeerInfo,
+    updatePeerCursor,
+    removePeer,
+    sendPresence,
+  ]);
 
   return { sendPatch, sendCursor, isConnected };
 }

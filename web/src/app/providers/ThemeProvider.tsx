@@ -23,8 +23,4 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       {children}
     </ThemeContext.Provider>
   );
-<<<<<<< HEAD
 };
-=======
-};
->>>>>>> ft/share

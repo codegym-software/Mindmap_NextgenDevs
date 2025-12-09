@@ -13,33 +13,45 @@ import org.springframework.web.socket.TextMessage;
 import org.springframework.web.socket.WebSocketSession;
 import org.springframework.web.socket.handler.TextWebSocketHandler;
 
-// [MỚI GĐ 8] Import Jackson (JSON Library) và các DTOs
+// DTOs & JSON
 import com.example.mindmap.websocket.dto.BroadcastPatch;
 import com.example.mindmap.websocket.dto.GenericPatch;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
+// [THÊM IMPORT] cho check quyền
+import com.example.mindmap.features.mindmap.Mindmap;
+import com.example.mindmap.features.mindmap.MindmapRepository;
+import com.example.mindmap.features.collaboration.CollaborationRepository;
+
 @Component
 public class MindmapUpdateHandler extends TextWebSocketHandler {
 
     private static final Logger log = LoggerFactory.getLogger(MindmapUpdateHandler.class);
-    
-    // [MỚI GĐ 8] Thư viện ObjectMapper (JSON)
-    // Spring Boot tự động cung cấp Bean này, chúng ta chỉ cần Inject
+
+    // ObjectMapper (JSON)
     private final ObjectMapper objectMapper;
+
+    // [MỚI] Dependencies để check quyền trong DB
+    private final MindmapRepository mindmapRepository;
+    private final CollaborationRepository collaborationRepository;
 
     // Cấu trúc: Map<MindmapId, Map<SessionId, Session>>
     private final Map<String, Map<String, WebSocketSession>> mindmapRooms = new ConcurrentHashMap<>();
 
     /**
-     * [MỚI GĐ 8] Cập nhật constructor để Inject ObjectMapper
+     * Constructor: Inject ObjectMapper + Repositories
      */
-    public MindmapUpdateHandler(ObjectMapper objectMapper) {
+    public MindmapUpdateHandler(ObjectMapper objectMapper,
+                                MindmapRepository mindmapRepository,
+                                CollaborationRepository collaborationRepository) {
         this.objectMapper = objectMapper;
+        this.mindmapRepository = mindmapRepository;
+        this.collaborationRepository = collaborationRepository;
     }
 
     /**
-     * [FIX LỖI] Khôi phục logic đầy đủ cho hàm getMindmapId
+     * Khôi phục logic đầy đủ cho hàm getMindmapId
      */
     private String getMindmapId(WebSocketSession session) {
         String path = session.getUri().getPath(); // /ws/mindmap/abc-123
@@ -51,38 +63,50 @@ public class MindmapUpdateHandler extends TextWebSocketHandler {
         }
     }
 
-    // [KHÔNG ĐỔI] Hàm helper để lấy userId từ attributes
+    // Hàm helper để lấy userId từ attributes
     private String getUserId(WebSocketSession session) {
         return (String) session.getAttributes().get("userId");
     }
 
     /**
-     * [CẬP NHẬT GĐ 8] Gửi thông báo 'USER_JOINED'
-     * Chúng ta cập nhật logic này để gửi đi một JSON chuẩn (BroadcastPatch)
-     * giống như các bản vá (patch) khác.
+     * WebSocket: onConnect
+     * - Check userId & mindmapId hợp lệ
+     * - [MỚI] Check quyền truy cập mindmap trong DB
+     * - Join room
+     * - Broadcast USER_JOINED (dùng cấu trúc Patch)
      */
     @Override
     public void afterConnectionEstablished(WebSocketSession session) throws Exception {
         String mindmapId = getMindmapId(session);
         String userId = getUserId(session);
-        
+
         if (userId == null || mindmapId == null) {
             log.warn("Closing connection: No userId found in session or invalid mindmapId. URI: {}", session.getUri());
             session.close(CloseStatus.POLICY_VIOLATION);
             return;
         }
 
+        // [MỚI] === SECURITY CHECK: Kiểm tra quyền truy cập trước khi cho join room ===
+        boolean hasAccess = checkAccess(mindmapId, userId);
+        if (!hasAccess) {
+            log.warn("⛔ WebSocket Rejected: User {} tried to join Mindmap {} without permission.", userId, mindmapId);
+            session.close(CloseStatus.POLICY_VIOLATION);
+            return;
+        }
+        // [HẾT PHẦN MỚI] ==========================================================
+
         mindmapRooms.computeIfAbsent(mindmapId, k -> new ConcurrentHashMap<>()).put(session.getId(), session);
 
-        log.info("WebSocket [User: {}] connected to [Mindmap: {}]. Session: {}. Total sessions in room: {}", 
-            userId, mindmapId, session.getId(), mindmapRooms.get(mindmapId).size());
-        
-        // [CẬP NHẬT GĐ 8] Gửi tin nhắn "USER_JOINED" dùng cấu trúc Patch
+
+        log.info("WebSocket [User: {}] connected to [Mindmap: {}]. Session: {}. Total sessions in room: {}",
+                userId, mindmapId, session.getId(), mindmapRooms.get(mindmapId).size());
+
+        // Gửi tin nhắn "USER_JOINED" dùng cấu trúc Patch
         try {
             BroadcastPatch joinMessage = new BroadcastPatch(
-                "USER_JOINED", 
-                objectMapper.createObjectNode().put("userId", userId), // Payload là JSON: {"userId": "..."}
-                userId // Người gửi là chính user vừa vào
+                    "USER_JOINED",
+                    objectMapper.createObjectNode().put("userId", userId),
+                    userId
             );
             broadcast(mindmapId, session, new TextMessage(objectMapper.writeValueAsString(joinMessage)));
         } catch (JsonProcessingException e) {
@@ -91,50 +115,74 @@ public class MindmapUpdateHandler extends TextWebSocketHandler {
     }
 
     /**
-     * [CẬP NHẬT GĐ 8] Xử lý tin nhắn "Bản vá" (Patch)
+     * [MỚI] Hàm kiểm tra quyền nhanh (tương tự MindmapService.checkViewPermission)
+     */
+    private boolean checkAccess(String mindmapId, String userId) {
+        // 1. Tìm Mindmap
+        Mindmap mindmap = mindmapRepository.findById(mindmapId).orElse(null);
+        if (mindmap == null) return false;
+
+        // 2. Nếu là Owner -> OK
+        if (mindmap.getOwnerId().equals(userId)) return true;
+
+        // 3. Nếu Mindmap Public (VIEW) -> OK
+        if (mindmap.getAccessSettings() != null &&
+            mindmap.getAccessSettings().isPublic() &&
+            mindmap.getAccessSettings().getPublicAccessLevel() == Mindmap.PublicAccessLevel.VIEW) {
+            return true;
+        }
+
+        // 4. Nếu có trong danh sách Collaborator -> OK
+        return collaborationRepository.existsByMindmapIdAndUserId(mindmapId, userId);
+    }
+
+    /**
+     * Xử lý tin nhắn Patch từ client
      */
     @Override
     protected void handleTextMessage(WebSocketSession session, TextMessage message) throws Exception {
         String mindmapId = getMindmapId(session);
         String userId = getUserId(session);
-        
+
         if (mindmapId == null || userId == null) return;
-        
+
         String payload = message.getPayload();
-        
+
         try {
-            // 1. [MỚI] Deserialize tin nhắn nhận được (chỉ có type và payload)
+            // 1. Deserialize tin nhắn nhận được (chỉ có type và payload)
             GenericPatch patch = objectMapper.readValue(payload, GenericPatch.class);
 
-            // 2. [MỚI] Tạo một tin nhắn broadcast (thêm senderId)
+            // 2. Tạo một tin nhắn broadcast (thêm senderId)
             BroadcastPatch broadcastMessage = new BroadcastPatch(
-                patch.type(),
-                patch.payload(),
-                userId
+                    patch.type(),
+                    patch.payload(),
+                    userId
             );
 
-            // 3. [MỚI] Re-serialize tin nhắn broadcast
+            // 3. Re-serialize tin nhắn broadcast
             String messageToSend = objectMapper.writeValueAsString(broadcastMessage);
 
-            log.debug("WebSocket [User: {}] broadcasting [Type: {}] to [Mindmap: {}]", userId, patch.type(), mindmapId);
+            log.debug("WebSocket [User: {}] broadcasting [Type: {}] to [Mindmap: {}]",
+                    userId, patch.type(), mindmapId);
 
             // 4. Gửi tin nhắn (đã thêm senderId) cho tất cả client khác
             broadcast(mindmapId, session, new TextMessage(messageToSend));
 
         } catch (JsonProcessingException e) {
-            log.warn("WebSocket [User: {}] sent invalid JSON to [Mindmap: {}]: {}", userId, mindmapId, payload, e);
+            log.warn("WebSocket [User: {}] sent invalid JSON to [Mindmap: {}]: {}",
+                    userId, mindmapId, payload, e);
             // Không broadcast nếu JSON không hợp lệ
         }
     }
 
     /**
-     * [CẬP NHẬT GĐ 8] Gửi thông báo 'USER_LEFT'
+     * Gửi thông báo 'USER_LEFT'
      */
     @Override
     public void afterConnectionClosed(WebSocketSession session, CloseStatus status) throws Exception {
         String mindmapId = getMindmapId(session);
         String userId = getUserId(session);
-        
+
         if (mindmapId == null) {
             log.warn("Could not determine mindmapId on disconnect for session {}", session.getId());
             return;
@@ -147,17 +195,20 @@ public class MindmapUpdateHandler extends TextWebSocketHandler {
                 mindmapRooms.remove(mindmapId);
             }
         }
-        
-        log.info("WebSocket [User: {}] disconnected from [Mindmap: {}]. Status: {}. Sessions left in room: {}", 
-            (userId != null ? userId : "unknown"), mindmapId, status.getCode(), (room != null ? room.size() : 0));
 
-        // [CẬP NHẬT GĐ 8] Gửi tin nhắn "USER_LEFT" dùng cấu trúc Patch
+        log.info("WebSocket [User: {}] disconnected from [Mindmap: {}]. Status: {}. Sessions left in room: {}",
+                (userId != null ? userId : "unknown"),
+                mindmapId,
+                status.getCode(),
+                (room != null ? room.size() : 0));
+
+        // Gửi tin nhắn "USER_LEFT" dùng cấu trúc Patch
         if (userId != null) {
             try {
                 BroadcastPatch leftMessage = new BroadcastPatch(
-                    "USER_LEFT",
-                    objectMapper.createObjectNode().put("userId", userId),
-                    userId
+                        "USER_LEFT",
+                        objectMapper.createObjectNode().put("userId", userId),
+                        userId
                 );
                 broadcast(mindmapId, session, new TextMessage(objectMapper.writeValueAsString(leftMessage)));
             } catch (JsonProcessingException e) {
@@ -167,8 +218,8 @@ public class MindmapUpdateHandler extends TextWebSocketHandler {
     }
 
     /**
-     * [KHÔNG ĐỔI] Hàm helper để broadcast tin nhắn
-     * Logic này vẫn đúng: chỉ gửi cho người khác, không gửi cho người gửi.
+     * Hàm helper để broadcast tin nhắn
+     * - Chỉ gửi cho các session khác, không gửi lại cho người gửi
      */
     private void broadcast(String mindmapId, WebSocketSession senderSession, TextMessage message) {
         Map<String, WebSocketSession> room = mindmapRooms.get(mindmapId);

@@ -28,7 +28,7 @@ type BeGuestDoc = {
 };
 
 // =================================================================================
-// COLOR UTILITIES (Giữ nguyên logic pha màu)
+// COLOR UTILITIES
 // =================================================================================
 export function hexToRgb(hex: string) {
   const h = hex.replace('#', '');
@@ -56,6 +56,23 @@ export function getContrastColor(hex: string) {
 }
 
 // =================================================================================
+// CURSOR & USER UTILITIES
+// =================================================================================
+const CURSOR_COLORS = [
+  "#EF4444", "#F97316", "#F59E0B", "#10B981", "#06B6D4", 
+  "#3B82F6", "#6366F1", "#8B5CF6", "#EC4899", "#F43F5E"
+];
+
+export function getCursorColor(userId: string): string {
+  let hash = 0;
+  for (let i = 0; i < userId.length; i++) {
+    hash = userId.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  const index = Math.abs(hash % CURSOR_COLORS.length);
+  return CURSOR_COLORS[index];
+}
+
+// =================================================================================
 // STORAGE UTILITIES (Guest Logic)
 // =================================================================================
 export function loadGuestDoc(id: string) {
@@ -66,6 +83,8 @@ export function loadGuestDoc(id: string) {
     const beDoc: BeGuestDoc = allDocs[id];
     if (!beDoc) return null;
     const feContent = normalizeContentBEtoFE(beDoc.content);
+    
+    // [FIX] Thêm collaborators và accessSettings mặc định cho Guest để khớp Type
     return {
       id: beDoc.id,
       name: beDoc.name,
@@ -74,6 +93,8 @@ export function loadGuestDoc(id: string) {
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
       version: 0,
+      collaborators: [], // Guest không có collaborator
+      accessSettings: { isPublic: false, publicAccessLevel: 'DISABLED' as const } // Guest không có public link
     };
   } catch (e) {
     console.error('Error loading guest doc:', e);
@@ -99,7 +120,7 @@ export function saveGuestDoc(
 }
 
 // =================================================================================
-// LAYOUT CALCULATION (Logic tính toán kích thước node)
+// LAYOUT CALCULATION
 // =================================================================================
 export function calculateNodeBox(node: NodeData, style: NodeData) {
   const { fontSize, nodeLength, nodeText, textCase } = style;
@@ -112,7 +133,6 @@ export function calculateNodeBox(node: NodeData, style: NodeData) {
   let w: number;
   let wrappedLines: string[] = [];
   
-  // Canvas ảo để đo kích thước text
   const canvas = document.createElement('canvas');
   const context = canvas.getContext('2d');
   if (context) {
@@ -163,27 +183,4 @@ export function calculateNodeBox(node: NodeData, style: NodeData) {
   );
 
   return { w, h, textToRender: wrappedLines.join('\n'), finalFontSize };
-}
-
-// =================================================================================
-// CURSOR & USER UTILITIES
-// =================================================================================
-
-// Bảng màu đẹp (đã lọc các màu quá sáng hoặc quá tối)
-const CURSOR_COLORS = [
-  "#EF4444", "#F97316", "#F59E0B", "#10B981", "#06B6D4", 
-  "#3B82F6", "#6366F1", "#8B5CF6", "#EC4899", "#F43F5E"
-];
-
-/**
- * Sinh màu cố định dựa trên userId.
- * Cùng 1 userId sẽ luôn ra cùng 1 màu.
- */
-export function getCursorColor(userId: string): string {
-  let hash = 0;
-  for (let i = 0; i < userId.length; i++) {
-    hash = userId.charCodeAt(i) + ((hash << 5) - hash);
-  }
-  const index = Math.abs(hash % CURSOR_COLORS.length);
-  return CURSOR_COLORS[index];
 }

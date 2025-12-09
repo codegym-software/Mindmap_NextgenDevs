@@ -1,34 +1,48 @@
 /**
- * LỚP GIAO TIẾP API
- *
- * [CẬP NHẬT]
- * - Cập nhật `FeMindmapDoc` để bao gồm các trường cài đặt global
- * (được trả về từ `normalizeContentBEtoFE`).
+ * src/api/mindmapsApi.ts
+ * 
+ * LỚP GIAO TIẾP API CHO MINDMAP
+ * 
+ * Đã được cập nhật đầy đủ:
+ * - Các hàm CRUD cơ bản (list, get, create, update, delete...)
+ * - Hỗ trợ global settings (font, branch color, background...)
+ * - [MỚI] Tính năng Collaboration & Share (mời người, phân quyền, public link)
  */
 
 import api from './api';
 
-// === CÁC IMPORT ===
+// === IMPORT CÁC TYPE & HÀM CHUYỂN ĐỔI DỮ LIỆU ===
 import {
-  // Types (Giao diện) của Backend
   BeMindmapDoc,
   BeMindmapContent,
-
-  // Hàm "Phiên dịch"
   normalizeContentBEtoFE,
   normalizeContentFEtoBE,
-  migrateOldGuestDataToBE, 
+  migrateOldGuestDataToBE,
 } from './dataMapper';
+
 import {
   NodeData as FeNodeData,
   EdgeData as FeEdgeData,
 } from '../app/store/useEditorStore';
-// === KẾT THÚC IMPORT ===
 
-/**
- * [CẬP NHẬT] Định nghĩa cấu trúc dữ liệu phẳng
- * mà `Editor.tsx` mong đợi nhận được từ hàm `get()`.
- */
+// === [MỚI] TYPES CHO TÍNH NĂNG COLLABORATION & SHARE ===
+export type Permission = 'OWNER' | 'EDITOR' | 'VIEWER';
+
+export type Collaborator = {
+  userId: string;
+  displayName: string;
+  avatarUrl: string;
+  permission: Permission;
+};
+
+export type ShareSettingsResponse = {
+  mindmapId: string;
+  isPublic: boolean;
+  publicAccessLevel: 'VIEW' | 'DISABLED';
+  shareLink: string | null;
+};
+
+// === CẤU TRÚC DỮ LIỆU TRẢ VỀ CHO FRONTEND (phẳng, dễ dùng trong Editor) ===
 export type FeMindmapDoc = {
   id: string;
   name: string;
@@ -37,24 +51,29 @@ export type FeMindmapDoc = {
   updatedAt: string;
   version: number;
 
-  // === Nội dung đã được "làm phẳng" ===
+  // Nội dung canvas đã được "làm phẳng"
   nodes: FeNodeData[];
   edges: FeEdgeData[];
   layoutMode: string;
   theme: string;
-  
-  // [MỚI] Thêm các trường cài đặt global
+
+  // Global settings (từ backend)
   fontFamily?: string;
   branchLineWidth?: number;
   isColoredBranch?: boolean;
   globalBranchColor?: string;
   backgroundColor?: string;
   activeColorThemeId?: string;
+
+    // [MỚI] Bổ sung 2 trường này để Editor.tsx đọc được quyền
+  collaborators: Collaborator[];
+  accessSettings: {
+      isPublic: boolean;
+      publicAccessLevel: 'VIEW' | 'DISABLED';
+  };
 };
 
-/**
- * Định nghĩa cấu trúc tóm tắt
- */
+// Tóm tắt mindmap (dùng cho danh sách)
 export type MindmapSummaryDto = {
   id: string;
   name: string;
@@ -63,29 +82,18 @@ export type MindmapSummaryDto = {
 };
 
 // =========================================================================
-// mindmapsApi
+// mindmapsApi - TẤT CẢ CÁC HÀM API
 // =========================================================================
 export const mindmapsApi = {
-  // ===== Core CRUD =====
+  // ===== 1. CORE CRUD =====
+  list: async (): Promise<MindmapSummaryDto[]> =>
+    (await api.get<MindmapSummaryDto[]>('/mindmaps')).data,
 
-  /**
-   * Lấy danh sách tóm tắt.
-   */
-  list: async () => (await api.get<MindmapSummaryDto[]>('/mindmaps')).data,
-
-  /**
-   * [CẬP NHẬT] Lấy chi tiết 1 mindmap.
-   */
   get: async (id: string): Promise<FeMindmapDoc> => {
-    // 1. Gọm API và nhận về dữ liệu chuẩn BE (lồng)
     const response = await api.get<BeMindmapDoc>(`/mindmaps/${id}`);
     const beDoc = response.data;
-
-    // 2. "Dịch" trường 'content' từ BE sang FE
-    // feContent BÂY GIỜ cũng chứa các cài đặt global đã làm phẳng
     const feContent = normalizeContentBEtoFE(beDoc.content);
 
-    // 3. Trả về một object "phẳng" mà Editor.tsx mong đợi
     return {
       id: beDoc.id,
       name: beDoc.name,
@@ -93,90 +101,51 @@ export const mindmapsApi = {
       createdAt: beDoc.createdAt,
       updatedAt: beDoc.updatedAt,
       version: beDoc.version,
+      collaborators: (beDoc as any).collaborators || [], 
+      accessSettings: (beDoc as any).accessSettings || { isPublic: false, publicAccessLevel: 'DISABLED' },
 
-      // Gán content đã được dịch (bao gồm cả cài đặt global)
-      ...feContent, 
+      ...feContent,
     };
   },
 
-  /**
-   * Tạo mới 1 mindmap.
-   */
   create: async (payload: {
     name: string;
-    content: { nodes: FeNodeData[]; edges: FeEdgeData[] }; // Nhận List FE
+    content: { nodes: FeNodeData[]; edges: FeEdgeData[] };
   }) => {
-    // 1. "Dịch" content FE sang BE (lồng)
-    // Hàm này BÂY GIỜ tự động lấy cài đặt global từ store
-    const beContent = normalizeContentFEtoBE(
-      payload.content.nodes,
-      payload.content.edges
-    );
-
-    // 2. Gửi payload đã chuẩn hóa BE
+    const beContent = normalizeContentFEtoBE(payload.content.nodes, payload.content.edges);
     const response = await api.post<BeMindmapDoc>('/mindmaps', {
       name: payload.name,
       content: beContent,
     });
-
-    return response.data; // Trả về BeMindmapDoc
+    return response.data;
   },
 
-  /**
-   * Cập nhật 1 mindmap (dùng cho Auto-Save).
-   */
   update: async (
     id: string,
-    payload: {
-      name: string;
-      content: { nodes: FeNodeData[]; edges: FeEdgeData[] };
-    }
+    payload: { name: string; content: { nodes: FeNodeData[]; edges: FeEdgeData[] } }
   ) => {
-    const feNodes: FeNodeData[] = payload.content.nodes || [];
-    const feEdges: FeEdgeData[] = payload.content.edges || [];
-
-    // 2. "Dịch" content FE (List) sang BE (List lồng)
-    // Hàm này BÂY GIỜ tự động lấy cài đặt global từ store
-    const beContent = normalizeContentFEtoBE(feNodes, feEdges);
-
-    // 3. Gửi payload đã chuẩn hóa BE (chỉ 'name' và 'content')
+    const beContent = normalizeContentFEtoBE(
+      payload.content.nodes || [],
+      payload.content.edges || []
+    );
     const response = await api.put<BeMindmapDoc>(`/mindmaps/${id}`, {
       name: payload.name,
       content: beContent,
     });
-
-    return response.data; // Trả về BeMindmapDoc
+    return response.data;
   },
 
-  /**
-   * Xóa 1 mindmap.
-   */
   remove: async (id: string) => (await api.delete<void>(`/mindmaps/${id}`)).data,
 
-  // ===== Aliases (Các hàm tiện ích) =====
-
-  /**
-   * Cập nhật tên (Dùng cho Sidebar).
-   */
+  // ===== 2. ALIASES & TIỆN ÍCH =====
   updateName: async (id: string, name: string) =>
     (await api.put<BeMindmapDoc>(`/mindmaps/${id}`, { name })).data,
 
-  /**
-   * Alias cho `remove`.
-   */
   delete: async (id: string) => (await api.delete<void>(`/mindmaps/${id}`)).data,
 
-  // ===== Guest -> Server Sync =====
-
-  /**
-   * Đồng bộ Guest.
-   */
   syncGuest: async (migratedDocs: BeMindmapDoc[]) =>
     (await api.post<MindmapSummaryDto[]>('/mindmaps/sync', migratedDocs)).data,
 
-  /**
-   * Tạo và Mở.
-   */
   createAndOpen: async () => {
     const feRootNode: FeNodeData = {
       id: 'root',
@@ -205,10 +174,72 @@ export const mindmapsApi = {
 
     return mindmapsApi.create({
       name: 'Mindmap mới',
-      content: {
-        nodes: [feRootNode], // Gửi MẢNG FE
-        edges: [],
-      },
+      content: { nodes: [feRootNode], edges: [] },
     });
+  },
+
+  // ===== 3. [MỚI] COLLABORATION & SHARE API =====
+  /**
+   * Lấy danh sách người đang có quyền truy cập mindmap
+   */
+  getCollaborators: async (mindmapId: string): Promise<Collaborator[]> => {
+    return (await api.get<Collaborator[]>(`/mindmaps/${mindmapId}/collaborators`)).data;
+  },
+
+  /**
+   * Mời cộng tác viên mới qua email
+   */
+  inviteCollaborator: async (
+    mindmapId: string,
+    email: string,
+    permission: Permission
+  ): Promise<Collaborator> => {
+    return (await api.post<Collaborator>(`/mindmaps/${mindmapId}/collaborators`, {
+      email,
+      permission,
+    })).data;
+  },
+
+  /**
+   * Thay đổi quyền của một người (Editor ↔ Viewer)
+   */
+  updateCollaboratorPermission: async (
+    mindmapId: string,
+    userId: string,
+    permission: Permission
+  ): Promise<Collaborator> => {
+    return (await api.put<Collaborator>(
+      `/mindmaps/${mindmapId}/collaborators/${userId}`,
+      { permission }
+    )).data;
+  },
+
+  /**
+   * Xóa một người khỏi danh sách cộng tác viên
+   */
+  removeCollaborator: async (mindmapId: string, userId: string): Promise<void> => {
+    return (await api.delete<void>(`/mindmaps/${mindmapId}/collaborators/${userId}`)).data;
+  },
+
+  /**
+   * Bật/tắt chia sẻ công khai + cấp quyền xem công khai
+   */
+  updateShareSettings: async (
+    mindmapId: string,
+    isPublic: boolean,
+    publicAccessLevel: 'VIEW' | 'DISABLED'
+  ): Promise<ShareSettingsResponse> => {
+    return (
+      await api.put<ShareSettingsResponse>(`/mindmaps/${mindmapId}/share-settings`, {
+        isPublic,
+        publicAccessLevel,
+      })
+    ).data;
+  },
+  
+    requestAccess: async (mindmapId: string): Promise<void> => {
+    // Giả định BE có endpoint này. Nếu chưa có, bạn cần bảo BE thêm vào.
+    // Logic BE: Gửi noti hoặc email cho Owner.
+    return (await api.post<void>(`/mindmaps/${mindmapId}/request-access`)).data;
   },
 };

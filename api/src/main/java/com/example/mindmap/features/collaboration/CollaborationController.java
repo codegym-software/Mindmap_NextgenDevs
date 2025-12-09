@@ -1,30 +1,23 @@
 // src/main/java/com/example/mindmap/features/collaboration/CollaborationController.java
 package com.example.mindmap.features.collaboration;
 
-import java.util.List;
-
+import com.example.mindmap.features.collaboration.dto.CollaboratorResponse;
+import com.example.mindmap.features.collaboration.dto.InviteRequest;
+import com.example.mindmap.features.collaboration.dto.PermissionUpdateRequest;
+import com.example.mindmap.features.collaboration.dto.ShareSettingsRequest;
+import com.example.mindmap.features.collaboration.dto.ShareSettingsResponse;
+import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
-import org.springframework.web.bind.annotation.DeleteMapping;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PathVariable;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.PutMapping; // Thêm PutMapping
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*; // Rest + Mapping
 
-import com.example.mindmap.features.collaboration.dto.CollaboratorResponse;
-import com.example.mindmap.features.collaboration.dto.InviteRequest;
-import com.example.mindmap.features.collaboration.dto.PermissionUpdateRequest; // DTO mới
-import com.example.mindmap.features.collaboration.dto.ShareSettingsRequest; // DTO mới
-import com.example.mindmap.features.collaboration.dto.ShareSettingsResponse; // DTO mới
-
-import jakarta.validation.Valid;
+import java.util.List;
 
 @RestController
-@RequestMapping("/api/mindmaps/{mindmapId}") // Chuyển mindmapId lên base
+@RequestMapping("/api/mindmaps/{mindmapId}") // mindmapId nằm ở base path
+// Nếu muốn fix CORS chỉ riêng controller này, bạn có thể bật dòng dưới:
+// @CrossOrigin(origins = "http://localhost:3000")
 public class CollaborationController {
 
     private final CollaborationService collaborationService;
@@ -32,48 +25,84 @@ public class CollaborationController {
     public CollaborationController(CollaborationService collaborationService) {
         this.collaborationService = collaborationService;
     }
-    
-    // --- Quản lý Public Sharing ---
+
+    // ======================================================================
+    // 1. QUẢN LÝ CHIA SẺ CÔNG KHAI (PUBLIC SHARE SETTINGS)
+    // ======================================================================
 
     @PutMapping("/share-settings")
-    @PreAuthorize("isAuthenticated()") // Logic quyền (phải là owner) sẽ ở service
+    @PreAuthorize("isAuthenticated()") // Check owner ở tầng Service
     public ResponseEntity<ShareSettingsResponse> updatePublicShareSettings(
             @PathVariable String mindmapId,
-            @Valid @RequestBody ShareSettingsRequest request) {
-        return ResponseEntity.ok(collaborationService.updatePublicShareSettings(mindmapId, request));
+            @Valid @RequestBody ShareSettingsRequest request
+    ) {
+        ShareSettingsResponse response =
+                collaborationService.updatePublicShareSettings(mindmapId, request);
+        return ResponseEntity.ok(response);
     }
-    
-    // --- Quản lý Collaborator ---
 
+    // ======================================================================
+    // 2. QUẢN LÝ COLLABORATOR
+    // ======================================================================
+
+    /**
+     * Lấy danh sách collaborator của mindmap.
+     */
     @GetMapping("/collaborators")
     @PreAuthorize("isAuthenticated()")
-    public ResponseEntity<List<CollaboratorResponse>> getCollaborators(@PathVariable String mindmapId) {
-        return ResponseEntity.ok(collaborationService.getCollaborators(mindmapId));
+    public ResponseEntity<List<CollaboratorResponse>> getCollaborators(
+            @PathVariable String mindmapId
+    ) {
+        List<CollaboratorResponse> collaborators =
+                collaborationService.getCollaborators(mindmapId);
+        return ResponseEntity.ok(collaborators);
     }
 
+    /**
+     * Mời collaborator mới bằng email.
+     */
     @PostMapping("/collaborators")
     @PreAuthorize("isAuthenticated()")
     public ResponseEntity<CollaboratorResponse> addCollaborator(
             @PathVariable String mindmapId,
-            @Valid @RequestBody InviteRequest request) {
-        return new ResponseEntity<>(collaborationService.addCollaborator(mindmapId, request), HttpStatus.CREATED);
+            @Valid @RequestBody InviteRequest request
+    ) {
+        CollaboratorResponse collaborator =
+                collaborationService.addCollaborator(mindmapId, request);
+        return new ResponseEntity<>(collaborator, HttpStatus.CREATED);
     }
-    
+
+        @PostMapping("/request-access")
+    @PreAuthorize("isAuthenticated()") // Bắt buộc phải đăng nhập mới được xin quyền
+    public ResponseEntity<Void> requestAccess(@PathVariable String mindmapId) {
+        collaborationService.requestAccess(mindmapId);
+        return ResponseEntity.ok().build();
+    }
+
+    /**
+     * Cập nhật quyền của collaborator (EDITOR / VIEWER).
+     */
     @PutMapping("/collaborators/{userId}")
     @PreAuthorize("isAuthenticated()")
     public ResponseEntity<CollaboratorResponse> updateCollaboratorPermission(
             @PathVariable String mindmapId,
             @PathVariable String userId,
-            @Valid @RequestBody PermissionUpdateRequest request) {
-        // Đây là Endpoint #11
-        return ResponseEntity.ok(collaborationService.updateCollaboratorPermission(mindmapId, userId, request));
+            @Valid @RequestBody PermissionUpdateRequest request
+    ) {
+        CollaboratorResponse updated =
+                collaborationService.updateCollaboratorPermission(mindmapId, userId, request);
+        return ResponseEntity.ok(updated);
     }
 
+    /**
+     * Xóa collaborator khỏi mindmap.
+     */
     @DeleteMapping("/collaborators/{userId}")
     @PreAuthorize("isAuthenticated()")
     public ResponseEntity<Void> removeCollaborator(
             @PathVariable String mindmapId,
-            @PathVariable String userId) {
+            @PathVariable String userId
+    ) {
         collaborationService.removeCollaborator(mindmapId, userId);
         return ResponseEntity.noContent().build();
     }

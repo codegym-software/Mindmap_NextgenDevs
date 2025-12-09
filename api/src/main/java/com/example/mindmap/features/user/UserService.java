@@ -2,277 +2,505 @@ package com.example.mindmap.features.user;
 
 import com.example.mindmap.core.auth.AuthUtils;
 import com.example.mindmap.core.exception.ResourceNotFoundException;
-import com.example.mindmap.features.user.dto.PasswordChangeRequest;
-import com.example.mindmap.features.user.dto.UserProfileDto;
-import com.example.mindmap.features.user.dto.UserSettingsDto;
+import com.example.mindmap.features.collaboration.Collaboration;
+import com.example.mindmap.features.collaboration.CollaborationRepository;
+import com.example.mindmap.features.user.dto.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import software.amazon.awssdk.services.cognitoidentityprovider.CognitoIdentityProviderClient;
+import software.amazon.awssdk.services.cognitoidentityprovider.model.AttributeType;
 import software.amazon.awssdk.services.cognitoidentityprovider.model.ChangePasswordRequest;
 import software.amazon.awssdk.services.cognitoidentityprovider.model.CognitoIdentityProviderException;
-import org.springframework.security.access.AccessDeniedException;
+import software.amazon.awssdk.services.cognitoidentityprovider.model.ListUsersRequest;
+import software.amazon.awssdk.services.cognitoidentityprovider.model.ListUsersResponse;
+import software.amazon.awssdk.services.cognitoidentityprovider.model.UserType;
 
-// [NEW] Imports for default avatar
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
-
-// import java.time.Instant; // [UPDATE] Không cần thiết khi dùng Auditable
+import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 
 @Service
 public class UserService {
 
-     private static final Logger log = LoggerFactory.getLogger(UserService.class);
-     private final UserRepository userRepository;
-     private final AuthUtils authUtils;
-     private final CognitoIdentityProviderClient cognitoClient;
+    private static final Logger log = LoggerFactory.getLogger(UserService.class);
 
-     public UserService(UserRepository userRepository, AuthUtils authUtils, CognitoIdentityProviderClient cognitoClient) {
-         this.userRepository = userRepository;
-         this.authUtils = authUtils;
-         this.cognitoClient = cognitoClient;
-     }
-     
-     // --- Logic mới (Giai đoạn 2) ---
+    private final UserRepository userRepository;
+    private final CollaborationRepository collaborationRepository;
+    private final AuthUtils authUtils;
+    private final CognitoIdentityProviderClient cognitoClient;
 
-     /**
-      * Thay đổi mật khẩu của user hiện tại trên Cognito.
-      * Ném CognitoIdentityProviderException nếu thất bại (sẽ được GlobalExceptionHandler xử lý).
-      */
-     public void changeCurrentUserPassword(PasswordChangeRequest request) {
-         // 1. Lấy access token từ context
-         String accessToken = authUtils.getCurrentJwt()
-                 .map(Jwt::getTokenValue)
-                 .orElseThrow(() -> new IllegalStateException("Access token not found in SecurityContext"));
-               
-         // 2. Tạo yêu cầu đổi mật khẩu
-         ChangePasswordRequest cognitoRequest = ChangePasswordRequest.builder()
-                 .accessToken(accessToken)
-                 .previousPassword(request.oldPassword())
-                 .proposedPassword(request.newPassword())
-                 .build();
+    @Value("${app.security.cognito-user-pool-id}")
+    private String userPoolId;
 
-         try {
-             // 3. Gọi Cognito
-             cognitoClient.changePassword(cognitoRequest);
-             log.info("Successfully changed password for user");
-         } catch (CognitoIdentityProviderException e) {
-             log.warn("Failed to change password: {}", e.awsErrorDetails().errorMessage());
-             throw e; // Ném lại để GlobalExceptionHandler bắt
-         }
-     }
+    public UserService(UserRepository userRepository,
+                       CollaborationRepository collaborationRepository,
+                       AuthUtils authUtils,
+                       CognitoIdentityProviderClient cognitoClient) {
+        this.userRepository = userRepository;
+        this.collaborationRepository = collaborationRepository;
+        this.authUtils = authUtils;
+        this.cognitoClient = cognitoClient;
+    }
 
-     // --- Logic đã có ---
-     
-     /**
-      * Gets the current user's profile from the database, syncing from JWT if not found or outdated.
-      */
-     public UserProfileDto getCurrentUserProfile() {
-         Jwt jwt = authUtils.getCurrentJwt().orElseThrow(() -> new IllegalStateException("JWT token not found for user profile sync"));
-         User user = syncUserFromJwt(jwt); // Đã hỗ trợ Guest (vì 'sub' là userId)
-         return mapToProfileDto(user);
-     }
+    // ===================================================================
+    // SAFE INVITE: MỜI USER QUA EMAIL (DÙ CHƯA TỪNG LOGIN)
+    // ===================================================================
 
-     /**
-      * Updates the current user's profile (displayName, avatarUrl).
-      */
-     @Transactional
-     public UserProfileDto updateCurrentUserProfile(UserProfileDto profileUpdate) {
-         String userId = authUtils.getRequiredCurrentUserId();
-         User user = userRepository.findById(userId)
-                 .orElseThrow(() -> new ResourceNotFoundException("User", "id", userId));
+    /**
+     * Logic Mời Nâng cao (Safe Invite):
+     * 1. Tìm trong DB.
+     * 2. Tìm trên Cognito.
+     * 3. Nếu lỗi hoặc không thấy -> Tạo User PENDING (ID tạm).
+     */
+    @Transactional
+    public User getOrCreateUserByEmail(String email) {
+        return userRepository.findByEmail(email)
+                .orElseGet(() -> {
+                    try {
+                        // Thử kéo từ Cognito về (ID thật)
+                        return fetchUserFromCognitoAndCreateLocal(email);
+                    } catch (Exception e) {
+                        // Fallback: không gọi được AWS hoặc chưa có user trên Cognito
+                        log.warn("Cognito lookup failed/not found for {}. Creating PENDING user.", email, e);
+                        return createPendingUser(email);
+                    }
+                });
+    }
 
-         // Guest không được đổi email
-         if (user.getStatus() == User.UserStatus.GUEST && profileUpdate.email() != null) {
-             throw new AccessDeniedException("Guest users cannot change their email.");
-         }
+    /**
+     * Tạo user tạm với trạng thái PENDING_VERIFICATION.
+     * Dùng khi mời người chưa đăng ký Cognito hoặc lỗi gọi AWS.
+     */
+    private User createPendingUser(String email) {
+        User newUser = new User();
+        newUser.setId(UUID.randomUUID().toString()); // ID tạm thời
+        newUser.setEmail(email);
+        String displayName = email != null ? email.split("@")[0] : "User";
+        newUser.setDisplayName(displayName);
+        newUser.setAvatarUrl(createDefaultAvatarUrl(displayName));
+        newUser.setStatus(User.UserStatus.PENDING_VERIFICATION);
+        newUser.setSettings(new User.UserSettings());
+        // cognitoUsername để null (chưa có)
+        return userRepository.save(newUser);
+    }
 
-         boolean updated = false;
-         if (profileUpdate.displayName() != null && !profileUpdate.displayName().equals(user.getDisplayName())) {
-             user.setDisplayName(profileUpdate.displayName());
-             updated = true;
-         }
-         if (profileUpdate.avatarUrl() != null && !profileUpdate.avatarUrl().equals(user.getAvatarUrl())) {
-             user.setAvatarUrl(profileUpdate.avatarUrl());
-             updated = true;
-         }
+    /**
+     * Kéo thông tin user từ Cognito theo email và lưu local với ID thật.
+     */
+    private User fetchUserFromCognitoAndCreateLocal(String email) {
+        ListUsersRequest request = ListUsersRequest.builder()
+                .userPoolId(userPoolId)
+                .filter("email = \"" + email + "\"")
+                .limit(1)
+                .build();
 
-         if (updated) {
-             // [UPDATE] Xóa setUpdatedAt (Auditable sẽ tự động làm)
-             // user.setUpdatedAt(Instant.now());
-             user = userRepository.save(user);
-             log.info("Updated profile for user {}", userId);
-         }
-         return mapToProfileDto(user);
-     }
-     
-     /**
-      * [NEW] Lấy DTO Cài đặt của người dùng hiện tại
-      */
-     @Transactional(readOnly = true)
-     public UserSettingsDto getCurrentUserSettings() {
-         String userId = authUtils.getRequiredCurrentUserId();
-         User user = findUserById(userId); // Sử dụng lại hàm helper
-         return mapToSettingsDto(user.getSettings()); // Sử dụng lại hàm map
-     }
+        ListUsersResponse response = cognitoClient.listUsers(request);
 
-     /**
-      * Updates the current user's settings.
-      */
-     @Transactional
-     public UserSettingsDto updateUserSettings(UserSettingsDto settingsUpdate) {
-         String userId = authUtils.getRequiredCurrentUserId();
-         User user = userRepository.findById(userId)
-                 .orElseThrow(() -> new ResourceNotFoundException("User", "id", userId));
+        if (response.users().isEmpty()) {
+            throw new ResourceNotFoundException("User not found in Cognito");
+        }
 
-         boolean updated = false;
-         User.UserSettings currentSettings = user.getSettings() != null ? user.getSettings() : new User.UserSettings();
+        UserType cognitoUser = response.users().get(0);
 
-         if (settingsUpdate.defaultEditorThemeId() != null && !settingsUpdate.defaultEditorThemeId().equals(currentSettings.getDefaultEditorThemeId())) {
-             currentSettings.setDefaultEditorThemeId(settingsUpdate.defaultEditorThemeId());
-             updated = true;
-         }
-         if (settingsUpdate.language() != null && !settingsUpdate.language().equals(currentSettings.getLanguage())) {
-             currentSettings.setLanguage(settingsUpdate.language());
-             updated = true;
-         }
-         
-         if (settingsUpdate.colorMode() != null && !settingsUpdate.colorMode().equals(currentSettings.getColorMode())) {
-             currentSettings.setColorMode(settingsUpdate.colorMode());
-             updated = true;
-         }
+        // ✅ LẤY sub TỪ attributes
+        String realUuid = null;
+        String displayName = email != null ? email.split("@")[0] : "User";
 
-         // [FIX] Thêm logic cập nhật cho preferredLayout
-         if (settingsUpdate.preferredLayout() != null && !settingsUpdate.preferredLayout().equals(currentSettings.getPreferredLayout())) {
-             currentSettings.setPreferredLayout(settingsUpdate.preferredLayout());
-             updated = true;
-         }
+        for (AttributeType attr : cognitoUser.attributes()) {
+            switch (attr.name()) {
+                case "sub" -> realUuid = attr.value();
+                case "name" -> displayName = attr.value();
+            }
+        }
 
-         if (updated) {
-             user.setSettings(currentSettings);
-             // [UPDATE] Xóa setUpdatedAt (Auditable sẽ tự động làm)
-             // user.setUpdatedAt(Instant.now());
-             user = userRepository.save(user);
-             log.info("Updated settings for user {}", userId);
-         }
-         return mapToSettingsDto(user.getSettings());
-     }
+        if (realUuid == null) {
+            throw new IllegalStateException("Cognito user is missing 'sub' attribute");
+        }
 
-     /**
-      * Finds a user by ID or throws ResourceNotFoundException.
-      * Internal helper.
-      */
-     public User findUserById(String userId) {
-         return userRepository.findById(userId)
-                 .orElseThrow(() -> new ResourceNotFoundException("User", "id", userId));
-     }
+        log.info("Syncing user from Cognito to local DB - Email: {}, UUID(sub): {}", email, realUuid);
 
-     // --- Internal Helpers ---
+        User newUser = new User();
+        newUser.setId(realUuid);                    // 👈 ID = sub
+        newUser.setEmail(email);
+        newUser.setDisplayName(displayName);
+        newUser.setAvatarUrl(createDefaultAvatarUrl(displayName));
+        newUser.setCognitoUsername(cognitoUser.username()); // 👈 username vẫn lưu riêng
+        newUser.setStatus(User.UserStatus.ACTIVE);
+        newUser.setSettings(new User.UserSettings());
 
-     /**
-      * Đồng bộ user từ JWT (Cognito hoặc Guest) vào DB.
-      */
-     private User syncUserFromJwt(Jwt jwt) {
-         String userId = jwt.getSubject();
-         if (userId == null)  {
-             throw new IllegalArgumentException("JWT 'sub' claim is missing.");
-         }
+        return userRepository.save(newUser);
+    }
 
-         Optional<User> existingUserOpt = userRepository.findById(userId);
+    // ===================================================================
+    // SMART SYNC & MERGE KHI LOGIN QUA JWT
+    // ===================================================================
 
-         // Nếu là user GUEST và đã tồn tại, chỉ cần trả về
-         if (existingUserOpt.isPresent() && existingUserOpt.get().getStatus() == User.UserStatus.GUEST) {
-             return existingUserOpt.get();
-         }
+    /**
+     * Logic Đồng bộ khi Login (Smart Sync & Merge):
+     * - Nếu đã có user với ID thật → update thông tin.
+     * - Nếu chưa có nhưng tồn tại user tạm theo email → merge:
+     *   + Chuyển mọi Collaboration từ ID tạm sang ID thật.
+     *   + Xóa user tạm, tạo user thật.
+     * - Nếu hoàn toàn mới → tạo user mới.
+     */
+    @Transactional
+    public User syncUserFromJwt(Jwt jwt) {
+        String realUserId = jwt.getSubject(); // UUID từ Cognito (chân lý)
+        if (realUserId == null) {
+            throw new IllegalArgumentException("JWT 'sub' claim is missing.");
+        }
 
-         String email = jwt.getClaimAsString("email");
-         String displayName = Optional.ofNullable(jwt.getClaimAsString("name"))
-                 .or(() -> Optional.ofNullable(jwt.getClaimAsString("preferred_username")))
-                 .or(() -> Optional.ofNullable(email).map(e -> e.split("@")[0]))
-                 .orElse("User " + userId.substring(0, 6));
+        String email = jwt.getClaimAsString("email");
+        String name = jwt.getClaimAsString("name");
+        String username = jwt.getClaimAsString("username");
+        String picture = jwt.getClaimAsString("picture");
 
-         String avatarUrl = jwt.getClaimAsString("picture");
+        String displayName = Optional.ofNullable(name)
+                .orElseGet(() -> Optional.ofNullable(username)
+                        .orElseGet(() -> Optional.ofNullable(email)
+                                .map(e -> e.split("@")[0])
+                                .orElse("User")));
 
-         if (existingUserOpt.isPresent()) {
-             User existingUser = existingUserOpt.get();
-             boolean needsUpdate = false;
-             if (email != null && !email.equals(existingUser.getEmail())) {
-                 existingUser.setEmail(email);
-                 needsUpdate = true;
-             }
-             if (!displayName.equals(existingUser.getDisplayName())) {
-                 existingUser.setDisplayName(displayName);
-                 needsUpdate = true;
-             }
-             if (avatarUrl != null && !avatarUrl.equals(existingUser.getAvatarUrl())) {
-                 existingUser.setAvatarUrl(avatarUrl);
-                 needsUpdate = true;
-             }
+        // 1. Tìm xem user đã tồn tại bằng ID thật chưa
+        Optional<User> existingUserById = userRepository.findById(realUserId);
+        if (existingUserById.isPresent()) {
+            User user = existingUserById.get();
+            boolean changed = false;
 
-             if (needsUpdate) {
-                 // [UPDATE] Xóa setUpdatedAt (Auditable sẽ tự động làm)
-                 // existingUser.setUpdatedAt(Instant.now());
-                 log.info("Syncing updated claims for user {}", userId);
-                 return userRepository.save(existingUser);
-             } else {
-                 return existingUser;
-             }
-         } else {
-             // User Cognito mới, chưa có trong DB
-             log.info("Creating new user {} from JWT sync", userId);
-             User newUser = new User();
-             newUser.setId(userId);
-             newUser.setEmail(email);
-             newUser.setDisplayName(displayName);
-             
-             // [FIX] Thêm avatar default nếu JWT không cung cấp
-             newUser.setAvatarUrl((avatarUrl != null && !avatarUrl.isBlank()) ? avatarUrl : createDefaultAvatarUrl(displayName));
-             
-             newUser.setCognitoUsername(jwt.getClaimAsString("username"));
-             newUser.setStatus(User.UserStatus.ACTIVE); // User Cognito luôn là ACTIVE
-             
-             // [UPDATE] Xóa setCreatedAt/UpdatedAt (Auditable sẽ tự động làm)
-             // newUser.setCreatedAt(Instant.now());
-             // newUser.setUpdatedAt(Instant.now());
-             newUser.setSettings(new User.UserSettings());
-             return userRepository.save(newUser);
-         }
-     }
+            if (email != null && !email.equals(user.getEmail())) {
+                user.setEmail(email);
+                changed = true;
+            }
+            if (!displayName.equals(user.getDisplayName())) {
+                user.setDisplayName(displayName);
+                changed = true;
+            }
+            if (picture != null && !picture.equals(user.getAvatarUrl())) {
+                user.setAvatarUrl(picture);
+                changed = true;
+            }
+            if (username != null && !username.equals(user.getCognitoUsername())) {
+                user.setCognitoUsername(username);
+                changed = true;
+            }
+            if (user.getStatus() == null || user.getStatus() == User.UserStatus.PENDING_VERIFICATION) {
+                user.setStatus(User.UserStatus.ACTIVE);
+                changed = true;
+            }
 
-     private UserProfileDto mapToProfileDto(User user) {
-         return new UserProfileDto(
-                 user.getId(),
-                 user.getEmail(),
-                 user.getDisplayName(),
-                 user.getAvatarUrl()
-         );
-     }
+            return changed ? userRepository.save(user) : user;
+        }
 
-     private UserSettingsDto mapToSettingsDto(User.UserSettings settings) {
-         User.UserSettings effectiveSettings = (settings != null) ? settings : new User.UserSettings();
-         
-         // [FIX] Truyền thêm preferredLayout
-         return new UserSettingsDto(
-                 effectiveSettings.getDefaultEditorThemeId(),
-                 effectiveSettings.getLanguage(),
-                 effectiveSettings.getColorMode(),
-                 effectiveSettings.getPreferredLayout()
-         );
-     }
+        // 2. Nếu chưa có ID thật, kiểm tra xem có Email trùng không (Do được mời trước đó)
+        if (email != null) {
+            Optional<User> existingUserByEmail = userRepository.findByEmail(email);
+            if (existingUserByEmail.isPresent()) {
+                // == PHÁT HIỆN USER TẠM / USER ĐƯỢC MỜI ==
+                User pendingUser = existingUserByEmail.get();
+                String tempId = pendingUser.getId();
 
-     /**
-      * [NEW] Helper tạo URL avatar default
-      */
-     private String createDefaultAvatarUrl(String displayName) {
-         try {
-             String encodedName = URLEncoder.encode(displayName, StandardCharsets.UTF_8.name());
-             return "https://ui-avatars.com/api/?name=" + encodedName;
-         } catch (Exception e) {
-             // Fallback an toàn nếu encode lỗi (rất hiếm với UTF-8)
-             return "https://ui-avatars.com/api/?name=User";
-         }
-     }
+                log.info("Merging PENDING user [{}] into REAL user [{}]", tempId, realUserId);
+
+                // A. Migrate quyền (Collaborations) từ ID tạm -> ID thật
+                List<Collaboration> pendingCollabs = collaborationRepository.findByUserId(tempId);
+                for (Collaboration col : pendingCollabs) {
+                    col.setUserId(realUserId);
+                }
+                collaborationRepository.saveAll(pendingCollabs);
+
+                // B. Xóa user tạm
+                userRepository.deleteById(tempId);
+
+                // C. Tạo User thật (để lần sau login sẽ vào case 1)
+                User realUser = new User();
+                realUser.setId(realUserId);
+                realUser.setEmail(email);
+                realUser.setDisplayName(displayName);
+                realUser.setAvatarUrl(picture != null && !picture.isBlank()
+                        ? picture
+                        : createDefaultAvatarUrl(displayName));
+                realUser.setCognitoUsername(username);
+                realUser.setStatus(User.UserStatus.ACTIVE);
+                realUser.setSettings(
+                        pendingUser.getSettings() != null
+                                ? pendingUser.getSettings()
+                                : new User.UserSettings()
+                );
+
+                return userRepository.save(realUser);
+            }
+        }
+
+        // 3. User mới tinh -> Tạo mới
+        log.info("First-time login sync for user ID: {}", realUserId);
+        User newUser = new User();
+        newUser.setId(realUserId);
+        newUser.setEmail(email);
+        newUser.setDisplayName(displayName);
+        newUser.setAvatarUrl(picture != null && !picture.isBlank()
+                ? picture
+                : createDefaultAvatarUrl(displayName));
+        newUser.setCognitoUsername(username);
+        newUser.setStatus(User.UserStatus.ACTIVE);
+        newUser.setSettings(new User.UserSettings());
+
+        return userRepository.save(newUser);
+    }
+
+    // ===================================================================
+    // [MỚI] ADMIN TOOL: SYNC TOÀN BỘ USER TỪ COGNITO VỀ MONGODB
+    // ===================================================================
+
+    /**
+     * Admin tool: quét toàn bộ user trong Cognito User Pool và đồng bộ về MongoDB.
+     * - ID local = sub của Cognito.
+     * - Upsert (tạo mới nếu chưa có, update nếu đã tồn tại).
+     */
+    @Transactional
+    public String syncAllCognitoUsers() {
+        int createdCount = 0;
+        int updatedCount = 0;
+        String paginationToken = null;
+
+        do {
+            // 1. Gọi Cognito lấy danh sách (phân trang)
+            ListUsersRequest.Builder requestBuilder = ListUsersRequest.builder()
+                    .userPoolId(userPoolId)
+                    .limit(60); // Max limit của AWS
+
+            if (paginationToken != null) {
+                requestBuilder.paginationToken(paginationToken);
+            }
+
+            ListUsersResponse response = cognitoClient.listUsers(requestBuilder.build());
+            paginationToken = response.paginationToken();
+
+            // 2. Duyệt qua từng user và lưu vào DB
+            for (UserType cognitoUser : response.users()) {
+                try {
+                    String sub = null;
+                    String email = null;
+                    String name = "User";
+
+                    // Trích xuất attributes
+                    for (AttributeType attr : cognitoUser.attributes()) {
+                        switch (attr.name()) {
+                            case "sub" -> sub = attr.value();
+                            case "email" -> email = attr.value();
+                            case "name" -> name = attr.value();
+                            // Fallback nếu không có name
+                            case "given_name" -> name = attr.value();
+                        }
+                    }
+
+                    if (sub == null) continue; // Bỏ qua nếu user lỗi không có sub
+
+                    // 3. Upsert vào MongoDB
+                    Optional<User> existingUser = userRepository.findById(sub);
+
+                    if (existingUser.isPresent()) {
+                        // Update nếu thông tin thay đổi
+                        User u = existingUser.get();
+                        boolean changed = false;
+
+                        if (email != null && !email.equals(u.getEmail())) {
+                            u.setEmail(email);
+                            changed = true;
+                        }
+                        if (!name.equals(u.getDisplayName())) {
+                            u.setDisplayName(name);
+                            changed = true;
+                        }
+                        if (u.getCognitoUsername() == null) {
+                            u.setCognitoUsername(cognitoUser.username());
+                            changed = true;
+                        }
+
+                        if (changed) {
+                            userRepository.save(u);
+                            updatedCount++;
+                        }
+                    } else {
+                        // Create mới
+                        User newUser = new User();
+                        newUser.setId(sub); // QUAN TRỌNG: ID phải khớp sub của Cognito
+                        newUser.setEmail(email);
+                        newUser.setDisplayName(name);
+                        newUser.setCognitoUsername(cognitoUser.username());
+                        newUser.setAvatarUrl(createDefaultAvatarUrl(name));
+                        newUser.setStatus(User.UserStatus.ACTIVE);
+                        newUser.setSettings(new User.UserSettings());
+
+                        userRepository.save(newUser);
+                        createdCount++;
+                    }
+
+                } catch (Exception e) {
+                    log.error("Error syncing user {}", cognitoUser.username(), e);
+                }
+            }
+
+        } while (paginationToken != null); // Lặp cho đến khi hết trang
+
+        log.info("Sync complete. Created: {}, Updated: {}", createdCount, updatedCount);
+        return String.format("Sync complete. Created: %d, Updated: %d users.", createdCount, updatedCount);
+    }
+
+    // ===================================================================
+    // CÁC HÀM CŨ - PASSWORD, PROFILE, SETTINGS
+    // ===================================================================
+
+    public void changeCurrentUserPassword(PasswordChangeRequest request) {
+        String accessToken = authUtils.getCurrentJwt()
+                .map(Jwt::getTokenValue)
+                .orElseThrow(() -> new IllegalStateException("Access token not found in SecurityContext"));
+
+        ChangePasswordRequest cognitoRequest = ChangePasswordRequest.builder()
+                .accessToken(accessToken)
+                .previousPassword(request.oldPassword())
+                .proposedPassword(request.newPassword())
+                .build();
+
+        try {
+            cognitoClient.changePassword(cognitoRequest);
+            log.info("Password changed successfully");
+        } catch (CognitoIdentityProviderException e) {
+            log.warn("Failed to change password: {}", e.awsErrorDetails().errorMessage());
+            throw e;
+        }
+    }
+
+    /**
+     * Lấy profile user hiện tại – luôn gọi syncUserFromJwt để DB luôn nhất quán.
+     */
+    public UserProfileDto getCurrentUserProfile() {
+        Jwt jwt = authUtils.getCurrentJwt()
+                .orElseThrow(() -> new IllegalStateException("JWT token not found"));
+        User user = syncUserFromJwt(jwt);
+        return mapToProfileDto(user);
+    }
+
+    @Transactional
+    public UserProfileDto updateCurrentUserProfile(UserProfileDto profileUpdate) {
+        String userId = authUtils.getRequiredCurrentUserId();
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new ResourceNotFoundException("User", "id", userId));
+
+        if (user.getStatus() == User.UserStatus.GUEST && profileUpdate.email() != null) {
+            throw new AccessDeniedException("Guest users cannot change their email.");
+        }
+
+        boolean updated = false;
+
+        if (profileUpdate.displayName() != null
+                && !profileUpdate.displayName().equals(user.getDisplayName())) {
+            user.setDisplayName(profileUpdate.displayName());
+            updated = true;
+        }
+        if (profileUpdate.avatarUrl() != null
+                && !profileUpdate.avatarUrl().equals(user.getAvatarUrl())) {
+            user.setAvatarUrl(profileUpdate.avatarUrl());
+            updated = true;
+        }
+
+        if (updated) {
+            user = userRepository.save(user);
+            log.info("Profile updated for user {}", userId);
+        }
+
+        return mapToProfileDto(user);
+    }
+
+    @Transactional(readOnly = true)
+    public UserSettingsDto getCurrentUserSettings() {
+        String userId = authUtils.getRequiredCurrentUserId();
+        User user = findUserById(userId);
+        return mapToSettingsDto(user.getSettings());
+    }
+
+    @Transactional
+    public UserSettingsDto updateUserSettings(UserSettingsDto settingsUpdate) {
+        String userId = authUtils.getRequiredCurrentUserId();
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new ResourceNotFoundException("User", "id", userId));
+
+        User.UserSettings s = user.getSettings() != null
+                ? user.getSettings()
+                : new User.UserSettings();
+
+        boolean updated = false;
+
+        if (settingsUpdate.defaultEditorThemeId() != null
+                && !settingsUpdate.defaultEditorThemeId().equals(s.getDefaultEditorThemeId())) {
+            s.setDefaultEditorThemeId(settingsUpdate.defaultEditorThemeId());
+            updated = true;
+        }
+        if (settingsUpdate.language() != null
+                && !settingsUpdate.language().equals(s.getLanguage())) {
+            s.setLanguage(settingsUpdate.language());
+            updated = true;
+        }
+        if (settingsUpdate.colorMode() != null
+                && !settingsUpdate.colorMode().equals(s.getColorMode())) {
+            s.setColorMode(settingsUpdate.colorMode());
+            updated = true;
+        }
+        if (settingsUpdate.preferredLayout() != null
+                && !settingsUpdate.preferredLayout().equals(s.getPreferredLayout())) {
+            s.setPreferredLayout(settingsUpdate.preferredLayout());
+            updated = true;
+        }
+
+        if (updated) {
+            user.setSettings(s);
+            user = userRepository.save(user);
+            log.info("Settings updated for user {}", userId);
+        }
+
+        return mapToSettingsDto(s);
+    }
+
+    public User findUserById(String userId) {
+        return userRepository.findById(userId)
+                .orElseThrow(() -> new ResourceNotFoundException("User", "id", userId));
+    }
+
+    // ===================================================================
+    // MAPPER & HELPER
+    // ===================================================================
+
+    private UserProfileDto mapToProfileDto(User user) {
+        return new UserProfileDto(
+                user.getId(),
+                user.getEmail(),
+                user.getDisplayName(),
+                user.getAvatarUrl()
+        );
+    }
+
+    private UserSettingsDto mapToSettingsDto(User.UserSettings settings) {
+        User.UserSettings s = settings != null ? settings : new User.UserSettings();
+        return new UserSettingsDto(
+                s.getDefaultEditorThemeId(),
+                s.getLanguage(),
+                s.getColorMode(),
+                s.getPreferredLayout()
+        );
+    }
+
+    private String createDefaultAvatarUrl(String displayName) {
+        try {
+            String encoded = URLEncoder.encode(displayName, StandardCharsets.UTF_8);
+            return "https://ui-avatars.com/api/?name=" + encoded;
+        } catch (Exception e) {
+            return "https://ui-avatars.com/api/?name=User";
+        }
+    }
 }
