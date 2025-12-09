@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Download, Loader2 } from 'lucide-react';
+import { Upload, Loader2 } from 'lucide-react';
 import ExportModal from './ExportModal';
 import { downloadAsText, downloadAsImagePNG, downloadAsPDF } from '../../services/exportService';
 import { NodeData, EdgeData } from '../../app/store/useEditorStore';
@@ -61,7 +61,7 @@ export default function ExportButton({ nodes, edges, stageRef, mindmapName = 'mi
         className="p-2 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
         title="Xuất Mindmap"
       >
-        <Download className="w-5 h-5 text-gray-700 dark:text-gray-300" />
+        <Upload className="w-5 h-5 text-gray-700 dark:text-gray-300" />
       </button>
 
       <ExportModal
