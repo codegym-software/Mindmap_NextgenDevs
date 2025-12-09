@@ -246,26 +246,23 @@ function MapPanel({
         </CustomSelect>
       </RowItem>
       
-      {/* 5. Độ dày nhánh */}
-      <RowItem label="Độ dày nhánh">
+      {/* 5. Nhánh */}
+      <ColorItem
+        label="Nhánh"
+        color={globalBranchColor}
+        onChange={onSetGlobalBranchColor}
+      >
         <select
           value={currentLineWidth}
           onChange={(e) => {
             onSetBranchLineWidth(Number(e.target.value));
           }}
-          className={`flex-1 p-1.5 ${INPUT_BG} rounded text-sm outline-none border border-transparent focus:border-blue-500 focus:ring-1 focus:ring-blue-500`}
+          className={`p-1.5 ${INPUT_BG} rounded text-sm outline-none border border-transparent focus:border-blue-500 focus:ring-1 focus:ring-blue-500`}
         >
           <option value={1}>Mỏng</option>
           <option value={2}>Vừa</option>
-          <option value={4}>Dày</option>
+          <option value={3}>Dày</option>
         </select>
-      </RowItem>
-      {/* [SỬA] Cập nhật onChange để gọi prop mới */}
-      <ColorItem
-        label="Màu nhánh"
-        color={globalBranchColor}
-        onChange={onSetGlobalBranchColor}
-      >
       </ColorItem>
   
     </div>
@@ -331,7 +328,9 @@ function NodeStylePanel({
 
   const handleUpdate = (updates: Partial<NodeData>) => {
     if (selectedIds.length > 0) {
-      onUpdateNode(updates);
+      // Merge with current node values to preserve independent properties
+      const mergedUpdates = { ...updates };
+      onUpdateNode(mergedUpdates);
     }
   };
 
@@ -371,45 +370,46 @@ function NodeStylePanel({
 
       {/* 2. Hình dạng */}
       <CollapsiblePanel label="Hình dạng" defaultOpen>
-        <RowItem label="Hình dạng">
+        <ColorItem
+          label="Hình dạng"
+          color={style.color || '#FFFFFF'}
+          onChange={(color) => handleUpdate({ color })}
+        >
           <select
             value={style.shape}
             onChange={(e) => handleUpdate({ shape: e.target.value as NodeData['shape'] })}
-            className={`flex-1 p-1.5 ${INPUT_BG} rounded text-sm outline-none border border-transparent focus:border-blue-500 focus:ring-1 focus:ring-blue-500`}
+            className={`flex-1 p-1.5 w-full ${INPUT_BG} rounded text-sm outline-none border border-transparent focus:border-blue-500 focus:ring-1 focus:ring-blue-500`}
           >
             <option value="roundedRect">Bo góc</option>
             <option value="rectangle">Vuông</option>
           </select>
-        </RowItem>
-        <ColorItem
-          label="Tô màu"
-          color={style.color || '#FFFFFF'}
-          onChange={(color) => handleUpdate({ color })}
-        />
+        </ColorItem>
         <ColorItem
           label="Viền"
           color={style.borderColor || '#CCCCCC'}
           onChange={(borderColor) => handleUpdate({ borderColor })}
         >
           <select
-            value={style.borderWidth}
-            onChange={(e) => handleUpdate({ borderWidth: Number(e.target.value) })}
-            className={`p-1.5 ${INPUT_BG} rounded text-sm outline-none border border-transparent focus:border-blue-500 focus:ring-1 focus:ring-blue-500`}
-         >
-            <option value={0}>Không</option>
-            <option value={2}>Mỏng</option>
-            <option value={4}>Dày</option>
-          </select>
-          <select
             value={style.borderStyle}
             onChange={(e) => handleUpdate({ borderStyle: e.target.value as NodeData['borderStyle'] })}
-            className={`p-1.5 ${INPUT_BG} rounded text-sm outline-none border border-transparent focus:border-blue-500 focus:ring-1 focus:ring-blue-500`}
+            className={`p-2 ${INPUT_BG} rounded text-sm outline-none border border-transparent focus:border-blue-500 focus:ring-1 focus:ring-blue-500`}
           >
             <option value="solid">Liền</option>
             <option value="dashed">Đứt</option>
             <option value="dotted">Chấm</option>
           </select>
         </ColorItem>
+        <RowItem label="">
+        <select
+            value={style.borderWidth}
+            onChange={(e) => handleUpdate({ borderWidth: Number(e.target.value) })}
+            className={`p-1.5 w-full ${INPUT_BG} rounded text-sm outline-none border border-transparent focus:border-blue-500 focus:ring-1 focus:ring-blue-500`}
+         >
+            <option value={0}>Không</option>
+            <option value={2}>Mỏng</option>
+            <option value={4}>Dày</option>
+          </select>
+        </RowItem>
         {/* SỬA: Độ dài */}
         <RowItem label="Độ dài">
           <div className="flex items-center gap-1 w-full">
@@ -455,7 +455,16 @@ function NodeStylePanel({
           label="Màu chữ"
           color={style.textColor || '#333333'}
           onChange={(textColor) => handleUpdate({ textColor })}
-        />
+        >
+          <input
+            type="number"
+            min={8}
+            max={72}
+            value={style.fontSize}
+            onChange={(e) => handleUpdate({ fontSize: Number(e.target.value) })}
+            className={`w-16 p-1.5 ${INPUT_BG} rounded text-sm outline-none border border-transparent focus:border-blue-500 focus:ring-1 focus:ring-blue-500`}
+          />
+        </ColorItem>
         <RowItem label="Phông chữ">
           <CustomSelect
             value={style.fontFamily}
@@ -467,16 +476,6 @@ function NodeStylePanel({
               </Option>
             ))}
           </CustomSelect>
-        </RowItem>
-        <RowItem label="Kích thước">
-          <input
-            type="number"
-            min={8}
-            max={72}
-            value={style.fontSize}
-            onChange={(e) => handleUpdate({ fontSize: Number(e.target.value) })}
-            className={`w-full flex-1 p-1.5 ${INPUT_BG} rounded text-sm outline-none border border-transparent focus:border-blue-500 focus:ring-1 focus:ring-blue-500`}
-          />
         </RowItem>
         <div className="grid grid-cols-4 gap-1">
           <TextFormatButton
@@ -492,12 +491,24 @@ function NodeStylePanel({
           <TextFormatButton
             icon={<Underline size={16} />}
             isActive={style.textDecoration === 'underline'}
-            onClick={() => handleUpdate({ textDecoration: style.textDecoration === 'underline' ? 'none' : 'underline' })}
+            onClick={() => {
+              if (style.textDecoration === 'underline') {
+                handleUpdate({ textDecoration: 'none' });
+              } else {
+                handleUpdate({ textDecoration: 'underline' });
+              }
+            }}
           />
           <TextFormatButton
             icon={<Strikethrough size={16} />}
             isActive={style.textDecoration === 'line-through'}
-            onClick={() => handleUpdate({ textDecoration: style.textDecoration === 'line-through' ? 'none' : 'line-through' })}
+            onClick={() => {
+              if (style.textDecoration === 'line-through') {
+                handleUpdate({ textDecoration: 'none' });
+              } else {
+                handleUpdate({ textDecoration: 'line-through' });
+              }
+            }}
           />
         </div>
         <div className="grid grid-cols-4 gap-1">
@@ -531,39 +542,41 @@ function NodeStylePanel({
 
       {/* 5. Nhánh (con) */}
       <CollapsiblePanel label="Kiểu nhánh" defaultOpen>
+        <RowItem label="Đường nối">
+          <div className="flex gap-2">
+            <select
+              value={style.branchLineStyle}
+              onChange={(e) => handleUpdate({ branchLineStyle: e.target.value as NodeData['branchLineStyle'] })}
+              className={`flex-1 p-1.5 w-5 ${INPUT_BG} rounded text-sm outline-none border border-transparent focus:border-blue-500 focus:ring-1 focus:ring-blue-500`}
+            >
+              <option value="bezier">Cong</option>
+              <option value="sharp">Gấp</option>
+            </select>
+            <select
+              value={style.branchLineEnd}
+              onChange={(e) => handleUpdate({ branchLineEnd: e.target.value as NodeData['branchLineEnd'] })}
+              className={`flex-1 w-15 ${INPUT_BG} rounded text-sm outline-none border border-transparent focus:border-blue-500 focus:ring-1 focus:ring-blue-500`}
+            >
+              <option value="none">Không</option>
+              <option value="arrow">Mũi tên</option>
+            </select>
+          </div>
+        </RowItem>
         <ColorItem
           label="Màu nhánh"
           color={style.branchColor || '#666666'}
           onChange={(branchColor) => handleUpdate({ branchColor })}
         >
           <select
-            value={style.branchLineStyle}
-            onChange={(e) => handleUpdate({ branchLineStyle: e.target.value as NodeData['branchLineStyle'] })}
-            className={`p-1.5 ${INPUT_BG} rounded text-sm outline-none border border-transparent focus:border-blue-500 focus:ring-1 focus:ring-blue-500`}
-          >
-            <option value="bezier">Cong</option>
-            <option value="sharp">Gấp</option>
-          </select>
-          <select
-            value={style.branchLineEnd}
-            onChange={(e) => handleUpdate({ branchLineEnd: e.target.value as NodeData['branchLineEnd'] })}
-            className={`p-1.5 ${INPUT_BG} rounded text-sm outline-none border border-transparent focus:border-blue-500 focus:ring-1 focus:ring-blue-500`}
-          >
-            <option value="none">Không</option>
-            <option value="arrow">Mũi tên</option>
-          </select>
-        </ColorItem>
-        <RowItem label="Độ dày">
-          <select
             value={style.branchLineThickness}
             onChange={(e) => handleUpdate({ branchLineThickness: e.target.value as NodeData['branchLineThickness'] })}
-            className={`flex-1 p-1.5 ${INPUT_BG} rounded text-sm outline-none border border-transparent focus:border-blue-500 focus:ring-1 focus:ring-blue-500`}
+            className={`p-1.5 ${INPUT_BG} rounded text-sm outline-none border border-transparent focus:border-blue-500 focus:ring-1 focus:ring-blue-500`}
           >
             <option value="thin">Mỏng</option>
             <option value="normal">Vừa</option>
             <option value="thick">Dày</option>
-         </select>
-        </RowItem>
+          </select>
+        </ColorItem>
       </CollapsiblePanel>
       
       {/* 6. Thao tác nhanh */}
@@ -629,7 +642,7 @@ function StructureButton({ label, isActive, onClick }: StructureButtonProps) {
 function RowItem({ label, children }: { label: string, children: React.ReactNode }) {
   return (
     <div className="flex items-start gap-3 w-full">
-      <label className="text-sm font-medium text-gray-500 whitespace-nowrap min-w-[90px] mt-1">{label}</label>
+      <label className="text-sm font-medium text-gray-500 whitespace-nowrap min-w-[80px] mt-1">{label}</label>
       <div className="flex-1">{children}</div>
     </div>
   );
@@ -669,7 +682,7 @@ function ColorItem({ label, color, onChange, children }: ColorItemProps) {
 
   return (
     <div className="flex items-start gap-3 w-full relative">
-      <label className="text-sm font-medium text-gray-500 whitespace-nowrap min-w-[90px] mt-1">{label}</label>
+      <label className="text-sm font-medium text-gray-500 whitespace-nowrap min-w-[80px] mt-1">{label}</label>
       <div className="flex-1 flex items-center justify-between">
         <div className="flex items-center gap-2">{children}
           <button
@@ -685,7 +698,7 @@ function ColorItem({ label, color, onChange, children }: ColorItemProps) {
             {simpleColors.map(c => (
               <button
                 key={c}
-                className="w-6 h-6 rounded-sm border border-gray-200"
+                className="w-6 h-6 rounded-sm border border-gray-200 hover:scale-110 hover:shadow-md transition-transform"
                 style={{ backgroundColor: c }}
                 onClick={() => {
                   onChange(c);

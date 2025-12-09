@@ -174,7 +174,7 @@ export const DEFAULT_NODE_STYLE: Partial<NodeData> = {
   branchColor: undefined,
   branchLineStyle: 'bezier',
   branchLineEnd: 'none',
-  branchLineThickness: 'normal',
+  branchLineThickness: undefined,
   localStructure: 'default',
   quickStyleId: 'default',
 };

@@ -4001,7 +4001,8 @@ const handleFitToScreen = useCallback(() => {
                 let strokeColor = globalBranchColor;
                 strokeColor = globalBranchColor;
                 // Apply node's branch line thickness or fallback to global setting
-                const nodeThickness = fromStyle.branchLineThickness === 'thin' ? 1 : fromStyle.branchLineThickness === 'thick' ? 3 : fromStyle.branchLineThickness === 'normal' ? 2 : undefined;
+                // 'normal' means use global setting, only 'thin' or 'thick' override
+                const nodeThickness = fromStyle.branchLineThickness === 'thin' ? 1 : fromStyle.branchLineThickness === 'thick' ? 3 : undefined;
                 const strokeWidth = nodeThickness !== undefined ? nodeThickness : (branchLineWidth || 2);
                 const isBezier = fromStyle.branchLineStyle === 'bezier' && globalStructure !== 'org'; // Changed to fromStyle
                 const lineProps = {
@@ -4066,6 +4067,7 @@ const handleFitToScreen = useCallback(() => {
                 const hasChildren = nodesWithChildren.has(node.id);
                 const isDropTarget = dropTargetNodeId === node.id;
                 const isDragging = draggingNodeId === node.id;
+                const combinedFontStyle = (style.fontStyle === 'italic' ? 'italic ' : '') + (style.fontWeight === 'bold' ? 'bold' : 'normal');
                 const shapeProps = {
                   width: w, height: h, offsetX: w / 2, offsetY: h / 2,
                   fill: style.color,
@@ -4191,7 +4193,7 @@ const handleFitToScreen = useCallback(() => {
                       fill={style.textColor}
                       padding={PADDING_Y} listening={false}
                       fontSize={finalFontSize}
-                      fontStyle={style.fontStyle === 'italic' ? 'italic' : style.fontWeight}
+                      fontStyle={combinedFontStyle}
                       fontFamily={style.fontFamily}
                       textDecoration={style.textDecoration === 'none' ? undefined : style.textDecoration}
                       lineHeight={LINE_HEIGHT_MULTIPLIER}
