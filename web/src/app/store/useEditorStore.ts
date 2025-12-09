@@ -487,9 +487,9 @@ export const useEditorStore = create<State>((set, get) => ({
     // Tạo node label nhỏ trong suốt với width fit-content
     const labelNode: NodeData = {
       id: labelNodeId,
-      parentId: relationshipId, // Parent là relationship (special case)
+      parentId: relationshipId, 
       nodeText: 'relationship',
-      x: 0, // Sẽ được tính lại khi render
+      x: 0, 
       y: 0,
       shape: 'roundedRect',
       color: 'transparent',
@@ -497,7 +497,7 @@ export const useEditorStore = create<State>((set, get) => ({
       borderWidth: 0,
       fontSize: 11,
       fontWeight: 'normal',
-      nodeLength: 'fit', // Width tự động fit nội dung
+      nodeLength: 'fit', 
     };
     
     const newRelationship: RelationshipData = {

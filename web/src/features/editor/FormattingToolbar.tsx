@@ -2,7 +2,7 @@ import React, { useState, useMemo, useRef, useEffect, ChangeEvent } from 'react'
 import {
   ChevronDown, ChevronUp, ChevronsUpDown, Check,
   AlignCenter, AlignLeft, AlignRight,
-  Bold, Italic, Underline, Strikethrough, CaseSensitive,
+  Bold, Italic, Underline, Strikethrough, CaseSensitive, CaseLower, CaseUpper,
   Copy, ClipboardPaste, RotateCcw,
   Palette, Square, Circle, Diamond, Minus,
   ArrowRight, GitBranch, GitCommit, GitMerge, Type,
@@ -52,7 +52,7 @@ type FormattingToolbarProps = {
 // =================================================================================
 const INPUT_BG = "bg-gray-100 hover:bg-gray-200";
 const BUTTON_BG = "bg-gray-100 hover:bg-gray-200";
-const BUTTON_ACTIVE_BG = "bg-blue-500 text-white";
+const BUTTON_ACTIVE_BG = "bg-gray-300";
 
 // =================================================================================
 // Main Component
@@ -378,7 +378,7 @@ function NodeStylePanel({
           <select
             value={style.shape}
             onChange={(e) => handleUpdate({ shape: e.target.value as NodeData['shape'] })}
-            className={`flex-1 p-1.5 w-full ${INPUT_BG} rounded text-sm outline-none border border-transparent focus:border-blue-500 focus:ring-1 focus:ring-blue-500`}
+            className={`p-1.5 w-15 ${INPUT_BG} rounded text-sm outline-none border border-transparent focus:border-blue-500 focus:ring-1 focus:ring-blue-500`}
           >
             <option value="roundedRect">Bo góc</option>
             <option value="rectangle">Vuông</option>
@@ -392,7 +392,7 @@ function NodeStylePanel({
           <select
             value={style.borderStyle}
             onChange={(e) => handleUpdate({ borderStyle: e.target.value as NodeData['borderStyle'] })}
-            className={`p-2 ${INPUT_BG} rounded text-sm outline-none border border-transparent focus:border-blue-500 focus:ring-1 focus:ring-blue-500`}
+            className={`p-1.5 w-20 ${INPUT_BG} rounded text-sm outline-none border border-transparent focus:border-blue-500 focus:ring-1 focus:ring-blue-500`}
           >
             <option value="solid">Liền</option>
             <option value="dashed">Đứt</option>
@@ -452,7 +452,7 @@ function NodeStylePanel({
       {/* 3. Văn bản */}
       <CollapsiblePanel label="Văn bản" defaultOpen>
         <ColorItem
-          label="Màu chữ"
+          label="Cỡ chữ"
           color={style.textColor || '#333333'}
           onChange={(textColor) => handleUpdate({ textColor })}
         >
@@ -462,7 +462,7 @@ function NodeStylePanel({
             max={72}
             value={style.fontSize}
             onChange={(e) => handleUpdate({ fontSize: Number(e.target.value) })}
-            className={`w-16 p-1.5 ${INPUT_BG} rounded text-sm outline-none border border-transparent focus:border-blue-500 focus:ring-1 focus:ring-blue-500`}
+            className={`w-20 p-1.5 ${INPUT_BG} rounded text-sm outline-none border border-transparent focus:border-blue-500 focus:ring-1 focus:ring-blue-500`}
           />
         </ColorItem>
         <RowItem label="Phông chữ">
@@ -528,7 +528,11 @@ function NodeStylePanel({
             onClick={() => handleUpdate({ textAlign: 'RIGHT' })}
           />
           <TextFormatButton
-            icon={<CaseSensitive size={16} />}
+            icon={
+              style.textCase === 'lowercase' ? <CaseLower size={16} /> :
+              style.textCase === 'uppercase' ? <CaseUpper size={16} /> :
+              <CaseSensitive size={16} />
+            }
             isActive={style.textCase !== 'normal'}
             onClick={() => {
               const nextCase = style.textCase === 'normal' ? 'uppercase' : (style.textCase === 'uppercase' ? 'lowercase' : 'normal');
@@ -543,23 +547,24 @@ function NodeStylePanel({
       {/* 5. Nhánh (con) */}
       <CollapsiblePanel label="Kiểu nhánh" defaultOpen>
         <RowItem label="Đường nối">
-          <div className="flex gap-2">
+          <div className="flex gap-2 items-center w-full">
             <select
               value={style.branchLineStyle}
               onChange={(e) => handleUpdate({ branchLineStyle: e.target.value as NodeData['branchLineStyle'] })}
-              className={`flex-1 p-1.5 w-5 ${INPUT_BG} rounded text-sm outline-none border border-transparent focus:border-blue-500 focus:ring-1 focus:ring-blue-500`}
+              className={`flex-1 p-1.5 ${INPUT_BG} rounded text-sm outline-none border border-transparent focus:border-blue-500 focus:ring-1 focus:ring-blue-500`}
             >
               <option value="bezier">Cong</option>
               <option value="sharp">Gấp</option>
             </select>
-            <select
-              value={style.branchLineEnd}
-              onChange={(e) => handleUpdate({ branchLineEnd: e.target.value as NodeData['branchLineEnd'] })}
-              className={`flex-1 w-15 ${INPUT_BG} rounded text-sm outline-none border border-transparent focus:border-blue-500 focus:ring-1 focus:ring-blue-500`}
-            >
-              <option value="none">Không</option>
-              <option value="arrow">Mũi tên</option>
-            </select>
+            <label className="flex items-center gap-1 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={style.branchLineEnd === 'arrow'}
+                onChange={(e) => handleUpdate({ branchLineEnd: e.target.checked ? 'arrow' : 'none' })}
+                className="w-4 h-4 rounded border-gray-300 text-blue-500 focus:ring-blue-500"
+              />
+              <span className="text-sm text-gray-600">Mũi tên</span>
+            </label>
           </div>
         </RowItem>
         <ColorItem
@@ -570,7 +575,7 @@ function NodeStylePanel({
           <select
             value={style.branchLineThickness}
             onChange={(e) => handleUpdate({ branchLineThickness: e.target.value as NodeData['branchLineThickness'] })}
-            className={`p-1.5 ${INPUT_BG} rounded text-sm outline-none border border-transparent focus:border-blue-500 focus:ring-1 focus:ring-blue-500`}
+            className={`flex-1 p-1.5 ${INPUT_BG} rounded text-sm outline-none border border-transparent focus:border-blue-500 focus:ring-1 focus:ring-blue-500`}
           >
             <option value="thin">Mỏng</option>
             <option value="normal">Vừa</option>
@@ -683,14 +688,13 @@ function ColorItem({ label, color, onChange, children }: ColorItemProps) {
   return (
     <div className="flex items-start gap-3 w-full relative">
       <label className="text-sm font-medium text-gray-500 whitespace-nowrap min-w-[80px] mt-1">{label}</label>
-      <div className="flex-1 flex items-center justify-between">
-        <div className="flex items-center gap-2">{children}
-          <button
-            className="w-8 h-6 rounded border border-gray-400"
-            style={{ backgroundColor: color }}
-            onClick={() => setShowPicker(!showPicker)}
-          />
-        </div>
+      <div className="flex-1 flex items-center justify-between gap-2">
+        {children}
+        <button
+          className="flex-1 h-8 rounded border border-gray-400"
+          style={{ backgroundColor: color }}
+          onClick={() => setShowPicker(!showPicker)}
+        />
       </div>
       {showPicker && (
         <div ref={pickerRef} className="absolute right-0 top-full mt-1 w-48 bg-white shadow-lg rounded-md border border-gray-300 p-2 z-10">
