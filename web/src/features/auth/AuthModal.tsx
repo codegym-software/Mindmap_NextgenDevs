@@ -33,6 +33,7 @@ const AuthModal: React.FC<Props> = ({ isOpen, onClose, initialMode = 'login' }) 
   const [confirmCode, setConfirmCode] = useState('');
   const [resetCode, setResetCode] = useState('');
   const [newPassword, setNewPassword] = useState('');
+  const [confirmNewPassword, setConfirmNewPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -44,6 +45,7 @@ const AuthModal: React.FC<Props> = ({ isOpen, onClose, initialMode = 'login' }) 
     setConfirmCode('');
     setResetCode('');
     setNewPassword('');
+    setConfirmNewPassword('');
     setShowPassword(false);
     setIsLoading(false);
     setErrors({});
@@ -69,6 +71,10 @@ const AuthModal: React.FC<Props> = ({ isOpen, onClose, initialMode = 'login' }) 
   
   const validateForm = () => {
     if (mode === 'register' && formData.password !== formData.confirmPassword) {
+        setErrors({ general: "Mật khẩu xác nhận không khớp." });
+        return false;
+    }
+    if (mode === 'reset' && newPassword !== confirmNewPassword) {
         setErrors({ general: "Mật khẩu xác nhận không khớp." });
         return false;
     }
@@ -238,7 +244,25 @@ const AuthModal: React.FC<Props> = ({ isOpen, onClose, initialMode = 'login' }) 
             {mode === 'register' && <RegisterForm formData={formData} errors={errors} showPassword={showPassword} handleChange={handleChange} toggleShowPassword={() => setShowPassword(!showPassword)} isLoading={isLoading} onSubmit={handleRegister} />}
             {mode === 'confirm' && <ConfirmForm confirmCode={confirmCode} errors={errors} isLoading={isLoading} onChange={e => setConfirmCode(e.target.value)} onSubmit={handleConfirm} onResend={handleResend} />}
             {mode === 'forgot' && <ForgotForm formData={formData} errors={errors} isLoading={isLoading} onChange={handleChange} onSubmit={handleForgot} />}
-            {mode === 'reset' && <ResetForm resetCode={resetCode} newPassword={newPassword} errors={errors} showPassword={showPassword} toggleShowPassword={() => setShowPassword(!showPassword)} isLoading={isLoading} onChangeCode={e => setResetCode(e.target.value)} onChangePassword={e => setNewPassword(e.target.value)} onSubmit={handleReset} />}
+            {mode === 'reset' && <ResetForm
+              resetCode={resetCode}
+              newPassword={newPassword}
+              confirmNewPassword={confirmNewPassword}
+              errors={errors}
+              showPassword={showPassword}
+              toggleShowPassword={() => setShowPassword(!showPassword)}
+              isLoading={isLoading}
+              onChangeCode={e => setResetCode(e.target.value)}
+              onChangePassword={e => {
+                setNewPassword(e.target.value);
+                if (errors.newPassword || errors.general) setErrors(prev => ({ ...prev, newPassword: '', general: '' }));
+              }}
+              onChangeConfirm={e => {
+                setConfirmNewPassword(e.target.value);
+                if (errors.confirmNewPassword || errors.general) setErrors(prev => ({ ...prev, confirmNewPassword: '', general: '' }));
+              }}
+              onSubmit={handleReset}
+            />}
 
             {(mode === 'login' || mode === 'register') && (
                 <>

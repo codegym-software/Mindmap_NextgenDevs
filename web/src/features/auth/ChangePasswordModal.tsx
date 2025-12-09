@@ -1,6 +1,6 @@
 // src/features/auth/ChangePasswordModal.tsx
-import React, { useState } from 'react';
-import { Eye, EyeOff, Lock } from 'lucide-react';
+import React, { useState, useMemo } from 'react';
+import { Eye, EyeOff, Lock, Check, X } from 'lucide-react';
 import * as cognitoDirect from '../../auth/cognitoDirect';
 import { useToast } from '../../hooks/useToast';
 import LogoHeader from './LogoHeader';
@@ -10,6 +10,15 @@ type Props = {
   isOpen: boolean;
   onClose: () => void;
 };
+
+// Password requirements checker
+const PASSWORD_REQUIREMENTS = [
+  { label: 'Ít nhất 8 ký tự', regex: /.{8,}/ },
+  { label: 'Chứa chữ hoa (A-Z)', regex: /[A-Z]/ },
+  { label: 'Chứa chữ thường (a-z)', regex: /[a-z]/ },
+  { label: 'Chứa số (0-9)', regex: /[0-9]/ },
+  { label: 'Chứa ký tự đặc biệt (!@#$%^&*)', regex: /[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/ },
+];
 
 const ChangePasswordModal: React.FC<Props> = ({ isOpen, onClose }) => {
   const { addToast } = useToast();
@@ -26,8 +35,19 @@ const ChangePasswordModal: React.FC<Props> = ({ isOpen, onClose }) => {
   const [isLoading, setIsLoading] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [infoMessage, setInfoMessage] = useState('');
+  const [focusedField, setFocusedField] = useState<string | null>(null);
+
+  // Check password requirements
+  const passwordRequirements = useMemo(() => {
+    return PASSWORD_REQUIREMENTS.map(req => ({
+      ...req,
+      met: req.regex.test(formData.newPassword)
+    }));
+  }, [formData.newPassword]);
 
   if (!isOpen) return null;
+
+  const allRequirementsMet = passwordRequirements.every(req => req.met);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
@@ -45,8 +65,11 @@ const ChangePasswordModal: React.FC<Props> = ({ isOpen, onClose }) => {
     if (!formData.newPassword) {
       newErrors.newPassword = 'Vui lòng nhập mật khẩu mới';
     }
-    if (formData.newPassword.length < 8) {
-      newErrors.newPassword = 'Mật khẩu phải có ít nhất 8 ký tự';
+    if (!allRequirementsMet) {
+      newErrors.newPassword = 'Mật khẩu không đáp ứng tất cả các yêu cầu';
+    }
+    if (!formData.confirmPassword) {
+      newErrors.confirmPassword = 'Vui lòng xác nhận mật khẩu mới';
     }
     if (formData.newPassword !== formData.confirmPassword) {
       newErrors.confirmPassword = 'Mật khẩu xác nhận không khớp';
@@ -93,34 +116,22 @@ const ChangePasswordModal: React.FC<Props> = ({ isOpen, onClose }) => {
     setErrors({});
     setInfoMessage('');
     setShowPasswords({ old: false, new: false, confirm: false });
+    setFocusedField(null);
     onClose();
   };
 
   return (
     <div 
-      className="fixed inset-0 bg-black/10 backdrop-blur-sm flex items-center justify-center z-[100] p-4" 
+      className="fixed inset-0 bg-black/10 backdrop-blur-sm flex items-center justify-center z-50 p-4" 
       onClick={handleClose}
     >
-      <div className="w-full max-w-md max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+      <div className="w-full max-w-md" onClick={(e) => e.stopPropagation()}>
         <div className="bg-white/80 backdrop-blur-lg rounded-2xl shadow-2xl p-8 border border-gray-100">
           <LogoHeader />
-          
-          <div className="mb-6">
-            <h2 className="text-xl font-semibold text-gray-900 flex items-center gap-2">
-              <Lock size={20} />
-              Đổi mật khẩu
-            </h2>
-            <p className="text-sm text-gray-600 mt-1">
-              Nhập mật khẩu hiện tại và mật khẩu mới
-            </p>
-          </div>
-
           <MessageDisplay infoMessage={infoMessage} errorMessage={errors.general} />
-
-          <form onSubmit={handleSubmit} className="space-y-4">
-            {/* Mật khẩu hiện tại */}
+          <form onSubmit={handleSubmit} className="space-y-5">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
                 Mật khẩu hiện tại
               </label>
               <div className="relative">
@@ -129,27 +140,31 @@ const ChangePasswordModal: React.FC<Props> = ({ isOpen, onClose }) => {
                   name="oldPassword"
                   value={formData.oldPassword}
                   onChange={handleChange}
-                  className={`w-full px-4 py-2 pr-10 border ${
-                    errors.oldPassword ? 'border-red-500' : 'border-gray-300'
-                  } rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent`}
+                  onFocus={() => setFocusedField('oldPassword')}
+                  onBlur={() => setFocusedField(null)}
+                  className={`w-full px-4 py-3 pr-10 border rounded-lg transition-all outline-none
+                    ${errors.oldPassword 
+                      ? 'border-red-400 bg-red-50/50 focus:ring-2 focus:ring-red-200' 
+                      : 'border-ink-100 bg-mist-50/50 focus:ring-2 focus:ring-aurora-200 focus:border-aurora-400'
+                    }`}
                   placeholder="Nhập mật khẩu hiện tại"
                 />
                 <button
                   type="button"
                   onClick={() => setShowPasswords(prev => ({ ...prev, old: !prev.old }))}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-ink-400 hover:text-ink-600"
                 >
                   {showPasswords.old ? <EyeOff size={18} /> : <Eye size={18} />}
                 </button>
               </div>
               {errors.oldPassword && (
-                <p className="text-red-500 text-xs mt-1">{errors.oldPassword}</p>
+                <p className="text-red-500 text-xs mt-1.5 flex items-center gap-1">
+                  <X size={14} /> {errors.oldPassword}
+                </p>
               )}
             </div>
-
-            {/* Mật khẩu mới */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
                 Mật khẩu mới
               </label>
               <div className="relative">
@@ -158,30 +173,49 @@ const ChangePasswordModal: React.FC<Props> = ({ isOpen, onClose }) => {
                   name="newPassword"
                   value={formData.newPassword}
                   onChange={handleChange}
-                  className={`w-full px-4 py-2 pr-10 border ${
-                    errors.newPassword ? 'border-red-500' : 'border-gray-300'
-                  } rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent`}
+                  onFocus={() => setFocusedField('newPassword')}
+                  onBlur={() => setFocusedField(null)}
+                  className={`w-full px-4 py-3 pr-10 border rounded-lg transition-all outline-none
+                    ${errors.newPassword 
+                      ? 'border-red-400 bg-red-50/50 focus:ring-2 focus:ring-red-200' 
+                      : 'border-ink-100 bg-mist-50/50 focus:ring-2 focus:ring-aurora-200 focus:border-aurora-400'
+                    }`}
                   placeholder="Nhập mật khẩu mới"
                 />
                 <button
                   type="button"
                   onClick={() => setShowPasswords(prev => ({ ...prev, new: !prev.new }))}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-ink-400 hover:text-ink-600"
                 >
                   {showPasswords.new ? <EyeOff size={18} /> : <Eye size={18} />}
                 </button>
               </div>
               {errors.newPassword && (
-                <p className="text-red-500 text-xs mt-1">{errors.newPassword}</p>
+                <p className="text-red-500 text-xs mt-1.5 flex items-center gap-1">
+                  <X size={14} /> {errors.newPassword}
+                </p>
               )}
-              <p className="text-xs text-gray-500 mt-1">
-                Ít nhất 8 ký tự, bao gồm chữ hoa, chữ thường, số và ký tự đặc biệt
-              </p>
+              {focusedField === 'newPassword' && formData.newPassword && (
+                <div className="mt-3 p-3 bg-mist-50 rounded-lg border border-ink-100 space-y-2">
+                  <p className="text-xs font-semibold text-ink-600 uppercase tracking-wide">Yêu cầu mật khẩu:</p>
+                  {passwordRequirements.map((req, idx) => (
+                    <div key={idx} className="flex items-center gap-2">
+                      {req.met ? (
+                        <Check size={16} className="text-jade-500 flex-shrink-0" />
+                      ) : (
+                        <X size={16} className="text-red-400 flex-shrink-0" />
+                      )}
+                      <span className={`text-xs ${req.met ? 'text-jade-600 font-medium' : 'text-red-500'}`}>
+                        {req.label}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
 
-            {/* Xác nhận mật khẩu */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
                 Xác nhận mật khẩu mới
               </label>
               <div className="relative">
@@ -190,38 +224,52 @@ const ChangePasswordModal: React.FC<Props> = ({ isOpen, onClose }) => {
                   name="confirmPassword"
                   value={formData.confirmPassword}
                   onChange={handleChange}
-                  className={`w-full px-4 py-2 pr-10 border ${
-                    errors.confirmPassword ? 'border-red-500' : 'border-gray-300'
-                  } rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent`}
+                  onFocus={() => setFocusedField('confirmPassword')}
+                  onBlur={() => setFocusedField(null)}
+                  className={`w-full px-4 py-3 pr-10 border rounded-lg transition-all outline-none
+                    ${errors.confirmPassword 
+                      ? 'border-red-400 bg-red-50/50 focus:ring-2 focus:ring-red-200' 
+                      : formData.confirmPassword && formData.newPassword === formData.confirmPassword
+                      ? 'border-jade-400 bg-jade-50/50 focus:ring-2 focus:ring-jade-200'
+                      : 'border-ink-100 bg-mist-50/50 focus:ring-2 focus:ring-aurora-200 focus:border-aurora-400'
+                    }`}
                   placeholder="Nhập lại mật khẩu mới"
                 />
                 <button
                   type="button"
                   onClick={() => setShowPasswords(prev => ({ ...prev, confirm: !prev.confirm }))}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-ink-400 hover:text-ink-600"
                 >
                   {showPasswords.confirm ? <EyeOff size={18} /> : <Eye size={18} />}
                 </button>
+                {formData.confirmPassword && formData.newPassword === formData.confirmPassword && (
+                  <Check size={18} className="absolute right-10 top-1/2 -translate-y-1/2 text-jade-500" />
+                )}
               </div>
               {errors.confirmPassword && (
-                <p className="text-red-500 text-xs mt-1">{errors.confirmPassword}</p>
+                <p className="text-red-500 text-xs mt-1.5 flex items-center gap-1">
+                  <X size={14} /> {errors.confirmPassword}
+                </p>
               )}
             </div>
 
-            {/* Buttons */}
-            <div className="flex gap-3 pt-2">
+            <div className="flex gap-3 pt-4">
               <button
                 type="button"
                 onClick={handleClose}
-                className="flex-1 px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors"
+                className="flex-1 px-4 py-3 border border-ink-200 rounded-lg text-ink-700 font-medium hover:bg-ink-50 transition-all"
                 disabled={isLoading}
               >
                 Hủy
               </button>
               <button
                 type="submit"
-                disabled={isLoading}
-                className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
+                disabled={isLoading || !allRequirementsMet || !formData.confirmPassword}
+                className={`flex-1 px-4 py-3 rounded-lg font-medium transition-all
+                  ${isLoading || !allRequirementsMet || !formData.confirmPassword
+                    ? 'bg-ink-100 text-ink-400 cursor-not-allowed'
+                    : 'bg-gradient-to-r from-aurora-500 to-blush-500 text-white hover:shadow-elevation-soft active:scale-95'
+                  }`}
               >
                 {isLoading ? 'Đang xử lý...' : 'Đổi mật khẩu'}
               </button>

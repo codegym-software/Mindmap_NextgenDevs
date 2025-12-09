@@ -3,17 +3,43 @@ import { useState } from 'react';
 import { useAuth } from '../../hooks/useAuth';
 import { User, KeyRound, LogOut, LogIn, UserPlus } from 'lucide-react';
 import { useToast } from '../../hooks/useToast';
-import ChangePasswordModal from './ChangePasswordModal';
+
+// Helper function to check if user logged in with Google
+const isGoogleUser = (user: Record<string, any> | null): boolean => {
+    if (!user) return false;
+    
+    // Check if user has identities array (from Cognito JWT token)
+    if (user.identities && Array.isArray(user.identities)) {
+        return user.identities.some((identity: any) => 
+            identity.providerType === 'Google' || 
+            identity.providerName === 'Google' ||
+            identity.providerId === 'Google'
+        );
+    }
+    
+    // Check if username contains Google prefix (common pattern in Cognito)
+    if (user['cognito:username'] && typeof user['cognito:username'] === 'string') {
+        return user['cognito:username'].startsWith('Google_');
+    }
+    
+    // Check if sub (subject) contains Google indicator
+    if (user.sub && typeof user.sub === 'string') {
+        return user.sub.includes('Google') || user.sub.startsWith('Google_');
+    }
+    
+    return false;
+};
 
 // [MERGE] Sử dụng phiên bản "light mode" từ feature/tt
 export default function UserAvatarMenu() {
-    const { isAuthed, user, login, logout } = useAuth();
+    const { isAuthed, user, login, logout, openChangePassword } = useAuth();
     const [isAvatarMenuOpen, setAvatarMenuOpen] = useState(false);
-    const [isChangePasswordOpen, setChangePasswordOpen] = useState(false);
     const { addToast } = useToast();
+    
+    const isGoogle = isGoogleUser(user);
 
     const handleChangePassword = () => {
-        setChangePasswordOpen(true);
+        openChangePassword();
         setAvatarMenuOpen(false);
     }
 
@@ -21,10 +47,10 @@ export default function UserAvatarMenu() {
         <div className="relative">
             <button 
                 onClick={() => setAvatarMenuOpen(!isAvatarMenuOpen)} 
-                className="w-8 h-8 rounded-full bg-gray-200 hover:bg-gray-300 flex items-center justify-center font-bold text-blue-600 ring-2 ring-transparent hover:ring-blue-500 transition-all"
+                className="w-10 h-10 rounded-full bg-gray-200 hover:bg-gray-300 flex items-center justify-center font-bold text-blue-600 ring-2 ring-transparent hover:ring-blue-500 transition-all"
                 title="Tài khoản"
             >
-                {isAuthed && user?.email ? user.email[0].toUpperCase() : <User size={20} />}
+                {isAuthed && user?.email ? user.email[0].toUpperCase() : <User size={22} />}
             </button>
 
             {isAvatarMenuOpen && (
@@ -37,10 +63,12 @@ export default function UserAvatarMenu() {
                             <div className="px-3 py-2 border-b border-gray-200"> 
                                 <p className="text-sm font-semibold text-gray-900 truncate" title={user?.email || ''}>{user?.email}</p> 
                             </div>
-                            <button onClick={handleChangePassword} className="w-full text-left px-3 py-2 text-sm text-gray-700/90 hover:bg-gray-100 flex items-center gap-3"> 
-                                <KeyRound size={16} /> 
-                                Đổi mật khẩu
-                            </button>
+                            {!isGoogle && (
+                                <button onClick={handleChangePassword} className="w-full text-left px-3 py-2 text-sm text-gray-700/90 hover:bg-gray-100 flex items-center gap-3"> 
+                                    <KeyRound size={16} /> 
+                                    Đổi mật khẩu
+                                </button>
+                            )}
                             <button onClick={logout} className="w-full text-left px-3 py-2 text-sm text-red-500 hover:bg-red-50 hover:text-red-600 flex items-center gap-3"> 
                                 <LogOut size={16} /> 
                                 Đăng xuất
@@ -60,11 +88,6 @@ export default function UserAvatarMenu() {
                     )}
                 </div>
             )}
-            
-            <ChangePasswordModal 
-                isOpen={isChangePasswordOpen} 
-                onClose={() => setChangePasswordOpen(false)} 
-            />
         </div>
     );
 }

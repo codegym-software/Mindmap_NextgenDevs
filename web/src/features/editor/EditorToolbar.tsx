@@ -158,10 +158,9 @@ export default function EditorToolbar({
     {!presentationMode && (
       <div className="fixed top-0 left-0 right-0 h-12 bg-[#F5F5F5] border-b border-gray-200 flex items-center px-4 z-40">
 
-        {/* 1. PHẦN BÊN TRÁI (Logo, Tên) */}
         <div className="flex items-center gap-2 flex-shrink-0" style={{ minWidth: '300px' }}>
-          <a href="/dashboard" title="Về Dashboard" className="flex items-center justify-center p-2 rounded-lg hover:bg-gray-300/60 transition-colors ml-9">
-            <img src="/icons/logo.png" alt="Logo" className="w-7 h-7 rounded-md object-cover" />
+          <a href="/dashboard" title="Về Dashboard" className="flex items-center justify-center rounded-lg hover:bg-gray-300/60 transition-colors ml-9">
+            <img src="/icons/logo.png" alt="Logo" className="w-8 h-8 rounded-md object-cover" />
           </a>
           <div className="w-px h-6 bg-gray-300 mx-2" />
           <input
@@ -174,7 +173,6 @@ export default function EditorToolbar({
           />
         </div>
 
-        {/* 2. PHẦN GIỮA (Các nút thêm mới) */}
         <div className="flex-grow flex items-center justify-center gap-2">
           <ToolbarButton
             onClick={onAddChild}
@@ -238,7 +236,6 @@ export default function EditorToolbar({
           </button>
         </div>
 
-        {/* 3. PHẦN BÊN PHẢI (Zoom, Undo, Chia sẻ...) */}
         <div className="flex items-center gap-2 flex-shrink-0">
           <button onClick={onUndo} className="p-2 rounded-md hover:bg-gray-300/50 text-gray-700" title="Hoàn tác (Ctrl+Z)"><Undo size={20} /></button>
           <button onClick={onRedo} className="p-2 rounded-md hover:bg-gray-300/50 text-gray-700" title="Làm lại (Ctrl+Y)"><Redo size={20} /></button>
