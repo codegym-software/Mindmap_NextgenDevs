@@ -3612,12 +3612,16 @@ const handleFitToScreen = useCallback(() => {
                   borderRadius: isUnderlineStyle ? '0px' : (visual.style.shape === 'roundedRect' ? '8px' : '0px'),
                   
                   boxSizing: 'border-box',
-                  outline: '2px solid #3b82f6', 
+                  outline: 'none',
+                  boxShadow: isUnderlineStyle 
+                    ? 'none'
+                    : '0 0 0 2px #3b82f6, 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05)',
                   zIndex: 100,
                   overflow: 'hidden',
                   resize: 'none',
+                  transition: 'all 0.2s ease',
                 }}
-                className="shadow-lg" 
+                className="" 
               />
             );
           })()}
