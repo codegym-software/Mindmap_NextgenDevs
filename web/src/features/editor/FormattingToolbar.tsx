@@ -94,7 +94,7 @@ export default function FormattingToolbar({
   }, [isDisabled]); 
 
   return (
-    <div className="fixed top-14 right-0 h-[calc(100vh-3rem)] bg-white border-l border-gray-200 shadow-sm z-30 flex flex-col text-gray-700" style={{ width: '280px' }}> 
+    <div className="fixed top-12 right-0 h-[calc(100vh-3rem)] bg-white border-l border-gray-200 shadow-sm z-30 flex flex-col text-gray-700" style={{ width: '280px', fontFamily: 'NeverMind' }}> 
       {/* 1. Header (Tabs) */}
       <TabHeader activeTab={activeTab} setActiveTab={setActiveTab} isDisabled={isDisabled} />
 
@@ -252,17 +252,16 @@ function MapPanel({
         color={globalBranchColor}
         onChange={onSetGlobalBranchColor}
       >
-        <select
-          value={currentLineWidth}
-          onChange={(e) => {
-            onSetBranchLineWidth(Number(e.target.value));
-          }}
-          className={`p-1.5 ${INPUT_BG} rounded text-sm outline-none border border-transparent focus:border-blue-500 focus:ring-1 focus:ring-blue-500`}
-        >
-          <option value={1}>Mỏng</option>
-          <option value={2}>Vừa</option>
-          <option value={3}>Dày</option>
-        </select>
+        <div className="w-20">
+          <CustomSelect
+            value={String(currentLineWidth)}
+            onChange={(width) => onSetBranchLineWidth(Number(width))}
+          >
+            <Option value="1">Mỏng</Option>
+            <Option value="2">Vừa</Option>
+            <Option value="3">Dày</Option>
+          </CustomSelect>
+        </div>
       </ColorItem>
   
     </div>
@@ -293,12 +292,10 @@ function NodeStylePanel({
   onResetStyle,
 }: NodeStylePanelProps) {
   
-  // Tính toán style dựa trên node đầu được chọn
   const computedStyle = useMemo(() => {
     return getNodeComputedStyle(currentNode, activeTheme, useEditorStore.getState().globalFont);
   }, [currentNode, activeTheme]);
   
-  // Tạo style object với actual values từ node (không computed) cho các field quan trọng
   const style = useMemo(() => {
     if (!currentNode) return computedStyle;
     
@@ -316,6 +313,10 @@ function NodeStylePanel({
       borderColor: currentNode.borderColor ?? computedStyle.borderColor,
       borderWidth: currentNode.borderWidth ?? computedStyle.borderWidth,
       borderStyle: currentNode.borderStyle ?? computedStyle.borderStyle,
+      branchLineThickness: currentNode.branchLineThickness ?? computedStyle.branchLineThickness,
+      branchLineStyle: currentNode.branchLineStyle ?? computedStyle.branchLineStyle,
+      branchLineEnd: currentNode.branchLineEnd ?? computedStyle.branchLineEnd,
+      branchColor: currentNode.branchColor ?? computedStyle.branchColor,
     };
   }, [currentNode, computedStyle]);
   
@@ -328,7 +329,6 @@ function NodeStylePanel({
 
   const handleUpdate = (updates: Partial<NodeData>) => {
     if (selectedIds.length > 0) {
-      // Merge with current node values to preserve independent properties
       const mergedUpdates = { ...updates };
       onUpdateNode(mergedUpdates);
     }
@@ -375,47 +375,47 @@ function NodeStylePanel({
           color={style.color || '#FFFFFF'}
           onChange={(color) => handleUpdate({ color })}
         >
-          <select
-            value={style.shape}
-            onChange={(e) => handleUpdate({ shape: e.target.value as NodeData['shape'] })}
-            className={`p-1.5 w-15 ${INPUT_BG} rounded text-sm outline-none border border-transparent focus:border-blue-500 focus:ring-1 focus:ring-blue-500`}
-          >
-            <option value="roundedRect">Bo góc</option>
-            <option value="rectangle">Vuông</option>
-          </select>
+          <div className="w-[83px]">
+            <CustomSelect
+              value={style.shape}
+              onChange={(shape) => handleUpdate({ shape: shape as NodeData['shape'] })}
+            >
+              <Option value="roundedRect">Bo góc</Option>
+              <Option value="rectangle">Vuông</Option>
+            </CustomSelect>
+          </div>
         </ColorItem>
         <ColorItem
           label="Viền"
           color={style.borderColor || '#CCCCCC'}
           onChange={(borderColor) => handleUpdate({ borderColor })}
         >
-          <select
-            value={style.borderStyle}
-            onChange={(e) => handleUpdate({ borderStyle: e.target.value as NodeData['borderStyle'] })}
-            className={`p-1.5 w-20 ${INPUT_BG} rounded text-sm outline-none border border-transparent focus:border-blue-500 focus:ring-1 focus:ring-blue-500`}
-          >
-            <option value="solid">Liền</option>
-            <option value="dashed">Đứt</option>
-            <option value="dotted">Chấm</option>
-          </select>
+          <div className="w-[83px]">
+            <CustomSelect
+              value={style.borderStyle}
+              onChange={(borderStyle) => handleUpdate({ borderStyle: borderStyle as NodeData['borderStyle'] })}
+            >
+              <Option value="solid">Liền</Option>
+              <Option value="dashed">Đứt</Option>
+              <Option value="dotted">Chấm</Option>
+            </CustomSelect>
+          </div>
         </ColorItem>
         <RowItem label="">
-        <select
-            value={style.borderWidth}
-            onChange={(e) => handleUpdate({ borderWidth: Number(e.target.value) })}
-            className={`p-1.5 w-full ${INPUT_BG} rounded text-sm outline-none border border-transparent focus:border-blue-500 focus:ring-1 focus:ring-blue-500`}
-         >
-            <option value={0}>Không</option>
-            <option value={2}>Mỏng</option>
-            <option value={4}>Dày</option>
-          </select>
+          <CustomSelect
+            value={String(style.borderWidth)}
+            onChange={(borderWidth) => handleUpdate({ borderWidth: Number(borderWidth) })}
+          >
+            <Option value="0">Không</Option>
+            <Option value="2">Mỏng</Option>
+            <Option value="4">Dày</Option>
+          </CustomSelect>
         </RowItem>
-        {/* SỬA: Độ dài */}
         <RowItem label="Độ dài">
           <div className="flex items-center gap-1 w-full">
             <input
               type="text"
-              value={localLength === 'fit' ? '' : String(localLength)} // Sửa: Chuyển sang String
+              value={localLength === 'fit' ? '' : String(localLength)} 
               placeholder="Fit"
               onKeyDown={(e) => {
                 if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
@@ -449,7 +449,6 @@ function NodeStylePanel({
         </RowItem>
       </CollapsiblePanel>
       
-      {/* 3. Văn bản */}
       <CollapsiblePanel label="Văn bản" defaultOpen>
         <ColorItem
           label="Cỡ chữ"
@@ -542,20 +541,19 @@ function NodeStylePanel({
         </div>
      </CollapsiblePanel>
 
-      
-
       {/* 5. Nhánh (con) */}
       <CollapsiblePanel label="Kiểu nhánh" defaultOpen>
         <RowItem label="Đường nối">
           <div className="flex gap-2 items-center w-full">
-            <select
-              value={style.branchLineStyle}
-              onChange={(e) => handleUpdate({ branchLineStyle: e.target.value as NodeData['branchLineStyle'] })}
-              className={`flex-1 p-1.5 ${INPUT_BG} rounded text-sm outline-none border border-transparent focus:border-blue-500 focus:ring-1 focus:ring-blue-500`}
-            >
-              <option value="bezier">Cong</option>
-              <option value="sharp">Gấp</option>
-            </select>
+            <div className="flex-1">
+              <CustomSelect
+                value={style.branchLineStyle}
+                onChange={(branchLineStyle) => handleUpdate({ branchLineStyle: branchLineStyle as NodeData['branchLineStyle'] })}
+              >
+                <Option value="bezier">Cong</Option>
+                <Option value="sharp">Gấp</Option>
+              </CustomSelect>
+            </div>
             <label className="flex items-center gap-1 cursor-pointer">
               <input
                 type="checkbox"
@@ -572,15 +570,16 @@ function NodeStylePanel({
           color={style.branchColor || '#666666'}
           onChange={(branchColor) => handleUpdate({ branchColor })}
         >
-          <select
-            value={style.branchLineThickness}
-            onChange={(e) => handleUpdate({ branchLineThickness: e.target.value as NodeData['branchLineThickness'] })}
-            className={`flex-1 p-1.5 ${INPUT_BG} rounded text-sm outline-none border border-transparent focus:border-blue-500 focus:ring-1 focus:ring-blue-500`}
-          >
-            <option value="thin">Mỏng</option>
-            <option value="normal">Vừa</option>
-            <option value="thick">Dày</option>
-          </select>
+          <div className="w-[83px]">
+            <CustomSelect
+              value={style.branchLineThickness}
+              onChange={(branchLineThickness) => handleUpdate({ branchLineThickness: branchLineThickness as NodeData['branchLineThickness'] })}
+            >
+              <Option value="thin">Mỏng</Option>
+              <Option value="normal">Vừa</Option>
+              <Option value="thick">Dày</Option>
+            </CustomSelect>
+          </div>
         </ColorItem>
       </CollapsiblePanel>
       
@@ -643,11 +642,10 @@ function StructureButton({ label, isActive, onClick }: StructureButtonProps) {
   );
 }
 
-// Wrapper hàng
 function RowItem({ label, children }: { label: string, children: React.ReactNode }) {
   return (
     <div className="flex items-start gap-3 w-full">
-      <label className="text-sm font-medium text-gray-500 whitespace-nowrap min-w-[80px] mt-1">{label}</label>
+      <label className="text-base font-medium text-gray-500 whitespace-nowrap min-w-[80px] mt-1">{label}</label>
       <div className="flex-1">{children}</div>
     </div>
   );
@@ -687,7 +685,7 @@ function ColorItem({ label, color, onChange, children }: ColorItemProps) {
 
   return (
     <div className="flex items-start gap-3 w-full relative">
-      <label className="text-sm font-medium text-gray-500 whitespace-nowrap min-w-[80px] mt-1">{label}</label>
+      <label className="text-base font-medium text-gray-500 whitespace-nowrap min-w-[80px] mt-1">{label}</label>
       <div className="flex-1 flex items-center justify-between gap-2">
         {children}
         <button
@@ -802,7 +800,7 @@ function CustomSelect({ value, onChange, children }: CustomSelectProps) {
         <ChevronsUpDown size={16} className="text-gray-500" />
       </button>
       {isOpen && (
-        <div className="absolute z-10 top-full mt-1 w-full max-h-48 overflow-y-auto bg-white shadow-lg rounded-md border border-gray-300">
+        <div className="absolute z-10 top-full mt-1 min-w-full w-max max-h-48 overflow-y-auto bg-white shadow-lg rounded-md border border-gray-300">
           {React.Children.map(children, (child) => {
             const childEl = child as React.ReactElement;
             return React.cloneElement(childEl, {

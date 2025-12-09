@@ -162,8 +162,9 @@ export default function Sidebar() {
           ref={sidebarRef}
           onMouseEnter={() => !pinned && setOpen(true)}
           className={`fixed top-0 left-0 h-screen bg-white/95 backdrop-blur text-gray-900 z-40 transition-transform duration-300 border-r border-gray-200 flex flex-col ${open ? "translate-x-0 w-72" : "-translate-x-full w-72"}`}
+          style={{ fontFamily: 'NeverMind' }}
         >
-          <div className="h-12 flex items-center justify-between px-4 border-b border-gray-200 flex-shrink-0" style={{ paddingLeft: '64px' }}> 
+          <div className="h-12 flex items-center justify-between px-4 border-b border-gray-200 flex-shrink-0" style={{ paddingLeft: '64px' }}>
             <span className="font-semibold text-lg">Mindmap của tôi</span>
             <button
               onClick={() => setPinned(!pinned)}

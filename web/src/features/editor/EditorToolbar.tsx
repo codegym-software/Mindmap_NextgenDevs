@@ -27,6 +27,8 @@ type EditorToolbarProps = {
   onSave: () => void;
   isDirty: boolean; 
   onToggleFormattingToolbar: () => void;
+  presentationMode: boolean;
+  onSetPresentationMode: (mode: boolean) => void;
   currentScale: number;
   onZoomIn: () => void;
   onZoomOut: () => void;
@@ -73,6 +75,7 @@ const ToolbarButton = ({
 export default function EditorToolbar({
   onCommitName,
   onDashboard, onUndo, onRedo, onShare, onTheme, onSave, isDirty, onToggleFormattingToolbar,
+  presentationMode, onSetPresentationMode,
   currentScale, onZoomIn, onZoomOut, onSetZoom, onFitToScreen,
   selectedNodeIds,
   onAddChild,
@@ -96,7 +99,6 @@ export default function EditorToolbar({
   const [isImageModalOpen, setIsImageModalOpen] = useState(false);
   const [showAiModal, setShowAiModal] = useState(false);
   const [aiPrompt, setAiPrompt] = useState('');
-  const [presentationMode, setPresentationMode] = useState(false);
 
   const setName = (newName: string) => useEditorStore.setState({ currentMindmapName: newName, isDirty: true });
 
@@ -156,7 +158,7 @@ export default function EditorToolbar({
   return (
     <>
     {!presentationMode && (
-      <div className="fixed top-0 left-0 right-0 h-12 bg-[#F5F5F5] border-b border-gray-200 flex items-center px-4 z-40">
+      <div className="fixed top-0 left-0 right-0 h-12 bg-[#F5F5F5] border-b border-gray-200 flex items-center px-4 z-40" style={{ fontFamily: 'NeverMind' }}>
 
         <div className="flex items-center gap-2 flex-shrink-0" style={{ minWidth: '300px' }}>
           <a href="/dashboard" title="Về Dashboard" className="flex items-center justify-center rounded-lg hover:bg-gray-300/60 transition-colors ml-9">
@@ -282,7 +284,7 @@ export default function EditorToolbar({
           <div className="w-px h-6 bg-gray-300 mx-2" />
 
           <button
-            onClick={() => setPresentationMode(true)}
+            onClick={() => onSetPresentationMode(true)}
             className="p-2 rounded-md hover:bg-gray-300/50 text-gray-700"
             title="Trình chiếu"
           >
@@ -300,7 +302,7 @@ export default function EditorToolbar({
           <span className="text-sm font-semibold">Presentation Mode</span>
           <span className="text-xs text-ink-200">Dùng phím mũi tên để điều hướng</span>
           <button
-            onClick={() => setPresentationMode(false)}
+            onClick={() => onSetPresentationMode(false)}
             className="px-3 py-1 rounded-full bg-white/20 hover:bg-white/30 text-white text-sm"
           >
             Thoát

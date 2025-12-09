@@ -374,6 +374,7 @@ export default function Editor() {
   const [isDataLoaded, setIsDataLoaded] = useState(false);
   const [isReadyToShow, setIsReadyToShow] = useState(false);
   const [isFormattingToolbarOpen, setFormattingToolbarOpen] = useState(false); // UI Mới
+  const [presentationMode, setPresentationMode] = useState(false);
   const [dimensions, setDimensions] = useState({
     width: window.innerWidth,
     height: window.innerHeight - 48,
@@ -412,6 +413,13 @@ export default function Editor() {
   // [DOCKING SIDEBAR] Panel width constant - must be before useEffect that uses it
   const PANEL_WIDTH = 280;
   const prevPanelStateRef = useRef(isFormattingToolbarOpen);
+
+  // Close FormattingToolbar when entering presentation mode
+  useEffect(() => {
+    if (presentationMode && isFormattingToolbarOpen) {
+      setFormattingToolbarOpen(false);
+    }
+  }, [presentationMode]);
 
   const activeTheme =
   colorThemes[activeColorThemeId as keyof typeof colorThemes];
@@ -3529,6 +3537,8 @@ const handleFitToScreen = useCallback(() => {
           onToggleFormattingToolbar={() =>
             setFormattingToolbarOpen(!isFormattingToolbarOpen)
           }
+          presentationMode={presentationMode}
+          onSetPresentationMode={setPresentationMode}
           currentScale={scale}
           onZoomIn={handleZoomIn}
           onZoomOut={handleZoomOut}
@@ -3543,7 +3553,7 @@ const handleFitToScreen = useCallback(() => {
           onAddRelationship={handleAddRelationship}
           onAddSummary={handleAddSummary}
         />
-        <Sidebar />
+        {!presentationMode && <Sidebar />}
 
         {editingNodeId &&
           (() => {
@@ -4346,7 +4356,7 @@ const handleFitToScreen = useCallback(() => {
               borderLeft: isFormattingToolbarOpen ? '1px solid #e5e7eb' : 'none'
             }}
           >
-            {isFormattingToolbarOpen && (
+            {isFormattingToolbarOpen && !presentationMode && (
               <FormattingToolbar
               selectedIds={selectedNodeIds}
               currentNode={currentNode}
