@@ -1,5 +1,6 @@
 import React, {
   useEffect,
+  useLayoutEffect,
   useRef,
   useState,
   useCallback,
@@ -181,12 +182,10 @@ function calculateNodeBox(node: NodeData, style: NodeData) {
   const measureWidth = (text: string) =>
     context?.measureText(text).width || text.length * finalFontSize * 0.6;
   if (nodeLength === 'fit') {
-    // Set a maximum width for 'fit' mode to enable text wrapping
-    const maxFitWidth = node.id === 'root' ? 1600 : 400; // Root can grow much wider
+    const maxFitWidth = node.id === 'root' ? 400 : 400; 
     let maxWidth = 0;
     const lines = processedText.split('\n');
     
-    // First pass: check if any line exceeds maxFitWidth
     lines.forEach((line: string) => {
       const lineWidth = measureWidth(line);
       if (lineWidth > maxFitWidth) {
@@ -478,7 +477,7 @@ export default function Editor() {
       window.addEventListener('resize', updateWidth);
       return () => window.removeEventListener('resize', updateWidth);
     }, [isFormattingToolbarOpen, dimensions.width]);
-  const editingInputRef = useRef<HTMLTextAreaElement>(null);
+  const editingInputRef = useRef<HTMLTextAreaElement | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
 
   // [DOCKING SIDEBAR] Panel width constant - must be before useEffect that uses it
@@ -3560,23 +3559,19 @@ const handleFitToScreen = useCallback(() => {
     return { counts, rootCounts };
   }, [edges, nodeMap]);
 
-  useEffect(() => {
-    if (!editingNodeId || !editingInputRef.current) return;
-    const el = editingInputRef.current;
-    const resize = () => {
-      const visual = nodeVisuals.get(editingNodeId!);
-      if (!visual || !el) return;
+  // [FIX] Initialize textarea height when starting edit
+  useLayoutEffect(() => {
+    if (editingNodeId && editingInputRef.current) {
+      const el = editingInputRef.current;
+      const visual = nodeVisuals.get(editingNodeId);
       el.style.height = 'auto';
-      const unscaledScroll = el.scrollHeight / Math.max(scale, 0.0001);
-      const target = Math.max(visual.box.h, unscaledScroll)*0.8;
-      el.style.height = `${target}px`;
-      // Keep layout synced while typing so summary braces/text follow width changes
-      setTimeout(() => handleLayout(), 0);
-    };
-    resize();
-    const t = setTimeout(resize, 50);
-    return () => clearTimeout(t);
-  }, [editingNodeId, scale, pos, nodeVisuals]); 
+      el.style.height = el.scrollHeight + 'px';
+      // Start with the current node width; expansion happens on input when needed
+      if (visual && editingNodeId === 'root') {
+        el.style.width = `${visual.box.w}px`;
+      }
+    }
+  }, [editingNodeId]);
 
   const computeEditingNodePosition = useCallback(() => {
     if (!editingNodeId) return null;
@@ -3692,16 +3687,88 @@ const handleFitToScreen = useCallback(() => {
             const topology = nodeTopology.get(editingNodeId!);
             const depth = topology?.depth || 0;
             const isUnderlineStyle = depth >= 3 && editingNodeId !== 'root';
+            const isRoot = editingNodeId === 'root';
 
             return (
               <textarea
-                ref={editingInputRef}
-                defaultValue={node.nodeText}
+                ref={(el) => {
+                  editingInputRef.current = el;
+                  // Tự động set height lần đầu khi mount để tránh bị cụt text
+                  if (el) {
+                     if (el.style.height === '' || el.style.height === 'auto') {
+                         el.style.height = 'auto';
+                         el.style.height = el.scrollHeight + 'px';
+                     }
+                     // Nếu là root, có thể cần tính lại width ngay lập tức nếu text ban đầu quá dài
+                     if (isRoot) {
+                        // Kích hoạt sự kiện input giả để tính toán width ban đầu cho root
+                        const event = new Event('input', { bubbles: true });
+                        el.dispatchEvent(event);
+                     }
+                  }
+                }}
+                defaultValue={node.id === 'root' ? (node.nodeText || '').toUpperCase() : node.nodeText}
                 onInput={(e) => {
                   const el = e.currentTarget as HTMLTextAreaElement;
-                  el.style.height = 'auto';
-                  const newHeight = Math.max(visual.box.h, el.scrollHeight);
-                  el.style.height = `${newHeight}px`;
+                  if (isRoot) {
+                      const { selectionStart, selectionEnd } = el;
+                      const upper = el.value.toUpperCase();
+                      if (el.value !== upper) {
+                        el.value = upper;
+                        if (selectionStart !== null && selectionEnd !== null) {
+                          el.setSelectionRange(selectionStart, selectionEnd);
+                        }
+                      }
+                  }
+                  
+                  // === TRƯỜNG HỢP 1: NODE GỐC (AUTO-EXPAND WIDTH & HEIGHT) ===
+                  if (isRoot) {
+                      const minWidth = visual.box.w;
+                      const maxWidth = 800; // Root được phép rộng tối đa 800px
+
+                      // 1. Tạo Span ẩn để đo độ rộng text
+                      const span = document.createElement('span');
+                      const computedStyle = window.getComputedStyle(el);
+                      
+                      span.style.font = computedStyle.font;
+                      span.style.fontFamily = computedStyle.fontFamily;
+                      span.style.fontSize = computedStyle.fontSize;
+                      span.style.fontWeight = computedStyle.fontWeight;
+                      span.style.letterSpacing = computedStyle.letterSpacing;
+                      span.style.whiteSpace = 'pre'; // Giữ nguyên khoảng trắng để đo chính xác
+                      span.style.visibility = 'hidden';
+                      span.style.position = 'absolute';
+                      span.style.top = '-9999px';
+                      
+                      span.textContent = el.value || '.';
+                      
+                      document.body.appendChild(span);
+                      const textWidth = span.getBoundingClientRect().width;
+                      document.body.removeChild(span);
+
+                      // 2. Tính toán padding để cộng vào
+                      const paddingLeft = parseFloat(computedStyle.paddingLeft) || 0;
+                      const paddingRight = parseFloat(computedStyle.paddingRight) || 0;
+                      const borderLeft = parseFloat(computedStyle.borderLeftWidth) || 0;
+                      const borderRight = parseFloat(computedStyle.borderRightWidth) || 0;
+                      const totalPadding = paddingLeft + paddingRight + borderLeft + borderRight;
+
+                      // 3. Tính width mới (+30px buffer)
+                      const desiredWidth = textWidth + totalPadding + 30;
+                      const finalWidth = Math.min(maxWidth, Math.max(minWidth, desiredWidth));
+
+                      // 4. Apply Width và tính lại Height
+                      el.style.width = `${finalWidth}px`;
+                      el.style.height = 'auto';
+                      el.style.height = `${el.scrollHeight}px`;
+                  } 
+                  
+                  // === TRƯỜNG HỢP 2: NODE THƯỜNG (CỐ ĐỊNH WIDTH, CHỈ TĂNG HEIGHT) ===
+                  else {
+                      // Logic đơn giản bạn yêu cầu
+                      el.style.height = 'auto';
+                      el.style.height = `${el.scrollHeight}px`;
+                  }
                 }}
                 onBlur={() => stopEditing(true)}
                 onKeyDown={(e) => {
@@ -3719,8 +3786,10 @@ const handleFitToScreen = useCallback(() => {
                   position: 'fixed',
                   left: absoluteX,
                   top: absoluteY,
+                  
+                  // Width khởi tạo: Luôn bắt đầu bằng width hiện tại của node
                   width: visual.box.w,
-                  height: visual.box.h,
+                  
                   transform: `translate(-50%, -50%) scale(${scale})`,
                   transformOrigin: 'center center',
                   
@@ -3751,7 +3820,8 @@ const handleFitToScreen = useCallback(() => {
                   zIndex: 100,
                   overflow: 'hidden',
                   resize: 'none',
-                  transition: 'all 0.2s ease',
+                  overflowWrap: 'break-word',
+                  wordBreak: 'break-word',
                 }}
                 className="" 
               />
@@ -4225,6 +4295,8 @@ const handleFitToScreen = useCallback(() => {
                   <Group
                     key={node.id} id={node.id} x={style.x} y={style.y} 
                     draggable={node.id !== 'root'}
+                    // Hide the node while it is being edited (for root and others)
+                    visible={editingNodeId !== node.id}
                     {...(isFading ? {} : { opacity: (isDragging ? 0.75 : 1) })}
                     onDragStart={() => handleDragStart(node.id)}
                     onDragMove={(e) => handleDragMove(e, node.id)}
