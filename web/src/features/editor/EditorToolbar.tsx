@@ -4,7 +4,7 @@ import {
   AlignHorizontalJustifyCenter,
   AlignStartVertical,
   BoxSelect,
-  ArrowRightLeft,
+  Spline,
   BracesIcon,
   Presentation,
 } from 'lucide-react';
@@ -215,7 +215,7 @@ export default function EditorToolbar({
             disabled={!isSingleNodeFocused}
             title="Tạo mối quan hệ (Relationship)"
           >
-            <ArrowRightLeft size={20} />
+            <Spline size={20} />
           </ToolbarButton>
           
           <ToolbarButton
@@ -283,7 +283,7 @@ export default function EditorToolbar({
             <Save size={20} />
           </button>
 
-          <div className="w-px h-6 bg-gray-300 mx-2" />
+          
 
         <button onClick={onShare} className="p-2 rounded-md hover:bg-gray-300/50 text-gray-700" title="Chia sẻ"><Share2 size={20} /></button>
         
@@ -294,18 +294,17 @@ export default function EditorToolbar({
           mindmapName={name || 'mindmap'}
         />
         
-        <button onClick={onToggleFormattingToolbar} className="p-2 rounded-md hover:bg-gray-300/50 text-gray-700" title="Bật/tắt thanh định dạng"><PanelRight size={20} /></button>
-
-          <div className="w-px h-6 bg-gray-300 mx-2" />
-
-          <button
+        <button
             onClick={() => onSetPresentationMode(true)}
             className="p-2 rounded-md hover:bg-gray-300/50 text-gray-700"
             title="Trình chiếu"
           >
             <Presentation size={20} />
-          </button>
-          
+        </button>
+
+        <button onClick={onToggleFormattingToolbar} className="p-2 rounded-md hover:bg-gray-300/50 text-gray-700" title="Bật/tắt thanh định dạng"><PanelRight size={20} /></button>
+
+        <div className="w-px h-6 bg-gray-300 mx-2" />
           <UserAvatarMenu />
         </div>
       </div>
@@ -325,7 +324,6 @@ export default function EditorToolbar({
       </div>
     )}
 
-    {/* Magic AI Modal (UI placeholder) */}
     {showAiModal && (
       <div className="fixed inset-0 bg-ink-900/40 backdrop-blur-sm z-50 flex items-center justify-center">
         <div className="w-full max-w-lg bg-white rounded-2xl shadow-elevation-strong p-6 space-y-4">
@@ -353,7 +351,6 @@ export default function EditorToolbar({
       </div>
     )}
 
-    {/* Modals */}
     <HyperlinkModal 
       isOpen={isLinkModalOpen}
       onClose={() => setIsLinkModalOpen(false)}

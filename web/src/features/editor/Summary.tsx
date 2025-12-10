@@ -295,8 +295,10 @@ const Summary: React.FC<SummaryProps> = ({
             stroke="#3b82f6"
             strokeWidth={2}
             draggable
-            onDragMove={handleTopHandleDrag}
-            onDragEnd={handleTopHandleDragEnd}
+            onMouseDown={(e) => { e.cancelBubble = true; }}
+            onDragStart={(e) => { e.cancelBubble = true; }}
+            onDragMove={(e) => { e.cancelBubble = true; handleTopHandleDrag(e); }}
+            onDragEnd={(e) => { e.cancelBubble = true; handleTopHandleDragEnd(); }}
             dragBoundFunc={(pos) => ({ x: startX, y: pos.y })}
           />
           <KonvaCircle
@@ -307,8 +309,10 @@ const Summary: React.FC<SummaryProps> = ({
             stroke="#3b82f6"
             strokeWidth={2}
             draggable
-            onDragMove={handleBottomHandleDrag}
-            onDragEnd={handleBottomHandleDragEnd}
+            onMouseDown={(e) => { e.cancelBubble = true; }}
+            onDragStart={(e) => { e.cancelBubble = true; }}
+            onDragMove={(e) => { e.cancelBubble = true; handleBottomHandleDrag(e); }}
+            onDragEnd={(e) => { e.cancelBubble = true; handleBottomHandleDragEnd(); }}
             dragBoundFunc={(pos) => ({ x: startX, y: pos.y })}
           />
         </>

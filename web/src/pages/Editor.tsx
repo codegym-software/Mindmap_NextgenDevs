@@ -420,6 +420,7 @@ export default function Editor() {
 
   const handleUpdateSummaryRange = (summaryId: string, newStartNodeId: string, newEndNodeId: string) => {
     updateSummary(summaryId, { startNodeId: newStartNodeId, endNodeId: newEndNodeId });
+    setTimeout(() => handleLayout(), 0); 
   };
 
   // State nội bộ - Lấy name từ store thay vì state local
@@ -1095,6 +1096,7 @@ export default function Editor() {
                    n.id === nodeId ? { ...n, x, y } : n
                 );
                 setGraph(newNodes, currentEdges);
+                setTimeout(() => handleLayout(), 0);
                 break;
               }
               case 'NODE_TEXT_CHANGE': {
@@ -1583,9 +1585,21 @@ const handleLayout = useCallback(
 
       // Position summary nodes at brace tip positions
       const { summaries } = useEditorStore.getState();
+
+      type SummaryLayout = {
+        summary: typeof summaries[number];
+        firstNodeSide: 'left' | 'right';
+        direction: -1 | 1;
+        startX: number;
+        midY: number;
+        xMid: number;
+        spanHeight: number;
+      };
+
+      const layouts: SummaryLayout[] = [];
+
       summaries.forEach(summary => {
         if (!summary.summaryNodeId) return;
-        
         const parentNode = newNodes.find(n => n.id === summary.parentId);
         if (!parentNode) return;
         
@@ -1599,10 +1613,7 @@ const handleLayout = useCallback(
         // Collect leaf nodes
         const collectLeafNodes = (nodeId: string): string[] => {
           const node = newNodes.find(n => n.id === nodeId);
-          // [CRITICAL FIX] Nếu node bị collapse, chỉ trả về chính node đó
-          // KHÔNG tìm con vì các node con đã bị ẩn (không còn visible)
           if (node?.collapsed) return [nodeId];
-          
           const children = newNodes.filter(n => n.parentId === nodeId);
           if (children.length === 0) return [nodeId];
           return children.flatMap(child => collectLeafNodes(child.id));
@@ -1632,13 +1643,7 @@ const handleLayout = useCallback(
             const nodeRight = node.x + visual.box.w / 2;
             const nodeTop = node.y - visual.box.h / 2;
             const nodeBottom = node.y + visual.box.h / 2;
-            
-            if (isLeft) {
-              braceX = Math.min(braceX, nodeLeft);
-            } else {
-              braceX = Math.max(braceX, nodeRight);
-            }
-            
+            braceX = isLeft ? Math.min(braceX, nodeLeft) : Math.max(braceX, nodeRight);
             startY = Math.min(startY, nodeTop);
             endY = Math.max(endY, nodeBottom);
           }
@@ -1648,17 +1653,45 @@ const handleLayout = useCallback(
         const startX = isLeft ? braceX - 20 : braceX + 20;
         const midY = (startY + endY) / 2;
         const xMid = startX + (braceWidth * direction * 1.5);
-        
-        // Update summary node position
-        const summaryNodeIndex = newNodes.findIndex(n => n.id === summary.summaryNodeId);
-        if (summaryNodeIndex !== -1) {
-          newNodes[summaryNodeIndex] = {
-            ...newNodes[summaryNodeIndex],
-            x: xMid + (direction * 80), // Offset outward from brace tip
-            y: midY,
-            side: firstNode.side
-          };
-        }
+        const spanHeight = endY - startY;
+
+        layouts.push({
+          summary,
+          firstNodeSide: (firstNode.side as 'left' | 'right') || 'right',
+          direction: direction as -1 | 1,
+          startX,
+          midY,
+          xMid,
+          spanHeight,
+        });
+      });
+
+      const grouped = new Map<string, SummaryLayout[]>();
+      layouts.forEach(l => {
+        const key = `${l.summary.parentId}-${l.firstNodeSide}`;
+        if (!grouped.has(key)) grouped.set(key, []);
+        grouped.get(key)!.push(l);
+      });
+
+      const outwardBase = 80;
+      const outwardStep = 24;
+      const verticalStep = 24;
+
+      grouped.forEach(group => {
+        group.sort((a, b) => b.spanHeight - a.spanHeight); // outer first
+        group.forEach((layout, idx) => {
+          const level = group.length - idx - 1; // larger span (parent) gets bigger offset
+          const { summary, direction, xMid, midY, firstNodeSide } = layout;
+          const summaryNodeIndex = newNodes.findIndex(n => n.id === summary.summaryNodeId);
+          if (summaryNodeIndex !== -1) {
+            newNodes[summaryNodeIndex] = {
+             ...newNodes[summaryNodeIndex],
+              x: xMid + (direction * (outwardBase + level * outwardStep)),
+              y: midY + level * verticalStep,
+              side: firstNodeSide,
+            };
+          }
+        });
       });
 
       // Lấy trạng thái hiện tại của nodes từ store
@@ -1673,6 +1706,8 @@ const handleLayout = useCallback(
     },
     [nodeVisuals, setGraph, edges] 
   );
+
+  
 
   // ============================================================================
   // Rebalance Layout - Chia đều tất cả node con về 2 bên
@@ -2047,71 +2082,13 @@ const handleFitToScreen = useCallback(() => {
 }, [handleLayout, nodeVisuals, isFormattingToolbarOpen, PANEL_WIDTH]); 
 
   // [AUTO-PAN] Ensure node is visible in viewport (not hidden behind panel)
-  const ensureNodeVisible = useCallback((nodeId: string) => {
-    const node = nodes.find(n => n.id === nodeId);
-    const visual = nodeVisuals.get(nodeId);
-    if (!node || !visual) return;
 
-    const { x, y } = node;
-    const { w, h } = visual.box;
-    
-    // Calculate node bounds in screen coordinates
-    const nodeScreenX = pos.x + x * scale;
-    const nodeScreenY = pos.y + y * scale;
-    const nodeScreenW = w * scale;
-    const nodeScreenH = h * scale;
-    
-    // Calculate visible area (accounting for panel)
-    const visibleLeft = 0;
-    const visibleRight = canvasContainerWidth; // Canvas right edge, not window edge
-    const visibleTop = 48; // Toolbar height
-    const visibleBottom = dimensions.height;
-    
-    // Calculate margins for comfortable viewing
-    const margin = 50;
-    
-    // Check if node is outside visible area
-    let needsPan = false;
-    let newPosX = pos.x;
-    let newPosY = pos.y;
-    
-    // Check right boundary (most important for panel overlay)
-    // Node center > canvas right edge - margin => need to pan LEFT to make room
-    if (nodeScreenX + nodeScreenW / 2 > visibleRight - margin) {
-      needsPan = true;
-      // Pan left so node center is at (visibleRight - margin)
-      newPosX = pos.x - (nodeScreenX + nodeScreenW / 2 - (visibleRight - margin));
-    }
-    // Check left boundary
-    else if (nodeScreenX - nodeScreenW / 2 < visibleLeft + margin) {
-      needsPan = true;
-      // Pan right so node center is at (visibleLeft + margin)
-      newPosX = pos.x + ((visibleLeft + margin) - (nodeScreenX - nodeScreenW / 2));
-    }
-    
-    // Check bottom boundary
-    if (nodeScreenY + nodeScreenH / 2 > visibleBottom - margin) {
-      needsPan = true;
-      newPosY = pos.y - (nodeScreenY + nodeScreenH / 2 - (visibleBottom - margin));
-    }
-    // Check top boundary
-    else if (nodeScreenY - nodeScreenH / 2 < visibleTop + margin) {
-      needsPan = true;
-      newPosY = pos.y + ((visibleTop + margin) - (nodeScreenY - nodeScreenH / 2));
-    }
-    
-    if (needsPan) {
-      setPos({ x: newPosX, y: newPosY });
-    }
-  }, [nodes, nodeVisuals, pos, scale, dimensions, isFormattingToolbarOpen, PANEL_WIDTH]);
 
   const startEditing = useCallback((nodeId: string) => {
     setSelectedNodeIds([nodeId]);
     setEditingNodeId(nodeId);
-    // [FIX YÊU CẦU 1] KHÔNG tự động pan camera khi edit node
     // Giữ camera cố định theo yêu cầu
     setTimeout(() => {
-      // [REMOVED] ensureNodeVisible(nodeId); - Không pan camera khi bắt đầu edit
       editingInputRef.current?.focus();
       editingInputRef.current?.select();
     }, 50);
@@ -2327,11 +2304,11 @@ const handleFitToScreen = useCallback(() => {
       startEditing(newId);
       // Smart pan: only adjust camera if node is outside viewport or behind panel
       setTimeout(() => {
-        ensureNodeVisible(newId);
+        // ensureNodeVisible removed
       }, 100);
       endRenderTracking();
     }, 0);
-  }, [nodes, edges, pushHistory, setGraph, nodeMap, nodeVisuals, startEditing, handleLayout, startNodeBirthAnimation, ensureNodeVisible]);
+  }, [nodes, edges, pushHistory, setGraph, nodeMap, nodeVisuals, startEditing, handleLayout, startNodeBirthAnimation]);
 
   const handleAddSibling = useCallback((nodeId: string) => {
     // Track renders for this action
@@ -2434,12 +2411,12 @@ const handleFitToScreen = useCallback(() => {
       startEditing(newId);
       // Smart pan: only adjust camera if node is outside viewport or behind panel
       setTimeout(() => {
-        ensureNodeVisible(newId);
+        // ensureNodeVisible removed
       }, 100);
       endRenderTracking();
     }, 0);
     
-  }, [nodes, edges, pushHistory, setGraph, nodeMap, nodeVisuals, startEditing, handleLayout, handleAddChild, startNodeBirthAnimation, ensureNodeVisible]);
+  }, [nodes, edges, pushHistory, setGraph, nodeMap, nodeVisuals, startEditing, handleLayout, handleAddChild, startNodeBirthAnimation]);
 
   const handleDeleteNode = useCallback(
     () => { 
@@ -3079,7 +3056,7 @@ const handleFitToScreen = useCallback(() => {
         handleLayout();
         // Smart pan: ensure moved node is visible
         setTimeout(() => {
-          ensureNodeVisible(draggedNodeId);
+          // ensureNodeVisible removed
         }, 100);
       }, 50); 
     } else {
@@ -3096,7 +3073,8 @@ const handleFitToScreen = useCallback(() => {
       });
       setGraph(newNodes, edges);
       sendPatch('NODE_MOVE', { id: draggedNodeId, x: finalX, y: finalY });
-      // Không layout khi chỉ di chuyển vị trí - mượt hơn!
+      // Re-run layout so summary nodes stay anchored to their braces
+      setTimeout(() => handleLayout(), 0);
     }
     debouncedPersistData();
   };
@@ -3356,6 +3334,7 @@ const handleFitToScreen = useCallback(() => {
         }
         
         sendPatch('ROOT_TOGGLE_COLLAPSE', { side });
+        setTimeout(() => handleLayout(), 0);
       } else if (nodeId !== 'root') {
         const node = nodeMap.get(nodeId);
         if (!node) return;
@@ -3436,6 +3415,7 @@ const handleFitToScreen = useCallback(() => {
         debouncedPushHistory();
         debouncedPersistData();
         sendPatch('NODE_TOGGLE_COLLAPSE', { id: nodeId }); 
+        setTimeout(() => handleLayout(), 0);
       }
     },
     [
@@ -3583,6 +3563,8 @@ const handleFitToScreen = useCallback(() => {
       const unscaledScroll = el.scrollHeight / Math.max(scale, 0.0001);
       const target = Math.max(visual.box.h, unscaledScroll)*0.8;
       el.style.height = `${target}px`;
+      // Keep layout synced while typing so summary braces/text follow width changes
+      setTimeout(() => handleLayout(), 0);
     };
     resize();
     const t = setTimeout(resize, 50);
