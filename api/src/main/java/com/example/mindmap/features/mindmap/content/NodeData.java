@@ -1,88 +1,53 @@
 package com.example.mindmap.features.mindmap.content;
 
-import lombok.Data;
-
-/**
- * NodeData đại diện cho 1 node trong Mindmap.
- * Chứa tất cả thông tin cần thiết để FE render và BE quản lý logic.
- *
- * ✅ Có id để FE nhận diện node (Konva, canvas, drag & drop)
- * ✅ Hỗ trợ quan hệ cha-con bằng parentId
- * ✅ Hỗ trợ style riêng trên mỗi node
- * ✅ Có thể chứa metadata mở rộng như hyperlink, notes, externalReference
- */
-
-@Data
 public class NodeData {
-
-    /**
-     * ID duy nhất của node.
-     * FE sẽ tự sinh UUID và gửi lên BE trong update request.
-     * Đây là key để BE xác định node khi update / delete.
-     */
     private String id;
-
-    /**
-     * Nội dung text hiển thị trong node.
-     */
     private String text;
-
-    /**
-     * Tọa độ node trên canvas (FE xử lý, BE chỉ lưu trữ).
-     */
     private double x;
     private double y;
-
-    /**
-     * ID của node cha (nếu null → node root).
-     * FE/BE dựa trên parentId để xây dựng cấu trúc cây.
-     */
     private String parentId;
-
-    /**
-     * [FIX] Khởi tạo style để không bao giờ bị null.
-     *
-     * Style riêng của node, ví dụ:
-     * - màu nền
-     * - màu chữ
-     * - fontSize
-     * - border radius
-     *
-     * Nếu null → FE kế thừa style theo theme của Mindmap.
-     */
-    private NodeStyle style = new NodeStyle(); // <-- FIX LỖI GỐC RỄ
-
-    /**
-     * FLAG: Node có đang bị thu gọn branch hay không.
-     * FE dùng để ẩn con cháu của node nếu collapsed = true.
-     */
+    private NodeStyle style = new NodeStyle();
     private boolean isCollapsed = false;
-
-    /**
-     * Siêu liên kết (optional).
-     * FE click vào node có hyperlink → mở external URL.
-     */
     private String hyperlink;
-
-    /**
-     * Ghi chú nội dung chi tiết hơn ngoài text ngắn trên node.
-     * Dùng cho các Mindmap có nhiều ghi chú (radial notes).
-     */
     private String notes;
+    private Object externalReference;
+    private String side;
+    private Boolean boundary;
 
-    /**
-     * Tham chiếu liên kết tới hệ thống khác (Jira, Confluence, SaaS...).
-     */
-    private ExternalReference externalReference;
-
-    /**
-     * Metadata dùng cho liên kết hệ thống ngoài.
-     * Ví dụ: liên kết Jira ticket → TASK-123
-     */
-    @Data
-    public static class ExternalReference {
-        private String provider; // Ex: "jira", "github-repo", "notion"
-        private String id;       // Ex: "TASK-123", "DOC-456"
-        private String url;      // FE dùng url như fallback để mở nhanh
-    }
+    // Getters and Setters
+    public String getId() { return id; }
+    public void setId(String id) { this.id = id; }
+    
+    public String getText() { return text; }
+    public void setText(String text) { this.text = text; }
+    
+    public double getX() { return x; }
+    public void setX(double x) { this.x = x; }
+    
+    public double getY() { return y; }
+    public void setY(double y) { this.y = y; }
+    
+    public String getParentId() { return parentId; }
+    public void setParentId(String parentId) { this.parentId = parentId; }
+    
+    public NodeStyle getStyle() { return style; }
+    public void setStyle(NodeStyle style) { this.style = style; }
+    
+    public boolean isCollapsed() { return isCollapsed; }
+    public void setCollapsed(boolean collapsed) { isCollapsed = collapsed; }
+    
+    public String getHyperlink() { return hyperlink; }
+    public void setHyperlink(String hyperlink) { this.hyperlink = hyperlink; }
+    
+    public String getNotes() { return notes; }
+    public void setNotes(String notes) { this.notes = notes; }
+    
+    public Object getExternalReference() { return externalReference; }
+    public void setExternalReference(Object externalReference) { this.externalReference = externalReference; }
+    
+    public String getSide() { return side; }
+    public void setSide(String side) { this.side = side; }
+    
+    public Boolean getBoundary() { return boundary; }
+    public void setBoundary(Boolean boundary) { this.boundary = boundary; }
 }

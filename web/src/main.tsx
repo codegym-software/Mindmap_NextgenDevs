@@ -5,13 +5,15 @@ import { RouterProvider } from "react-router-dom";
 import { router } from "./app/routes";
 import { AuthProvider } from "./app/providers/AuthProvider";
 import { ThemeProvider } from "./app/providers/ThemeProvider";
-import { NotificationProvider } from "./app/providers/NotificationProvider"; // NEW
+import { NotificationProvider } from "./app/providers/NotificationProvider";
+import { ChangePasswordModalWrapper } from "./components/layout/ChangePasswordModalWrapper";
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
     <ThemeProvider>
       <AuthProvider>
-        <NotificationProvider> {/* NEW WRAPPER */}
+        <NotificationProvider>
+          <ChangePasswordModalWrapper />
           <RouterProvider
             router={router}
             future={{ v7_startTransition: true }}

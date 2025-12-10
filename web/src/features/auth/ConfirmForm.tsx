@@ -10,7 +10,6 @@ type Props = {
     onResend: () => void;
 };
 
-// [MERGE] Sử dụng phiên bản "light mode" từ feature/tt
 const ConfirmForm: React.FC<Props> = ({ confirmCode, errors, isLoading, onChange, onSubmit, onResend }) => (
     <form onSubmit={onSubmit} className="space-y-6">
         <div>

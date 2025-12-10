@@ -43,8 +43,8 @@ export default function Dashboard() {
        <div className="min-h-screen bg-gray-50"> 
          <Header />
          <Sidebar />
-         <main className="pt-16">
-           <section className="h-[calc(100vh-4rem)] flex items-center justify-center">
+         <main className="pt-12">
+           <section className="h-[calc(100vh-3rem)] flex items-center justify-center">
              <BigStartButton />
            </section>
          </main>

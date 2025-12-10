@@ -1,9 +1,15 @@
 FROM maven:3.9-eclipse-temurin-21 AS build
 WORKDIR /app
+
+# Cau hinh Maven mirror de tang toc va tranh timeout
+COPY settings.xml /root/.m2/settings.xml
+
+# Tang timeout cho Maven
+ENV MAVEN_OPTS="-Dmaven.artifact.threads=5 -Dhttp.socket.timeout=300000 -Dhttp.connection.timeout=300000"
+
 COPY pom.xml .
-RUN mvn -q -e -B -DskipTests dependency:go-offline
 COPY . .
-RUN mvn -q -e -B -DskipTests package
+RUN mvn -q -e -B -DskipTests clean package
 
 FROM eclipse-temurin:21-jre
 WORKDIR /app

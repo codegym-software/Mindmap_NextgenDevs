@@ -34,6 +34,9 @@ user: Record<string, any> | null;
 isAuthed: boolean;
 login: (initialMode?: 'login' | 'register') => void;
 logout: () => void;
+openChangePassword: () => void;
+closeChangePassword: () => void;
+isChangePasswordOpen: boolean;
 setAuthTokens: (t: Tokens | null) => void;
 ensureFreshAccessToken: () => Promise<string | null>;
 };
@@ -44,6 +47,9 @@ user: null,
 isAuthed: false,
 login: () => {},
 logout: () => {},
+openChangePassword: () => {},
+closeChangePassword: () => {},
+isChangePasswordOpen: false,
 setAuthTokens: () => {},
 ensureFreshAccessToken: async () => null,
 });
@@ -58,6 +64,9 @@ const [user, setUser] = useState<Record<string, any> | null>(() => {
 // State for Auth Modal (Không thay đổi)
 const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
 const [initialAuthMode, setInitialAuthMode] = useState<'login' | 'register'>('login');
+
+// State for Change Password Modal
+const [isChangePasswordOpen, setIsChangePasswordOpen] = useState(false);
 
 const setAuthTokens = useCallback((t: Tokens | null) => {
   setTokensState(t);
@@ -91,6 +100,14 @@ const isAuthed = !!tokens?.access_token;
 const login = useCallback((initialMode: 'login' | 'register' = 'login') => {
   setInitialAuthMode(initialMode);
   setIsAuthModalOpen(true);
+}, []);
+
+const openChangePassword = useCallback(() => {
+  setIsChangePasswordOpen(true);
+}, []);
+
+const closeChangePassword = useCallback(() => {
+  setIsChangePasswordOpen(false);
 }, []);
 
 // Logic Logout (Không thay đổi)
@@ -160,10 +177,13 @@ const value = useMemo(
     isAuthed,
     login,
     logout,
+    openChangePassword,
+    closeChangePassword,
+    isChangePasswordOpen,
     setAuthTokens,
     ensureFreshAccessToken,
   }),
-  [tokens, user, isAuthed, login, logout, setAuthTokens, ensureFreshAccessToken]
+  [tokens, user, isAuthed, login, logout, openChangePassword, closeChangePassword, isChangePasswordOpen, setAuthTokens, ensureFreshAccessToken]
 );
 
 return (

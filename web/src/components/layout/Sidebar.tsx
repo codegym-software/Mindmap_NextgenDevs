@@ -94,10 +94,9 @@ export default function Sidebar() {
         await mindmapsApi.updateName(editingId, tempName);
         setMindmaps({ items: items.map(i => i.id === editingId ? { ...i, name: tempName } : i) });
       } else {
-        updateGuestName(editingId, tempName); // Đã bao gồm setMindmaps
+        updateGuestName(editingId, tempName); 
       }
 
-      // [MỚI] Đồng bộ tên với Editor nếu map đang được mở
       if (editingId === currentMindmapId) {
         setEditorStore({ currentMindmapName: tempName });
       }
@@ -153,7 +152,7 @@ export default function Sidebar() {
         <button
           onClick={() => setOpen(!open)}
           onMouseEnter={() => !pinned && setOpen(true)}
-          className="fixed top-3 left-3 z-50 w-5 h-5 rounded-lg bg-white/50 hover:bg-gray-100/80 text-gray-800 flex items-center justify-center transition-colors backdrop-blur-sm" 
+          className="fixed top-3 left-3.5 z-50 w-5 h-5 rounded-lg bg-white/50 hover:bg-gray-100/80 text-gray-800 flex items-center justify-center transition-colors backdrop-blur-sm" 
           aria-label="Toggle sidebar"
         >
           <PanelLeftOpen />
@@ -163,8 +162,9 @@ export default function Sidebar() {
           ref={sidebarRef}
           onMouseEnter={() => !pinned && setOpen(true)}
           className={`fixed top-0 left-0 h-screen bg-white/95 backdrop-blur text-gray-900 z-40 transition-transform duration-300 border-r border-gray-200 flex flex-col ${open ? "translate-x-0 w-72" : "-translate-x-full w-72"}`}
+          style={{ fontFamily: 'NeverMind' }}
         >
-          <div className="h-12 flex items-center justify-between px-4 border-b border-gray-200 flex-shrink-0" style={{ paddingLeft: '64px' }}> 
+          <div className="h-12 flex items-center justify-between px-4 border-b border-gray-200 flex-shrink-0" style={{ paddingLeft: '64px' }}>
             <span className="font-semibold text-lg">Mindmap của tôi</span>
             <button
               onClick={() => setPinned(!pinned)}
@@ -202,7 +202,10 @@ export default function Sidebar() {
               <div className="text-center text-gray-900/40 py-8 text-sm">Không tìm thấy mindmap nào.</div> 
             ) : (
               filteredMindmaps.map((m) => (
-                <div key={m.id} className="group relative w-full text-left p-3 rounded-md hover:bg-gray-100 transition-colors flex items-center justify-between"> {/* Changed */}
+                <div 
+                  key={m.id} 
+                  className={`group relative w-full text-left p-2 rounded-md transition-colors flex items-center justify-between ${m.id === currentMindmapId ? 'bg-gradient-to-r from-blue-50 to-purple-100' : 'hover:bg-gray-100'}`}
+                >
                   {editingId === m.id ? (
                     <input
                       type="text"
@@ -218,9 +221,9 @@ export default function Sidebar() {
                     />
                   ) : (
                     <a href={`/editor/${m.id}`} className="flex-grow min-w-0">
-                      <div className="text-gray-900 font-medium truncate">{m.name}</div> 
+                      <div className="text-sm text-gray-900 font-medium truncate">{m.name}</div> 
                       <div className="text-gray-500 text-xs mt-1"> 
-                        {new Date(m.createdAt).toLocaleDateString("vi-VN")}
+                        {(m.updatedAt || m.createdAt) ? new Date(m.updatedAt || m.createdAt).toLocaleDateString("vi-VN", { year: 'numeric', month: '2-digit', day: '2-digit' }) : ''}
                       </div>
                     </a>
                   )}
