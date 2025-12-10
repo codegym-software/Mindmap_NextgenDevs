@@ -24,7 +24,6 @@ import * as dagre from 'dagre';
 import useImage from 'use-image'; 
 import { useDebouncedCallback } from 'use-debounce';
 
-// Sử dụng alias ../ để import an toàn
 import EditorToolbar from '../features/editor/EditorToolbar';
 import Sidebar from '../components/layout/Sidebar';
 import FormattingToolbar from '../features/editor/FormattingToolbar';
@@ -71,7 +70,6 @@ type BeGuestDoc = {
   name: string;
   content: BeMindmapContent;
 };
-// =================================================================================
 
 const GUEST_BUCKET = 'mm_guest_docs';
 
@@ -79,7 +77,16 @@ const PADDING_X = 20,
   PADDING_Y = 12;
 const LINE_HEIGHT_MULTIPLIER = 1.3;
 
-const BRANCH_COLORS_PALETTE = ['#264979ff'];
+const BRANCH_COLORS_PALETTE = [
+  '#14B8A6', 
+  '#3B82F6',
+  '#10B981', 
+  '#F59E0B',
+  '#8B5CF6',
+  '#EF4444',
+  '#F97316',
+  '#6366F1', 
+];
 
 function hexToRgb(hex: string) {
   const h = hex.replace('#', '');
@@ -138,8 +145,8 @@ function saveGuestDoc(
   name: string,
   feNodes: FeNodeData[],
   feEdges: EdgeData[],
-  feRelationships?: any[], // [MỚI] Thêm relationships
-  feSummaries?: any[] // [MỚI] Thêm summaries
+  feRelationships?: any[], 
+  feSummaries?: any[] 
 ) {
   try {
     const beContent = normalizeContentFEtoBE(feNodes, feEdges, feRelationships, feSummaries);
@@ -166,18 +173,65 @@ function calculateNodeBox(node: NodeData, style: NodeData) {
   const canvas = document.createElement('canvas');
   const context = canvas.getContext('2d');
   if (context) {
-    context.font = `${finalFontSize}px ${style.fontFamily || 'Inter'}`;
+    // Include fontStyle and fontWeight for accurate text measurement
+    const fontWeight = style.fontWeight || 'normal';
+    const fontStyle = style.fontStyle || 'normal';
+    context.font = `${fontStyle} ${fontWeight} ${finalFontSize}px ${style.fontFamily || 'Inter'}`;
   }
   const measureWidth = (text: string) =>
     context?.measureText(text).width || text.length * finalFontSize * 0.6;
   if (nodeLength === 'fit') {
+    // Set a maximum width for 'fit' mode to enable text wrapping
+    const maxFitWidth = 400; // Maximum width for auto-fit nodes
     let maxWidth = 0;
-    processedText.split('\n').forEach((line: string) => {
-      maxWidth = Math.max(maxWidth, measureWidth(line));
+    const lines = processedText.split('\n');
+    
+    // First pass: check if any line exceeds maxFitWidth
+    lines.forEach((line: string) => {
+      const lineWidth = measureWidth(line);
+      if (lineWidth > maxFitWidth) {
+        maxWidth = maxFitWidth;
+      } else {
+        maxWidth = Math.max(maxWidth, lineWidth);
+      }
     });
+    
     w = maxWidth + PADDING_X * 2 + borderWidth * 2;
     w = Math.max(w, 80);
-    wrappedLines = processedText.split('\n');
+    
+    // Second pass: wrap lines that are too long
+    const contentWidth = w - PADDING_X * 2 - borderWidth * 2;
+    lines.forEach((line: string) => {
+      if (line.length === 0) {
+        wrappedLines.push('');
+        return;
+      }
+      
+      const lineWidth = measureWidth(line);
+      if (lineWidth <= contentWidth) {
+        wrappedLines.push(line);
+      } else {
+        // Wrap this line
+        let currentLine = '';
+        const words = line.split(' ');
+        for (const word of words) {
+          const testLine = currentLine ? `${currentLine} ${word}` : word;
+          const testWidth = measureWidth(testLine);
+          if (testWidth > contentWidth) {
+            if (currentLine) wrappedLines.push(currentLine);
+            currentLine = word;
+            // Handle very long words
+            while (measureWidth(currentLine) > contentWidth) {
+              wrappedLines.push(currentLine.substring(0, 20));
+              currentLine = currentLine.substring(20);
+            }
+          } else {
+            currentLine = testLine;
+          }
+        }
+        if (currentLine) wrappedLines.push(currentLine);
+      }
+    });
   } else {
     w = Number(nodeLength) || 250;
     const contentWidth = w - PADDING_X * 2 - borderWidth * 2;
@@ -407,6 +461,18 @@ export default function Editor() {
   const pendingLayoutRef = useRef(false);
 
   const stageRef = useRef<any>(null);
+  const canvasContainerRef = useRef<HTMLDivElement>(null);
+  const [canvasContainerWidth, setCanvasContainerWidth] = useState<number>(0);
+    useEffect(() => {
+      const updateWidth = () => {
+        if (canvasContainerRef.current) {
+          setCanvasContainerWidth(canvasContainerRef.current.getBoundingClientRect().width);
+        }
+      };
+      updateWidth();
+      window.addEventListener('resize', updateWidth);
+      return () => window.removeEventListener('resize', updateWidth);
+    }, [isFormattingToolbarOpen, dimensions.width]);
   const editingInputRef = useRef<HTMLTextAreaElement>(null);
   const wsRef = useRef<WebSocket | null>(null);
 
@@ -726,7 +792,12 @@ export default function Editor() {
         }
 
         if (isMounted) {
-          useEditorStore.setState({ currentMindmapId: id, currentMindmapName: data.name, isDirty: false });
+          useEditorStore.setState({ 
+            currentMindmapId: id, 
+            currentMindmapName: data.name, 
+            isDirty: false,
+            hasManuallyRenamedMindmap: false // Reset flag when loading new document
+          });
           clearHistory();
           
           // [MỚI] Load relationships và summaries TRƯỚC setGraph để tránh bị ghi đè
@@ -814,7 +885,7 @@ export default function Editor() {
             globalStructure: (data.layoutMode as GlobalStructure) || 'mindmap',
             globalFont: data.fontFamily || fonts[0].value,
             branchLineWidth: data.branchLineWidth || 2,
-            globalBranchColor: data.globalBranchColor || '#94A3B8',
+            globalBranchColor: data.globalBranchColor || '#14B8A6',
             activeColorThemeId: data.activeColorThemeId || 'dawn',
             backgroundColor: data.backgroundColor || '#FAFAFB', 
           });
@@ -1992,9 +2063,8 @@ const handleFitToScreen = useCallback(() => {
     const nodeScreenH = h * scale;
     
     // Calculate visible area (accounting for panel)
-    const panelOffset = isFormattingToolbarOpen ? PANEL_WIDTH : 0;
     const visibleLeft = 0;
-    const visibleRight = dimensions.width - panelOffset;
+    const visibleRight = canvasContainerWidth; // Canvas right edge, not window edge
     const visibleTop = 48; // Toolbar height
     const visibleBottom = dimensions.height;
     
@@ -2007,25 +2077,28 @@ const handleFitToScreen = useCallback(() => {
     let newPosY = pos.y;
     
     // Check right boundary (most important for panel overlay)
+    // Node center > canvas right edge - margin => need to pan LEFT to make room
     if (nodeScreenX + nodeScreenW / 2 > visibleRight - margin) {
       needsPan = true;
-      newPosX = visibleRight - margin - x * scale - nodeScreenW / 2;
+      // Pan left so node center is at (visibleRight - margin)
+      newPosX = pos.x - (nodeScreenX + nodeScreenW / 2 - (visibleRight - margin));
     }
     // Check left boundary
     else if (nodeScreenX - nodeScreenW / 2 < visibleLeft + margin) {
       needsPan = true;
-      newPosX = visibleLeft + margin - x * scale + nodeScreenW / 2;
+      // Pan right so node center is at (visibleLeft + margin)
+      newPosX = pos.x + ((visibleLeft + margin) - (nodeScreenX - nodeScreenW / 2));
     }
     
     // Check bottom boundary
     if (nodeScreenY + nodeScreenH / 2 > visibleBottom - margin) {
       needsPan = true;
-      newPosY = visibleBottom - margin - y * scale - nodeScreenH / 2;
+      newPosY = pos.y - (nodeScreenY + nodeScreenH / 2 - (visibleBottom - margin));
     }
     // Check top boundary
     else if (nodeScreenY - nodeScreenH / 2 < visibleTop + margin) {
       needsPan = true;
-      newPosY = visibleTop + margin - y * scale + nodeScreenH / 2;
+      newPosY = pos.y + ((visibleTop + margin) - (nodeScreenY - nodeScreenH / 2));
     }
     
     if (needsPan) {
@@ -2074,6 +2147,27 @@ const handleFitToScreen = useCallback(() => {
         setGraph(newNodes, edges);
         justStoppedEditingRef.current = true; 
         useEditorStore.setState({ isDirty: true });
+        
+        // Auto-update mindmap name from root node if user hasn't manually renamed
+        if (editingNodeId === 'root' && !useEditorStore.getState().hasManuallyRenamedMindmap) {
+          const rootText = newText.trim();
+          if (rootText) {
+            // Take first line or first 50 characters as name
+            const firstLine = rootText.split('\n')[0];
+            const newName = firstLine.length > 50 ? firstLine.substring(0, 50) + '...' : firstLine;
+            useEditorStore.setState({ currentMindmapName: newName });
+            
+            // Update in toolbar's local items list
+            const mindmapItems = useMindmapsStore.getState().items;
+            const currentId = useEditorStore.getState().currentMindmapId;
+            if (currentId) {
+              const newItems = mindmapItems.map(item => 
+                item.id === currentId ? { ...item, name: newName } : item
+              );
+              useMindmapsStore.setState({ items: newItems });
+            }
+          }
+        }
         
         // [OPTIMIZATION] Layout sẽ tự động trigger khi nodeVisuals thay đổi
         // Không cần trigger thủ công ở đây vì text change sẽ update nodeVisuals
@@ -2217,7 +2311,7 @@ const handleFitToScreen = useCallback(() => {
     setGraph(newNodes, newEdges);
     
     // [FIX YÊU CẦU 1] Call layout immediately to get correct position, then animate
-    // KHÔNG gọi ensureNodeVisible để giữ camera cố định
+    // Smart viewport: ensure new node is visible without full fit-to-screen
     setTimeout(() => {
       handleLayout();
       setTimeout(() => {
@@ -2227,10 +2321,13 @@ const handleFitToScreen = useCallback(() => {
         }
       }, 0);
       startEditing(newId);
-      // [REMOVED] ensureNodeVisible(newId); - Không pan camera khi thêm node
+      // Smart pan: only adjust camera if node is outside viewport or behind panel
+      setTimeout(() => {
+        ensureNodeVisible(newId);
+      }, 100);
       endRenderTracking();
     }, 0);
-  }, [nodes, edges, pushHistory, setGraph, nodeMap, nodeVisuals, startEditing, handleLayout, startNodeBirthAnimation]);
+  }, [nodes, edges, pushHistory, setGraph, nodeMap, nodeVisuals, startEditing, handleLayout, startNodeBirthAnimation, ensureNodeVisible]);
 
   const handleAddSibling = useCallback((nodeId: string) => {
     // Track renders for this action
@@ -2321,7 +2418,7 @@ const handleFitToScreen = useCallback(() => {
     setGraph(newNodes, newEdges);
     
     // [FIX YÊU CẦU 1] Call layout immediately to get correct position, then animate
-    // KHÔNG gọi ensureNodeVisible để giữ camera cố định
+    // Smart viewport: ensure new node is visible without full fit-to-screen
     setTimeout(() => {
       handleLayout();
       setTimeout(() => {
@@ -2331,11 +2428,14 @@ const handleFitToScreen = useCallback(() => {
         }
       }, 0);
       startEditing(newId);
-      // [REMOVED] ensureNodeVisible(newId); - Không pan camera khi thêm sibling
+      // Smart pan: only adjust camera if node is outside viewport or behind panel
+      setTimeout(() => {
+        ensureNodeVisible(newId);
+      }, 100);
       endRenderTracking();
     }, 0);
     
-  }, [nodes, edges, pushHistory, setGraph, nodeMap, nodeVisuals, startEditing, handleLayout, handleAddChild, startNodeBirthAnimation]);
+  }, [nodes, edges, pushHistory, setGraph, nodeMap, nodeVisuals, startEditing, handleLayout, handleAddChild, startNodeBirthAnimation, ensureNodeVisible]);
 
   const handleDeleteNode = useCallback(
     () => { 
@@ -2765,7 +2865,7 @@ const handleFitToScreen = useCallback(() => {
       }, 10); 
       return () => clearTimeout(t);
     }
-  }, [isDataLoaded, handleFitToScreen]);
+  }, [isDataLoaded]); // Chỉ depend on isDataLoaded, không depend on handleFitToScreen
 
   const handleDragMove = (e: any, draggedNodeId: string) => {
     // Detect drop target khi đang kéo
@@ -2794,9 +2894,31 @@ const handleFitToScreen = useCallback(() => {
       if (isOver) {
         potentialDropTarget = node.id;
         
-        // Calculate side for root based on mouse position
+        // Calculate side for root based on which side has lower height
         if (node.id === 'root') {
-          targetSide = currentX < x ? 'left' : 'right';
+          // Calculate total height of each side
+          const calculateSideHeight = (side: 'left' | 'right'): number => {
+            const sideNodes = nodes.filter(n => n.parentId === 'root' && n.side === side);
+            if (sideNodes.length === 0) return 0;
+            
+            const getSubtreeHeight = (nodeId: string): number => {
+              const visual = nodeVisuals.get(nodeId);
+              const selfHeight = visual?.box.h || 60;
+              const children = edges.filter(e => e.from === nodeId).map(e => e.to);
+              if (children.length === 0) return selfHeight;
+              
+              const childrenHeight = children.reduce((sum, childId) => sum + getSubtreeHeight(childId), 0);
+              return selfHeight + childrenHeight + (children.length - 1) * 20;
+            };
+            
+            return sideNodes.reduce((sum, node) => sum + getSubtreeHeight(node.id), 0);
+          };
+          
+          const leftHeight = calculateSideHeight('left');
+          const rightHeight = calculateSideHeight('right');
+          
+          // Show hint on the side with lower height
+          targetSide = leftHeight <= rightHeight ? 'left' : 'right';
         }
         break;
       }
@@ -2949,7 +3071,13 @@ const handleFitToScreen = useCallback(() => {
         nodeId: draggedNodeId, newParentId, x: finalX, y: finalY, side: newSide,
       });
       // Layout lại khi thay đổi parent
-      setTimeout(() => handleLayout(), 50); 
+      setTimeout(() => {
+        handleLayout();
+        // Smart pan: ensure moved node is visible
+        setTimeout(() => {
+          ensureNodeVisible(draggedNodeId);
+        }, 100);
+      }, 50); 
     } else {
       const newNodes = nodes.map((n) => {
         if (n.id === draggedNodeId) {
@@ -3639,6 +3767,7 @@ const handleFitToScreen = useCallback(() => {
         <div className="flex flex-row flex-1 overflow-hidden">
           {/* [CANVAS AREA] Flex: 1 auto, adjusts when panel opens */}
           <div
+            ref={canvasContainerRef}
             className="flex-1 pt-12 relative transition-all duration-300 ease-in-out"
             style={{ 
               backgroundColor,
@@ -3864,6 +3993,14 @@ const handleFitToScreen = useCallback(() => {
                 ) : null
               )}
               {visibleEdges.map((edge) => {
+                // Check if this edge should be faded when dragging
+                const isDraggingRelated = draggingNodeId && (
+                  edge.from === draggingNodeId || 
+                  edge.to === draggingNodeId ||
+                  draggedNodeChildrenRef.current.has(edge.from) ||
+                  draggedNodeChildrenRef.current.has(edge.to)
+                );
+                
                 // Check if this is a summary edge (from a summary to its summary node)
                 const isSummaryEdge = edge.from.startsWith('sum_');
                 
@@ -4008,8 +4145,10 @@ const handleFitToScreen = useCallback(() => {
                   p4 = { x: toStyle.x + (toSide === 'left' ? toBox.w / 2 : -toBox.w / 2), y: toStyle.y };
                   points = [ p1.x, p1.y, (p1.x + p4.x) / 2, p1.y, (p1.x + p4.x) / 2, p4.y, p4.x, p4.y ];
                 }
-                let strokeColor = globalBranchColor;
-                strokeColor = globalBranchColor;
+                // Sử dụng màu từ branchColor của fromNode, nếu không có thì dùng globalBranchColor
+                const fromNode = nodes.find(n => n.id === edge.from);
+                const strokeColor = fromNode?.branchColor || fromStyle.branchColor || globalBranchColor;
+                
                 // Apply node's branch line thickness or fallback to global setting
                 // 'normal' means use global setting, only 'thin' or 'thick' override
                 const nodeThickness = fromStyle.branchLineThickness === 'thin' ? 1 : fromStyle.branchLineThickness === 'thick' ? 3 : undefined;
@@ -4022,6 +4161,7 @@ const handleFitToScreen = useCallback(() => {
                   bezier: isBezier,
                   lineCap: 'round' as const,
                   lineJoin: 'round' as const,
+                  opacity: isDraggingRelated ? 0.3 : 1, // Ẩn mờ khi drag
                 };
                 if (fromStyle.branchLineEnd === 'arrow') { // Changed to fromStyle
                   return <Arrow {...lineProps} key={edge.id} pointerLength={8} pointerWidth={6} fill={strokeColor} />;
@@ -4237,50 +4377,8 @@ const handleFitToScreen = useCallback(() => {
                     )}
                     
                     {node.id === 'root' ? (
-                      <>
-                        {globalStructure !== 'logic' && rootChildSides.left && (rootCollapse.left || hoveredNodeId === 'root') && (
-                          <Group
-                            x={-w / 2} y={0}
-                            onClick={(e) => handleToggleCollapse(e, 'root', 'left')}
-                            onMouseEnter={(e) => { const stage = e.target.getStage(); if (stage) stage.container().style.cursor = 'pointer'; }}
-                            onMouseLeave={(e) => { const stage = e.target.getStage(); if (stage) stage.container().style.cursor = 'default'; }}
-                          >
-                            <Circle radius={8} fill="#3b82f6" stroke="#FFFFFF" strokeWidth={2} />
-                          {rootCollapse.left ? (
-                              <Text
-                                text={`${descendantCounts.rootCounts.left || 0}`}
-                                fontSize={9} fill="#FFFFFF"
-                                align="center" verticalAlign="middle"
-                                width={16} height={16} offsetX={8} offsetY={8}
-                                fontStyle="bold" listening={false}
-                              />
-                            ) : (
-                              <Path data="M-4 0 H4" stroke="#FFFFFF" strokeWidth={2} lineCap="round" />
-                            )}
-                          </Group>
-                        )}
-                        {rootChildSides.right && (rootCollapse.right || hoveredNodeId === 'root') && (
-                          <Group
-                            x={w / 2} y={0}
-                            onClick={(e) => handleToggleCollapse(e, 'root', 'right')}
-                            onMouseEnter={(e) => { const stage = e.target.getStage(); if (stage) stage.container().style.cursor = 'pointer'; }}
-                            onMouseLeave={(e) => { const stage = e.target.getStage(); if (stage) stage.container().style.cursor = 'default'; }}
-                          >
-                            <Circle radius={8} fill="#3b82f6" stroke="#FFFFFF" strokeWidth={2} />
-                          {rootCollapse.right ? (
-                              <Text
-                                text={`${descendantCounts.rootCounts.right || 0}`}
-                                fontSize={9} fill="#FFFFFF"
-                                align="center" verticalAlign="middle"
-                                width={16} height={16} offsetX={8} offsetY={8}
-                                fontStyle="bold" listening={false}
-                              />
-                            ) : (
-                              <Path data="M-4 0 H4" stroke="#FFFFFF" strokeWidth={2} lineCap="round" />
-                            )}
-                          </Group>
-                        )}
-                      </>
+                      // Root node không có nút collapse/expand
+                      null
                     ) : (
                       hasChildren && (node.collapsed || hoveredNodeId === node.id) && (
                         <Group
@@ -4303,7 +4401,7 @@ const handleFitToScreen = useCallback(() => {
                             <Path data="M-4 0 H4" stroke="#FFFFFF" strokeWidth={2} lineCap="round" />
                           )}
                         </Group>
-                       )
+                      )
                     )}
                     {(style as any).hyperlink && (
                     <Group
@@ -4377,6 +4475,7 @@ const handleFitToScreen = useCallback(() => {
                 
                 useEditorStore.setState({ isDirty: true });
 
+                // Fit to screen sau khi apply layout
                 setTimeout(() => {
                   handleFitToScreen();
                 }, 100);
@@ -4458,7 +4557,10 @@ const handleFitToScreen = useCallback(() => {
               onCopyStyle={handleCopyStyle}
               onPasteStyle={handlePasteStyle}
               onResetStyle={handleResetStyle}
-              onLayoutAll={handleRebalanceLayout}
+              onLayoutAll={() => {
+                handleRebalanceLayout();
+                setTimeout(() => handleFitToScreen(), 100);
+              }}
               
               onToggleColoredBranch={() => {}}
               />

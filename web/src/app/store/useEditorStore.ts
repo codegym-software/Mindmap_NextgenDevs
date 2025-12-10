@@ -52,13 +52,12 @@ export const colorThemes: Record<string, ColorTheme> = {
   dawn: {
     background: "#ffffffff", 
     quickStyles: {
-      'important-dark': { fill: "#90074dff", color:"#970074ff", stroke: "#97266D", textColor: "#ffffffff", fontWeight: "bold" },
-      'important-light': { fill: "#df1a5fff", color:"#b60ac0ff", stroke: "#ED89A7", textColor: "#ffffffff" },
-      strikethrough: { fill: "#FFFFFF", color:"#ffffffff", stroke: "#CBD5E0", textColor: "#A0AEC0", textDecoration: "line-through" },
-      default: { fill: "#FFFFFF", color:"#ffffffff", stroke: "#CBD5E0", textColor: "#4A5568" },
-    },
-    // Root mặc định là Đen, chữ Trắng
-    root: { fill: "#ffffffff", stroke: "#343434ff", textColor: "#ae1e1eff"},
+      'important-dark': { fill: "#90074dff", color:"#970074ff", stroke: "#97266D", textColor: "#ffffffff", fontWeight: "bold" },
+      'important-light': { fill: "#df1a5fff", color:"#b60ac0ff", stroke: "#ED89A7", textColor: "#ffffffff" },
+      strikethrough: { fill: "#FFFFFF", color:"#ffffffff", stroke: "#CBD5E0", textColor: "#A0AEC0", textDecoration: "line-through" },
+      default: { fill: "#F0F9FF", color:"#F0F9FF", stroke: "#3B82F6", textColor: "#1E3A8A" },
+    },
+    root: { fill: "transparent", stroke: "transparent", textColor: "#000000"},
   },
 };
 
@@ -159,8 +158,8 @@ const MAX_HISTORY = 100;
 
 export const DEFAULT_NODE_STYLE: Partial<NodeData> = {
   shape: 'roundedRect',
-  color: '#FFFFFF',
-  borderColor: '#000000', 
+  color: '#F0F9FF', // Light blue - dễ nhìn và dễ chịu
+  borderColor: '#3B82F6', 
   borderWidth: 2,
   borderStyle: 'solid',
   fontFamily: fonts[0].value,
@@ -169,7 +168,7 @@ export const DEFAULT_NODE_STYLE: Partial<NodeData> = {
   fontStyle: 'normal',
   textDecoration: 'none',
   textAlign: 'CENTER',
-  textColor: '#000000ff', 
+  textColor: '#1E3A8A', // Dark blue text - tương phản tốt với nền sáng
   nodeLength: 150,
   branchColor: undefined,
   branchLineStyle: 'bezier',
@@ -197,12 +196,12 @@ export function getNodeComputedStyle(
 
   // 2. Áp dụng style theo Level (depth)
   if (node.id === 'root') {
-    // Level 0: Central Topic
-    baseStyle.color = theme.root.fill || '#FFFFFF';
-    baseStyle.textColor = theme.root.textColor || '#000000';
-    baseStyle.borderColor = theme.root.stroke || '#000000';
-    baseStyle.borderWidth = 4;
-    baseStyle.fontSize = 28;
+    // Level 0: Central Topic - Trong suốt, không viền, to và đậm
+    baseStyle.color = theme.root.fill; // Transparent - giống nền
+    baseStyle.textColor = theme.root.textColor; // Text đen
+    baseStyle.borderColor = theme.root.stroke; // Transparent
+    baseStyle.borderWidth = 0; // Không viền
+    baseStyle.fontSize = 40; // Font size lớn hơn
     baseStyle.fontWeight = 'bold';
     baseStyle.shape = 'roundedRect';
   } else if (topology) {
@@ -239,15 +238,13 @@ export function getNodeComputedStyle(
       baseStyle.borderWidth = 0; // Không có border box
     }
   } else {
-    // Floating nodes - dùng theme default (sẽ được override bởi quick style nếu có)
     const defaultStyle = theme.quickStyles.default;
     baseStyle.color = defaultStyle.fill || '#FFFFFF';
     baseStyle.borderColor = defaultStyle.stroke || '#CBD5E0';
-    baseStyle.textColor = defaultStyle.textColor || '#4A5568';
+    baseStyle.textColor = defaultStyle.textColor || '#21b9d3ff';
   }
 
   // 3. [QUICK STYLE] - Override màu nếu node có quickStyleId
-  // QUAN TRỌNG: Quick style chỉ apply khi node KHÔNG có màu riêng (undefined)
   if (node.quickStyleId && node.quickStyleId !== 'default' && theme.quickStyles[node.quickStyleId]) {
     const qs = theme.quickStyles[node.quickStyleId];
     
@@ -286,13 +283,8 @@ export function getNodeComputedStyle(
     'imageUrl', 'imageWidth', 'imageHeight', 'hyperlink'
   ];
 
-  const isRoot = node.id === 'root';
+  // Cho phép override tất cả thuộc tính, bao gồm cả root node
   OVERRIDABLE_KEYS.forEach(key => {
-    // To preserve the root's identity, some properties are not overridable.
-    if (isRoot && ['fontSize', 'fontWeight', 'textCase', 'borderWidth', 'color', 'textColor', 'borderColor'].includes(key)) {
-      return;
-    }
-
     if (node[key] !== undefined) {
       (computed as any)[key] = node[key];
     }
@@ -381,7 +373,8 @@ type State = {
 
   isDirty: boolean; 
   currentMindmapId: string | null; 
-  currentMindmapName: string; 
+  currentMindmapName: string;
+  hasManuallyRenamedMindmap: boolean; 
 
   setGraph: (n: NodeData[], e: EdgeData[]) => void;
   push: (n: NodeData[], e: EdgeData[]) => void;
@@ -412,12 +405,13 @@ export const useEditorStore = create<State>((set, get) => ({
   globalFont: fonts[0].value,
   branchLineWidth: 2,
   activeColorThemeId: 'dawn',
-  globalBranchColor: '#94A3B8', 
+  globalBranchColor: '#BFDBFE', 
   backgroundColor: '#FAFAFB', 
 
   isDirty: false,
   currentMindmapId: null,
   currentMindmapName: 'Đang tải...',
+  hasManuallyRenamedMindmap: false,
 
   setGraph: (n, e) => {
     set({ nodes: n, edges: e });

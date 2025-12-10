@@ -570,7 +570,7 @@ function NodeStylePanel({
           color={style.branchColor || '#666666'}
           onChange={(branchColor) => handleUpdate({ branchColor })}
         >
-          <div className="w-[83px]">
+          <div className="flex-1 w-20">
             <CustomSelect
               value={style.branchLineThickness}
               onChange={(branchLineThickness) => handleUpdate({ branchLineThickness: branchLineThickness as NodeData['branchLineThickness'] })}
