@@ -418,6 +418,8 @@ function NodeStylePanel({
               value={localLength === 'fit' ? '' : String(localLength)} 
               placeholder="Fit"
               onKeyDown={(e) => {
+                // Prevent global Enter shortcuts (e.g., add sibling) while typing length
+                e.stopPropagation();
                 if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
               }}
               onBlur={(e) => {
