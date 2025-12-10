@@ -1,327 +1,450 @@
-** Bạn thử check lại xem code FE có gọi đúng enpoint không **
+Giai đoạn 0 – Chuẩn hoá model & debug interface
 
-** Bạn thử xem có file nào còn liên quan đến việc này không nhỉ, tôi sẽ gửi bạn tạm thời tôi gửi bạn 2 file trước **
+Mục tiêu: có cấu trúc dữ liệu rõ ràng cho quyền, log/debug dễ, không “nhớ bằng miệng”.
 
-==== src/features/auth/UserAvatarMenu.tsx ====
-// src/features/auth/UserAvatarMenu.tsx
-import { useState } from 'react';
-import { useAuth } from '../../hooks/useAuth';
-import { User, KeyRound, LogOut, LogIn, UserPlus } from 'lucide-react';
-import { useToast } from '../../hooks/useToast';
+0.1. Chuẩn JSON Firestore: mindmapAccess/{mindmapId}
 
-// [MERGE] Sử dụng phiên bản "light mode" từ feature/tt
-export default function UserAvatarMenu() {
-    const { isAuthed, user, login, logout } = useAuth();
-    const [isAvatarMenuOpen, setAvatarMenuOpen] = useState(false);
-    const { addToast } = useToast();
+Đề xuất format (có thể cắt bớt nếu chưa cần hết):
 
-    const handleChangePassword = () => {
-        addToast("Chức năng đổi mật khẩu đang được phát triển.", "info");
-        setAvatarMenuOpen(false);
-    }
+// Firestore: collection mindmapAccess, document id = mindmapId
+{
+  mindmapId: string;       // trùng với id của mindmap
+  ownerId: string;         // user.id hoặc user.sub
 
-    return (
-        <div className="relative">
-            <button 
-                onClick={() => setAvatarMenuOpen(!isAvatarMenuOpen)} 
-                className="w-8 h-8 rounded-full bg-gray-200 hover:bg-gray-300 flex items-center justify-center font-bold text-blue-600 ring-2 ring-transparent hover:ring-blue-500 transition-all"
-                title="Tài khoản"
-            >
-                {isAuthed && user?.email ? user.email[0].toUpperCase() : <User size={20} />}
-            </button>
+  // (tuỳ chọn) mirror từ Mongo cho debug nhanh
+  allowedUsers?: string[]; // userId đã có quyền (VIEW/EDIT)
 
-            {isAvatarMenuOpen && (
-                <div 
-                    className="absolute top-full right-0 mt-2 w-56 bg-white border border-gray-200 rounded-md shadow-lg z-20"
-                    onMouseLeave={() => setAvatarMenuOpen(false)}
-                >
-                    {isAuthed ? (
-                        <>
-                            <div className="px-3 py-2 border-b border-gray-200"> 
-                                <p className="text-sm font-semibold text-gray-900 truncate" title={user?.email || ''}>{user?.email}</p> 
-                            </div>
-                            <button onClick={handleChangePassword} className="w-full text-left px-3 py-2 text-sm text-gray-700/90 hover:bg-gray-100 flex items-center gap-3"> 
-                                <KeyRound size={16} /> 
-                                Đổi mật khẩu
-                            </button>
-                            <button onClick={logout} className="w-full text-left px-3 py-2 text-sm text-red-500 hover:bg-red-50 hover:text-red-600 flex items-center gap-3"> 
-                                <LogOut size={16} /> 
-                                Đăng xuất
-                            </button>
-                        </>
-                    ) : (
-                        <>
-                          <button onClick={() => { login('login'); setAvatarMenuOpen(false); }} className="w-full text-left px-3 py-2 text-sm text-gray-700/90 hover:bg-gray-100 flex items-center gap-3"> 
-                                <LogIn size={16} /> 
-                                Đăng nhập
-                            </button>
-                            <button onClick={() => { login('register'); setAvatarMenuOpen(false); }} className="w-full text-left px-3 py-2 text-sm text-gray-700/90 hover:bg-gray-100 flex items-center gap-3"> 
-                                <UserPlus size={16} /> 
-                                Đăng ký
-                            </button>
-                        </>
-                    )}
-                </div>
-            )}
-        </div>
-    );
+  pendingRequests: {
+    uid: string;
+    displayName: string;
+    requestedPermission: 'VIEWER' | 'EDITOR'; // NEW
+    from: 'direct-link' | 'upgrade-request';  // NEW: vào từ link hay xin nâng quyền
+    timestamp: number; // millis
+  }[];
+
+  // Lưu quyết định gần nhất cho từng user để trả về "bị từ chối"
+  lastDecisions?: {
+    [uid: string]: {
+      status: 'approved' | 'rejected';
+      permission: 'VIEWER' | 'EDITOR';
+      decidedAt: number;
+    };
+  };
+
+  updatedAt: number;
+  version: number; // tăng +1 mỗi lần update, dễ debug conflict
 }
-==== src/services/AuthApi.ts ====
-import { cognitoConfig } from '../auth/cognitoConfig';
 
-// Base URL for your custom authentication backend
-// [GIỮ NGUYÊN] Vì các hàm cũ (loginUser, registerUser...) đang dùng nó.
-const API_BASE = 'http://localhost:8081/api/auth';
 
-/**
- * A utility function to parse the response from the fetch API.
- * It handles both JSON and text responses.
- * @param response The fetch response object.
- * @returns A promise that resolves to an object with 'ok' status and 'body'.
- */
-export const parseResponse = async (response: Response) => {
-  const text = await response.text();
+Cái này giúp bạn mở Firestore console lên là nhìn ngay được:
+
+Ai là owner.
+
+Ai đang pending, xin VIEW hay EDIT.
+
+Ai đã từng bị reject.
+
+0.2. Chuẩn JSON Mongo: collaborators
+
+Hiện bạn đã có collection collaborators. Đề xuất mở rộng:
+
+{
+  _id: string;
+  mindmapId: string;
+  userId: string;
+
+  // Quyền hiện tại
+  permission: 'OWNER' | 'EDITOR' | 'VIEWER';
+
+  // Trạng thái lifecycle
+  status: 'ACTIVE' | 'PENDING' | 'REJECTED';
+
+  // Nếu là request access / upgrade
+  requestedPermission?: 'VIEWER' | 'EDITOR'; // B xin quyền gì
+  requestedAt?: Date;
+
+  // Ai tạo / ai mời
+  invitedBy?: string;    // ownerId hoặc người mời
+  inviteType?: 'OWNER_INVITE' | 'REQUEST_ACCESS' | 'LINK';
+
+  // Nếu owner đã quyết định
+  decidedBy?: string;    // userId của owner
+  decidedAt?: Date;
+
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+
+Nhờ vậy:
+
+BE query được list pending bằng mindmapId + status:PENDING.
+
+Dễ audit: ai xin, xin quyền gì, ai duyệt, lúc nào.
+
+Giai đoạn 1 – Cho B auto “unlock” sau khi được duyệt (ưu tiên của bạn)
+
+Mục tiêu:
+
+B đang bị chặn (403) → thấy màn “Request access”.
+
+A approve → B tự động vào được mindmap, không cần F5.
+
+Chưa cần UI chọn VIEW/EDITOR trong modal, chỉ cần cấp VIEWER là đủ test luồng.
+
+1.1. FE: xử lý lại state ở Editor
+
+a/ Thêm phân biệt 2 nguồn:
+
+backendAccess (từ API GET):
+
+'unknown' | 'allowed' | 'denied'
+
+permission (từ Firestore hook useMindmapAccess):
+
+'loading' | 'allowed' | 'denied'
+
+Editor render theo:
+
+Nếu isDataLoaded === false → spinner.
+
+Nếu backendAccess === 'denied' && permission === 'denied' → AccessDeniedScreen.
+
+Nếu backendAccess === 'denied' && permission === 'allowed' → thử load lại từ BE.
+
+b/ Auto reload khi Firestore báo allowed
+
+Trong Editor:
+
+useEffect(() => {
+  if (!id) return;
+  if (permission !== 'allowed') return;
+  if (!accessDenied) return; // chỉ reload khi trước đó bị chặn
+
+  (async () => {
+    try {
+      const data = await mindmapsApi.get(id);
+      // nếu 200 → hydrate lại store
+      setAccessDenied(false);
+      setIsDataLoaded(true);
+
+      // TODO: tái sử dụng logic loadData:
+      setName(data.name);
+      setOwnerId(data.ownerId);
+      setGraph(data.nodes, data.edges);
+      setGlobalStore(...);
+      setBackgroundColor(...);
+      setSelectedNodeIds(['root']);
+    } catch (e: any) {
+      // nếu vẫn 403 thì thôi, giữ nguyên AccessDeniedScreen
+      // có thể show toast: "Quyền đang cập nhật, thử lại sau"
+    }
+  })();
+}, [permission, accessDenied, id]);
+
+
+c/ Sửa init useMindmapAccess
+
+Hiện hook khi không có doc thì set permission = 'allowed'.
+Để an toàn hơn:
+
+Nếu !docSnap.exists() → nên set permission = 'denied' (hoặc 'loading') cho tới khi BE confirm.
+Đặc biệt với doc private, việc “auto allowed” là nguy hiểm.
+
+1.2. BE + FE: A approve thì cập nhật quyền thật
+
+Tối thiểu để auto unlock chạy được:
+
+Khi A ấn “Duyệt” trong AccessRequestModal, FE phải:
+
+Gọi API cấp quyền thật.
+
+Cập nhật Firestore để B nhận signal.
+
+FE (pseudo):
+
+const handleApproveRequest = async (uid: string) => {
+  if (!id) return;
   try {
-    return { ok: response.ok, status: response.status, body: JSON.parse(text) };
-  } catch {
-    return { ok: response.ok, status: response.status, body: text || {} };
+    // 1. Cấp quyền Viewer trên BE
+    await mindmapsApi.updateCollaboratorPermission(id, uid, 'VIEWER');
+
+    // 2. Xoá khỏi pendingRequests Firestore
+    await approveRequest(uid);
+
+    addToast('Đã duyệt yêu cầu truy cập', 'success');
+  } catch (e) {
+    addToast('Không thể duyệt yêu cầu', 'error');
   }
 };
 
-/**
- * [MỚI] Làm mới (refresh) Access Token bằng Refresh Token.
- * Hàm này gọi thẳng đến endpoint /oauth2/token của Cognito
- * (sử dụng VITE_COGNITO_DOMAIN, giải quyết lỗi xung đột tên miền).
- */
-export const refreshToken = async (refreshToken: string) => {
-  const body = new URLSearchParams({
-    grant_type: 'refresh_token',
-    client_id: cognitoConfig.ClientId,
-    refresh_token: refreshToken,
-  });
 
-  const res = await fetch(`https://${cognitoConfig.Domain}/oauth2/token`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body,
-  });
+BE phía PUT /api/mindmaps/{id}/collaborators/{userId}:
 
-  if (!res.ok) {
-    const errorBody = await res.json();
-    console.error("Token refresh failed:", errorBody);
-    throw new Error(`token_refresh_failed: ${errorBody.error_description || res.status}`);
-  }
+Đảm bảo khi collaborator có permission != null và status=ACTIVE → GET /api/mindmaps/{id} trả 200 cho user đó.
 
-  // Trả về token mới (Access Token và ID Token)
-  // Cognito KHÔNG trả về Refresh Token mới trong luồng này
-  return res.json() as Promise<{
-    access_token: string;
-    id_token: string;
-    expires_in?: number;
-  }>;
+Như vậy:
+
+A ấn “Duyệt” → BE gán VIEWER.
+
+A cũng update Firestore → B nhận permission='allowed'.
+
+B thấy permission='allowed' && accessDenied === true → gọi lại GET.
+
+GET trả 200 → B load mindmap → xong.
+
+Ở giai đoạn này, UI duyệt chỉ cấp VIEWER mặc định, cho nhanh.
+
+Giai đoạn 2 – Duyệt với chọn VIEW/EDITOR + từ chối rõ ràng
+
+Mục tiêu:
+
+A có UI chọn cấp VIEWER hay EDITOR khi duyệt.
+
+A có thể từ chối, B thấy là “đã bị từ chối”.
+
+BE ghi đầy đủ vào collaborators (PENDING → ACTIVE/REJECTED).
+
+2.1. FE: AccessRequestModal cho chọn role
+
+Trong list pending request:
+
+Với mỗi req, thêm dropdown:
+
+“Cấp quyền: Viewer / Editor”
+
+Nút “Duyệt” gửi role:
+
+onApprove(uid, chosenPermission)
+
+
+ShareModal hoặc Editor bọc lại:
+
+const handleApproveRequest = async (uid: string, perm: Permission) => {
+  if (!id) return;
+  await mindmapsApi.updateCollaboratorPermission(id, uid, perm);
+  await approveRequest(uid); // Firestore
 };
 
-/**
- * Checks if an email already exists in the system.
- * @param email The email to check.
- * @returns A promise with the result of the check.
- */
-export const checkEmail = async (email: string) => {
-  const resp = await fetch(`${API_BASE}/checkemail`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email }),
-  });
-  return await parseResponse(resp);
-};
+2.2. BE: xử lý lifecycle PENDING → ACTIVE / REJECTED
 
-/**
- * Logs in a user with email and password.
- * @param email The user's email.
- * @param password The user's password.
- * @returns A promise with the login result, including tokens.
- */
-export const loginUser = async (email: string, password: string) => {
-  const resp = await fetch(`${API_BASE}/login`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email, password }),
-  });
-  return await parseResponse(resp);
-};
+POST /api/mindmaps/{id}/request-access:
 
-/**
- * Registers a new user.
- * @param email The new user's email.
- * @param password The new user's password.
- * @returns A promise with the registration result.
- */
-export const registerUser = async (email: string, password: string) => {
-  const resp = await fetch(`${API_BASE}/cognito/register`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email, password }),
-  });
-  return await parseResponse(resp);
-};
+Tạo collaborators với:
 
-/**
- * Confirms a user's registration with a confirmation code.
- * @param username The username (email) to confirm.
- * @param code The confirmation code sent to the user.
- * @returns A promise with the confirmation result.
- */
-export const confirmSignup = async (username: string, code: string) => {
-  const resp = await fetch(`${API_BASE}/cognito/confirm`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ username, code }),
-  });
-  return await parseResponse(resp);
-};
+status: 'PENDING'
 
-/**
- * Resends the confirmation code to a user.
- * @param username The username (email) to resend the code to.
- * @returns A promise with the result of the resend operation.
- */
-export const resendConfirmationCode = async (username: string) => {
-  const resp = await fetch(`${API_BASE}/cognito/resend`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ username }),
-  });
-  return await parseResponse(resp);
-};
+requestedPermission: 'VIEWER'|'EDITOR' (từ FE)
+
+POST /api/mindmaps/{id}/requests/{userId}/approve:
+
+Set status: 'ACTIVE'
+
+Set permission = perm từ request
+
+Ghi decidedBy, decidedAt
+
+POST /api/mindmaps/{id}/requests/{userId}/reject:
+
+Set status: 'REJECTED'
+
+(Tuỳ bạn có xoá record hay giữ để log)
+
+Khi reject:
+
+BE cập nhật collaborators PENDING → REJECTED.
+
+BE (hoặc FE tạm thời) update Firestore lastDecisions[uid].status = 'rejected'.
+
+useMindmapAccess đọc lastDecisions → set requestStatus = 'rejected', hiển thị message: “Yêu cầu của bạn đã bị từ chối”.
+
+Giai đoạn 3 – Link chia sẻ công khai (VIEW/EDIT) + request nâng quyền
+
+Mục tiêu:
+
+Trong Share modal:
+
+Chọn “Bất kỳ ai có link: Xem / Chỉnh sửa”.
+
+B truy cập qua link public:
+
+Nếu chỉ được VIEW → vẫn xem bình thường.
+
+Nếu muốn EDIT → có nút “Yêu cầu quyền chỉnh sửa” → join vào queue giống Google Docs.
+
+3.1. BE: mở rộng accessSettings
+
+Trong collection mindmaps:
+
+accessSettings: {
+  isPublic: boolean;
+  publicAccessLevel: 'NONE' | 'VIEW' | 'VIEW_EDIT'; // hoặc 'VIEW' | 'EDIT'
+
+  // optional cho workspace/team sau
+  workspaceVisibility?: 'PRIVATE' | 'WORKSPACE_VIEW' | 'WORKSPACE_EDIT';
+}
 
 
-/**
- * Initiates the forgot password flow for a user.
- * @param username The user's email.
- * @returns A promise with the result.
- */
-export const startForgotPassword = async (username: string) => {
-    const resp = await fetch(`${API_BASE}/forgot`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username }),
-    });
-    return await parseResponse(resp);
-};
+Rule GET:
 
-/**
- * Confirms the password reset with a code and new password.
- * @param username The user's email.
- * @param code The reset code sent to the user.
- * @param newPassword The new password.
- * @returns A promise with the result of the reset operation.
- */
-export const confirmResetPassword = async (username: string, code: string, newPassword: string) => {
-    const resp = await fetch(`${API_BASE}/reset`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username, code, newPassword }),
-    });
-    return await parseResponse(resp);
-};
+Nếu user là owner hoặc collaborator ACTIVE:
 
+Cho phép theo permission.
 
-/**
- * Generates the URL for Google login via Cognito Hosted UI.
- * (Hàm này vẫn chính xác)
- */
-export const getGoogleLoginUrl = () => {
-  const params = new URLSearchParams({
-    response_type: 'code',
-    client_id: cognitoConfig.ClientId,
-    redirect_uri: cognitoConfig.RedirectUri,
-    scope: cognitoConfig.Scope,
-    identity_provider: 'Google',
-  });
-  return `https://${cognitoConfig.Domain}/oauth2/authorize?${params.toString()}`;
-};
+Nếu isPublic === true:
+
+Nếu publicAccessLevel cho VIEW:
+
+Cho xem (VIEWER).
+
+Nếu cho EDIT:
+
+Cho EDIT (EDITOR tạm thời), nhưng bạn nên yêu cầu login, không cho ẩn danh sửa.
+
+3.2. FE: ShareModal
+
+Trong block “Chia sẻ công khai”:
+
+Thay switch thành:
+
+<select
+  value={shareSettings.publicAccessLevel}
+  onChange={(e) => handleUpdatePublicAccess(e.target.value as 'NONE'|'VIEW'|'EDIT')}
+>
+  <option value="NONE">Tắt (Chỉ người được mời)</option>
+  <option value="VIEW">Bất kỳ ai có link: Xem</option>
+  <option value="EDIT">Bất kỳ ai có link: Chỉnh sửa</option>
+</select>
 
 
-(base) admin@SINCE205---MacPro src % find . -maxdepth 10 -print
-.
-./main.tsx
-./app
-./app/providers
-./app/providers/ThemeProvider.tsx
-./app/providers/AuthProvider.tsx
-./app/providers/NotificationProvider.tsx
-./app/routes.tsx
-./app/store
-./app/store/authStore.ts
-./app/store/useEditorStore.ts
-./app/store/useMindmapsStore.ts
-./auth
-./auth/cognitoDirect.ts
-./auth/cognito.ts
-./auth/cognitoConfig.ts
-./auth/guards
-./auth/guards/ProtectedRoute.tsx
-./features
-./features/collaboration
-./features/collaboration/ShareModal.tsx
-./features/auth
-./features/auth/LogoHeader.tsx
-./features/auth/LoginForm.tsx
-./features/auth/RegisterForm.tsx
-./features/auth/LogoutButton.tsx
-./features/auth/ResetForm.tsx
-./features/auth/AuthModal.tsx
-./features/auth/GoogleLoginButton.tsx
-./features/auth/ForgotForm.tsx
-./features/auth/MessageDisplay.tsx
-./features/auth/ConfirmForm.tsx
-./features/auth/ModeToggle.tsx
-./features/auth/UserAvatarMenu.tsx
-./features/dashboard
-./features/dashboard/MindmapCardWithOptions.tsx
-./features/dashboard/MindmapCard.tsx
-./features/dashboard/BigStartButton.tsx
-./features/editor
-./features/editor/AccessDeniedScreen.tsx
-./features/editor/EditorToolbar.tsx
-./features/editor/utils
-./features/editor/utils/EditorHelpers.ts
-./features/editor/FormattingToolbar.tsx
-./features/editor/CursorLayer.tsx
-./utils
-./utils/colorUtils.ts
-./styles
-./styles/globals.css
-./components
-./components/layout
-./components/layout/Header.tsx
-./components/layout/Sidebar.tsx
-./components/common
-./components/common/Icon.tsx
-./components/common/ConfirmModal.tsx
-./components/common/Button.tsx
-./components/common/Modal.tsx
-./components/common/Toast.tsx
-./components/common/Spinner.tsx
-./vite-env.d.ts
-./hooks
-./hooks/useToast.ts
-./hooks/useLocalMindmap.ts
-./hooks/useRealtime.ts
-./hooks/useSync.ts
-./hooks/useAuth.ts
-./hooks/useTheme.ts
-./pages
-./pages/Dashboard.tsx
-./pages/.gitkeep
-./pages/Editor.tsx
-./pages/Logout.tsx
-./pages/Callback.tsx
-./all_tsx_files.txt
-./services
-./services/mindmapsApi.ts
-./services/AuthApi.ts
-./services/api.ts
-./services/authStorage.ts
-./services/dataMapper.ts
-(base) admin@SINCE205---MacPro src % 
+handleUpdatePublicAccess gọi:
+
+await mindmapsApi.updateShareSettings(mindmapId, {
+  isPublic: value !== 'NONE',
+  publicAccessLevel: value === 'NONE' ? 'DISABLED' : value === 'VIEW' ? 'VIEW' : 'EDIT',
+});
+
+3.3. FE cho người đang VIEW xin lên EDIT (câu hỏi bạn nêu)
+
+Khi B có quyền VIEW (do được mời hoặc do link VIEW) mà:
+
+Ấn nút “Edit” hoặc thực hiện thao tác chỉnh sửa.
+
+Nếu BE trả 403 (không cho EDIT):
+
+Show popup nhỏ:
+
+“Bạn hiện chỉ có quyền xem. Bạn muốn gửi yêu cầu quyền chỉnh sửa không?”
+
+Nếu đồng ý:
+
+Gọi POST /api/mindmaps/{id}/request-access với requestedPermission = 'EDITOR'.
+
+Cập nhật Firestore queue (hoặc nhờ BE).
+
+Owner A sẽ thấy trong queue:
+
+Request B tới từ from: 'upgrade-request'.
+
+requestedPermission: 'EDITOR'.
+
+Tức là bạn có 2 luồng request dùng chung hệ thống:
+
+Không có quyền → xin VIEW/EDIT.
+
+Đang VIEW → xin nâng lên EDIT.
+
+Giai đoạn 4 – Workspace / Team
+
+Mục tiêu:
+
+Nếu sau này có workspace (team), chia quyền theo team cho gọn.
+
+4.1. BE: bổ sung layer workspace
+
+users có workspaceId.
+
+mindmaps có workspaceId.
+
+accessSettings.workspaceVisibility:
+
+PRIVATE – chỉ owner + collaborators.
+
+WORKSPACE_VIEW – tất cả trong workspace VIEW được.
+
+WORKSPACE_EDIT – tất cả trong workspace EDIT được.
+
+Khi GET:
+
+Nếu user cùng workspaceId:
+
+Và visibility là WORKSPACE_VIEW/EDIT → auto coi như collaborator với role tương ứng (trừ khi bị explicit block trong future).
+
+4.2. FE: ShareModal
+
+Thêm block nhỏ:
+
+<select
+  value={workspaceVisibility}
+  onChange={...}
+>
+  <option value="PRIVATE">Chỉ mình tôi và người được mời</option>
+  <option value="WORKSPACE_VIEW">Mọi người trong Workspace: Xem</option>
+  <option value="WORKSPACE_EDIT">Mọi người trong Workspace: Chỉnh sửa</option>
+</select>
+
+Giai đoạn 5 – Email / In-app notification
+
+Mục tiêu: nâng cấp lên “Google-level experience” nhưng làm sau cho đỡ overload.
+
+Ý tưởng:
+
+Khi có REQUEST_ACCESS:
+
+BE push:
+
+1 record vào notifications collection (Mongo).
+
+(Sau này) trigger gửi email nếu owner bật.
+
+FE:
+
+Nút “Chuông” trên toolbar không chỉ đọc từ Firestore mà còn có thể đọc từ API /api/notifications.
+
+Bạn có thể để phase này sau khi core flow request/approve/deny đã chạy cực ổn.
+
+Tóm tắt lại theo ưu tiên bạn nêu
+
+✅ Giai đoạn 0: chuẩn JSON cho Firestore + Mongo, chỉnh useMindmapAccess không tự “allowed”.
+
+✅ Giai đoạn 1 (ưu tiên):
+
+FE:
+
+Khi Firestore báo permission='allowed' thì Editor auto gọi lại BE để load mindmap cho B.
+
+FE+BE:
+
+Khi A ấn “Duyệt”: gọi updateCollaboratorPermission(...,'VIEWER') + approveRequest (Firestore).
+
+✅ Giai đoạn 2:
+
+UI chọn VIEW/EDITOR khi duyệt.
+
+Luồng từ chối + hiển thị “đã bị từ chối” phía B.
+
+✅ Giai đoạn 3:
+
+Public link mode: ANYONE WITH LINK: VIEW/EDIT.
+
+Viewer request upgrade lên Editor.
+
+✅ Giai đoạn 4:
+
+Workspace / team visibility.
+
+✅ Giai đoạn 5:
+
+Email / in-app notifications.
+
+Bạn có thể implement từng giai đoạn rồi mình cùng review lại code để đảm bảo đúng “tiêu chuẩn production” như bạn muốn.

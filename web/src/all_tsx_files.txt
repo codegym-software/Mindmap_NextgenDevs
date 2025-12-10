@@ -1,6 +1,3 @@
-** Bạnc có thể check lại giúp tôi xem nó đã gọi đúng enpoint chưa **
-
-
 ==== ./main.tsx ====
 import React from "react";
 import ReactDOM from "react-dom/client";
@@ -1036,44 +1033,86 @@ export default function ProtectedRoute() {
 }
 
 ==== ./features/collaboration/ShareModal.tsx ====
+// src/features/collaboration/ShareModal.tsx
 import React, { useEffect, useState } from 'react';
-import { 
-  X, Copy, Globe, Lock, UserPlus, Trash2, Check, 
-  Facebook, Twitter, Linkedin, Code, QrCode 
+import {
+  X,
+  Copy,
+  Globe,
+  Lock,
+  UserPlus,
+  Trash2,
+  Check,
+  Facebook,
+  Twitter,
+  Linkedin,
+  Code,
+  QrCode,
+  Bell,
 } from 'lucide-react';
 import { useToast } from '../../hooks/useToast';
-import { mindmapsApi, Collaborator, Permission, ShareSettingsResponse } from '../../services/mindmapsApi';
+import {
+  mindmapsApi,
+  Collaborator,
+  Permission,
+  ShareSettingsResponse,
+} from '../../services/mindmapsApi';
 import { useAuth } from '../../hooks/useAuth';
+import type { RequestUser } from '../../hooks/useMindmapAccess';
 
 type Props = {
   isOpen: boolean;
   onClose: () => void;
   mindmapId: string;
   isOwner: boolean;
+
+  // mới: queue request từ Firestore
+  pendingRequests?: RequestUser[];
+  onApproveRequest?: (uid: string, perm: Permission) => void;
+  onDenyRequest?: (uid: string) => void;
 };
 
 type TabType = 'invite' | 'social' | 'embed';
 
-export default function ShareModal({ isOpen, onClose, mindmapId, isOwner }: Props) {
+export default function ShareModal({
+  isOpen,
+  onClose,
+  mindmapId,
+  isOwner,
+  pendingRequests = [],
+  onApproveRequest,
+  onDenyRequest,
+}: Props) {
   const { user } = useAuth();
   const { addToast } = useToast();
-  
+
   const [activeTab, setActiveTab] = useState<TabType>('invite');
   const [loading, setLoading] = useState(false);
   const [collaborators, setCollaborators] = useState<Collaborator[]>([]);
-  const [shareSettings, setShareSettings] = useState<ShareSettingsResponse | null>(null);
+  const [shareSettings, setShareSettings] = useState<ShareSettingsResponse | null>(
+    null,
+  );
+  
+  const [workspaceVisibility, setWorkspaceVisibility] = useState<
+  'PRIVATE' | 'WORKSPACE_VIEW' | 'WORKSPACE_EDIT'
+>('PRIVATE');
 
   // State cho form mời
   const [inviteEmail, setInviteEmail] = useState('');
-  const [invitePermission, setInvitePermission] = useState<Permission>('VIEWER');
+  const [invitePermission, setInvitePermission] =
+    useState<Permission>('VIEWER');
   const [isInviting, setIsInviting] = useState(false);
+  const [requestPermissions, setRequestPermissions] = useState<
+  Record<string, Permission>
+>({});
 
   // Load dữ liệu khi mở modal
   useEffect(() => {
     if (isOpen && mindmapId) {
-      loadData();
+      void loadData();
       setActiveTab('invite'); // Reset về tab đầu tiên
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, mindmapId]);
 
   const loadData = async () => {
@@ -1081,19 +1120,26 @@ export default function ShareModal({ isOpen, onClose, mindmapId, isOwner }: Prop
     try {
       const [collabs, settings] = await Promise.all([
         mindmapsApi.getCollaborators(mindmapId),
-        mindmapsApi.get(mindmapId) // Giả lập lấy settings từ detail
+        mindmapsApi.get(mindmapId), // Giả lập lấy settings từ detail
       ]);
-      
-      setCollaborators(collabs);
-      
-      const doc: any = settings; 
-      setShareSettings({
-          mindmapId,
-          isPublic: doc.accessSettings?.isPublic || false,
-          publicAccessLevel: doc.accessSettings?.publicAccessLevel || 'DISABLED',
-          shareLink: doc.accessSettings?.isPublic ? `${window.location.origin}/editor/${mindmapId}` : null
-      });
 
+      setCollaborators(collabs);
+
+      const doc: any = settings;
+      setShareSettings({
+        mindmapId,
+        isPublic: doc.accessSettings?.isPublic || false,
+        publicAccessLevel:
+          doc.accessSettings?.publicAccessLevel || 'DISABLED',
+        shareLink: doc.accessSettings?.isPublic
+          ? `${window.location.origin}/editor/${mindmapId}`
+          : null,
+        
+      });
+            // nếu BE có field này thì sync, còn không thì thôi
+      if (doc.accessSettings?.workspaceVisibility) {
+        setWorkspaceVisibility(doc.accessSettings.workspaceVisibility);
+      }
     } catch (e) {
       console.error(e);
       addToast('Không thể tải thông tin chia sẻ', 'error');
@@ -1107,12 +1153,16 @@ export default function ShareModal({ isOpen, onClose, mindmapId, isOwner }: Prop
     if (!inviteEmail) return;
     setIsInviting(true);
     try {
-      await mindmapsApi.inviteCollaborator(mindmapId, inviteEmail, invitePermission);
+      await mindmapsApi.inviteCollaborator(
+        mindmapId,
+        inviteEmail,
+        invitePermission,
+      );
       addToast(`Đã mời ${inviteEmail} thành công`, 'success');
       setInviteEmail('');
-      loadData(); 
+      await loadData();
     } catch (e: any) {
-      addToast(e.response?.data?.detail || 'Mời thất bại', 'error');
+      addToast(e?.response?.data?.detail || 'Mời thất bại', 'error');
     } finally {
       setIsInviting(false);
     }
@@ -1120,8 +1170,16 @@ export default function ShareModal({ isOpen, onClose, mindmapId, isOwner }: Prop
 
   const handleUpdatePermission = async (userId: string, newPerm: Permission) => {
     try {
-      await mindmapsApi.updateCollaboratorPermission(mindmapId, userId, newPerm);
-      setCollaborators(prev => prev.map(c => c.userId === userId ? { ...c, permission: newPerm } : c));
+      await mindmapsApi.updateCollaboratorPermission(
+        mindmapId,
+        userId,
+        newPerm,
+      );
+      setCollaborators((prev: Collaborator[]) =>
+        prev.map((c: Collaborator) =>
+          c.userId === userId ? { ...c, permission: newPerm } : c,
+        ),
+      );
       addToast('Đã cập nhật quyền', 'success');
     } catch (e) {
       addToast('Cập nhật thất bại', 'error');
@@ -1132,27 +1190,66 @@ export default function ShareModal({ isOpen, onClose, mindmapId, isOwner }: Prop
     if (!confirm('Bạn chắc chắn muốn xóa người này?')) return;
     try {
       await mindmapsApi.removeCollaborator(mindmapId, userId);
-      setCollaborators(prev => prev.filter(c => c.userId !== userId));
+      setCollaborators((prev: Collaborator[]) =>
+        prev.filter((c: Collaborator) => c.userId !== userId),
+      );
       addToast('Đã xóa thành công', 'success');
     } catch (e) {
       addToast('Xóa thất bại', 'error');
     }
   };
 
-  const handleTogglePublic = async (isPublic: boolean) => {
-    try {
-      const res = await mindmapsApi.updateShareSettings(mindmapId, isPublic, isPublic ? 'VIEW' : 'DISABLED');
-      const link = isPublic ? `${window.location.origin}/editor/${mindmapId}` : null;
-      setShareSettings({ ...res, shareLink: link });
-      addToast(isPublic ? 'Đã bật Public Link' : 'Đã tắt Public Link', 'success');
-    } catch (e) {
-      addToast('Lỗi cập nhật settings', 'error');
-    }
-  };
+  const handleUpdateWorkspaceVisibility = async (
+  value: 'PRIVATE' | 'WORKSPACE_VIEW' | 'WORKSPACE_EDIT',
+) => {
+  try {
+    // TODO: sau này nếu có API backend để lưu workspace visibility thì gọi ở đây
+    setWorkspaceVisibility(value);
+    addToast('Đã cập nhật chế độ chia sẻ trong Workspace', 'success');
+  } catch (e) {
+    console.error(e);
+    addToast('Cập nhật chế độ chia sẻ trong Workspace thất bại', 'error');
+  }
+};
+
+
+const handleUpdatePublicAccess = async (
+  value: 'NONE' | 'VIEW' | 'EDIT',
+) => {
+  const isPublic = value !== 'NONE';
+  const publicAccessLevel =
+    value === 'NONE'
+      ? 'DISABLED'
+      : value === 'VIEW'
+      ? 'VIEW'
+      : 'EDIT';
+
+  try {
+    const res = await mindmapsApi.updateShareSettings(mindmapId, {
+      isPublic,
+      publicAccessLevel,
+    });
+
+    const link = isPublic
+      ? `${window.location.origin}/share/${mindmapId}`
+      : null;
+
+    setShareSettings({ ...res, shareLink: link });
+
+    addToast('Đã cập nhật chế độ chia sẻ công khai', 'success');
+  } catch (e) {
+    addToast('Lỗi cập nhật settings', 'error');
+  }
+};
+
 
   const copyToClipboard = (text: string) => {
-    navigator.clipboard.writeText(text);
-    addToast('Đã sao chép vào bộ nhớ tạm', 'success');
+    navigator.clipboard
+      .writeText(text)
+      .then(() => addToast('Đã sao chép vào bộ nhớ tạm', 'success'))
+      .catch(() =>
+        addToast('Không thể sao chép vào bộ nhớ tạm', 'error'),
+      );
   };
 
   // --- Helpers cho Social & Embed ---
@@ -1161,14 +1258,29 @@ export default function ShareModal({ isOpen, onClose, mindmapId, isOwner }: Prop
 
   const shareToSocial = (platform: 'facebook' | 'twitter' | 'linkedin') => {
     if (!shareSettings?.isPublic) {
-        addToast('Vui lòng bật "Chia sẻ công khai" trước khi đăng lên MXH.', 'error');
-        return;
+      addToast(
+        'Vui lòng bật "Chia sẻ công khai" ở tab Mời & Link trước khi chia sẻ.',
+        'error',
+      );
+      return;
     }
     let url = '';
-    switch(platform) {
-        case 'facebook': url = `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(currentUrl)}`; break;
-        case 'twitter': url = `https://twitter.com/intent/tweet?url=${encodeURIComponent(currentUrl)}&text=Check out my mindmap!`; break;
-        case 'linkedin': url = `https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(currentUrl)}`; break;
+    switch (platform) {
+      case 'facebook':
+        url = `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(
+          currentUrl,
+        )}`;
+        break;
+      case 'twitter':
+        url = `https://twitter.com/intent/tweet?url=${encodeURIComponent(
+          currentUrl,
+        )}&text=Check out my mindmap!`;
+        break;
+      case 'linkedin':
+        url = `https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(
+          currentUrl,
+        )}`;
+        break;
     }
     window.open(url, '_blank', 'width=600,height=400');
   };
@@ -1176,32 +1288,56 @@ export default function ShareModal({ isOpen, onClose, mindmapId, isOwner }: Prop
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 bg-black/50 z-[60] flex items-center justify-center p-4 backdrop-blur-sm" onClick={onClose}>
-      <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg overflow-hidden flex flex-col max-h-[90vh]" onClick={e => e.stopPropagation()}>
-        
+    <div
+      className="fixed inset-0 bg-black/50 z-[60] flex items-center justify-center p-4 backdrop-blur-sm"
+      onClick={onClose}
+    >
+      <div
+        className="bg-white rounded-xl shadow-2xl w-full max-w-lg overflow-hidden flex flex-col max-h-[90vh]"
+        onClick={(e) => e.stopPropagation()}
+      >
         {/* Header */}
         <div className="px-6 py-4 border-b flex justify-between items-center bg-gray-50">
-          <h3 className="font-bold text-lg text-gray-800">Chia sẻ Mindmap</h3>
-          <button onClick={onClose} className="text-gray-500 hover:text-gray-700 transition-colors"><X size={20} /></button>
+          <h3 className="font-bold text-lg text-gray-800">
+            Chia sẻ Mindmap
+          </h3>
+          <button
+            onClick={onClose}
+            className="text-gray-500 hover:text-gray-700 transition-colors"
+          >
+            <X size={20} />
+          </button>
         </div>
 
-        {/* Tabs - Giống Xmind */}
+        {/* Tabs */}
         <div className="flex border-b px-6 pt-2 gap-6 text-sm font-medium text-gray-500">
-          <button 
+          <button
             onClick={() => setActiveTab('invite')}
-            className={`pb-3 border-b-2 transition-colors ${activeTab === 'invite' ? 'border-blue-600 text-blue-600' : 'border-transparent hover:text-gray-800'}`}
+            className={`pb-3 border-b-2 transition-colors ${
+              activeTab === 'invite'
+                ? 'border-blue-600 text-blue-600'
+                : 'border-transparent hover:text-gray-800'
+            }`}
           >
             Mời & Link
           </button>
-          <button 
+          <button
             onClick={() => setActiveTab('social')}
-            className={`pb-3 border-b-2 transition-colors ${activeTab === 'social' ? 'border-blue-600 text-blue-600' : 'border-transparent hover:text-gray-800'}`}
+            className={`pb-3 border-b-2 transition-colors ${
+              activeTab === 'social'
+                ? 'border-blue-600 text-blue-600'
+                : 'border-transparent hover:text-gray-800'
+            }`}
           >
             Mạng xã hội
           </button>
-          <button 
+          <button
             onClick={() => setActiveTab('embed')}
-            className={`pb-3 border-b-2 transition-colors ${activeTab === 'embed' ? 'border-blue-600 text-blue-600' : 'border-transparent hover:text-gray-800'}`}
+            className={`pb-3 border-b-2 transition-colors ${
+              activeTab === 'embed'
+                ? 'border-blue-600 text-blue-600'
+                : 'border-transparent hover:text-gray-800'
+            }`}
           >
             Nhúng (Embed)
           </button>
@@ -1209,212 +1345,419 @@ export default function ShareModal({ isOpen, onClose, mindmapId, isOwner }: Prop
 
         {/* Body */}
         {loading ? (
-           <div className="p-8 text-center text-gray-500">Đang tải...</div>
+          <div className="p-8 text-center text-gray-500">Đang tải...</div>
         ) : (
           <div className="p-6 overflow-y-auto">
-            
             {/* TAB 1: INVITE */}
             {activeTab === 'invite' && (
-                <div className="space-y-6">
-                    {/* Public Access */}
-                    <div className="flex items-start gap-4 p-3 bg-gray-50 rounded-lg border border-gray-100">
-                        <div className={`p-2 rounded-full mt-1 ${shareSettings?.isPublic ? 'bg-green-100 text-green-600' : 'bg-gray-200 text-gray-500'}`}>
-                            {shareSettings?.isPublic ? <Globe size={20} /> : <Lock size={20} />}
-                        </div>
-                        <div className="flex-1">
-                            <div className="flex justify-between items-center mb-1">
-                                <h4 className="font-medium text-gray-900">Chia sẻ công khai</h4>
-                                {isOwner && (
-                                    <label className="relative inline-flex items-center cursor-pointer">
-                                        <input type="checkbox" className="sr-only peer" checked={shareSettings?.isPublic || false} onChange={e => handleTogglePublic(e.target.checked)} />
-                                        <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
-                                    </label>
-                                )}
-                            </div>
-                            <p className="text-sm text-gray-500 mb-2">
-                                {shareSettings?.isPublic 
-                                    ? "Bất kỳ ai có liên kết đều có thể xem." 
-                                    : "Chỉ những người được mời mới có thể truy cập."}
-                            </p>
-                            
-                            {shareSettings?.isPublic && (
-                                <div className="flex gap-2">
-                                    <input readOnly value={shareSettings.shareLink || ''} className="flex-1 bg-white border border-gray-300 text-gray-600 text-sm rounded-lg p-2 outline-none" />
-                                    <button onClick={() => copyToClipboard(shareSettings.shareLink || '')} className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-2 rounded-lg font-medium flex items-center gap-1 transition-colors">
-                                        <Copy size={16} />
-                                    </button>
-                                </div>
-                            )}
-                        </div>
+              <div className="space-y-6">
+                {/* Public Access */}
+                <div className="flex items-start gap-4 p-3 bg-gray-50 rounded-lg border border-gray-100">
+                  <div
+                    className={`p-2 rounded-full mt-1 ${
+                      shareSettings?.isPublic
+                        ? 'bg-green-100 text-green-600'
+                        : 'bg-gray-200 text-gray-500'
+                    }`}
+                  >
+                    {shareSettings?.isPublic ? <Globe size={20} /> : <Lock size={20} />}
+                  </div>
+
+                  <div className="flex-1">
+                    <div className="flex justify-between items-center mb-1">
+                      <h4 className="font-medium text-gray-900">Chia sẻ công khai</h4>
                     </div>
 
-                    <hr className="border-gray-100" />
+                    <p className="text-sm text-gray-500 mb-2">
+                      {shareSettings?.publicAccessLevel === 'DISABLED'
+                        ? 'Chỉ những người được mời mới có thể truy cập.'
+                        : shareSettings?.publicAccessLevel === 'VIEW'
+                        ? 'Bất kỳ ai có liên kết đều có thể xem.'
+                        : 'Bất kỳ ai có liên kết đều có thể chỉnh sửa (cần đăng nhập).'}
+                    </p>
 
-                    {/* Invite Form */}
                     {isOwner && (
-                        <div>
-                            <h4 className="font-medium text-gray-900 mb-3 flex items-center gap-2">
-                                <UserPlus size={18} /> Mời cộng tác viên
-                            </h4>
-                            <form onSubmit={handleInvite} className="flex gap-2">
-                                <input 
-                                    type="email" 
-                                    placeholder="Nhập email (vd: abc@gmail.com)" 
-                                    className="flex-1 border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 outline-none text-sm"
-                                    value={inviteEmail}
-                                    onChange={e => setInviteEmail(e.target.value)}
-                                    required
-                                />
-                                <select 
-                                    value={invitePermission}
-                                    onChange={e => setInvitePermission(e.target.value as Permission)}
-                                    className="border border-gray-300 rounded-lg px-3 py-2 outline-none bg-white text-sm"
-                                >
-                                    <option value="VIEWER">Xem</option>
-                                    <option value="EDITOR">Sửa</option>
-                                </select>
-                                <button 
-                                    type="submit" 
-                                    disabled={isInviting}
-                                    className="bg-gray-900 hover:bg-gray-800 text-white px-4 py-2 rounded-lg font-medium transition-colors disabled:opacity-50 text-sm"
-                                >
-                                    {isInviting ? '...' : 'Mời'}
-                                </button>
-                            </form>
-                        </div>
+                      <div className="space-y-2 mb-3">
+                        {/* PUBLIC ACCESS SELECT */}
+                        <select
+                          value={
+                            shareSettings?.publicAccessLevel === 'DISABLED'
+                              ? 'NONE'
+                              : shareSettings?.publicAccessLevel === 'VIEW'
+                              ? 'VIEW'
+                              : 'EDIT'
+                          }
+                          onChange={(e) =>
+                            handleUpdatePublicAccess(
+                              e.target.value as 'NONE' | 'VIEW' | 'EDIT'
+                            )
+                          }
+                          className="border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white w-full"
+                        >
+                          <option value="NONE">Tắt (Chỉ người được mời)</option>
+                          <option value="VIEW">Bất kỳ ai có link: Xem</option>
+                          <option value="EDIT">Bất kỳ ai có link: Chỉnh sửa</option>
+                        </select>
+
+                        {/* WORKSPACE VISIBILITY SELECT */}
+                        <select
+                          value={workspaceVisibility}
+                          onChange={(e) =>
+                            handleUpdateWorkspaceVisibility(
+                              e.target.value as
+                                | 'PRIVATE'
+                                | 'WORKSPACE_VIEW'
+                                | 'WORKSPACE_EDIT'
+                            )
+                          }
+                          className="border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white w-full"
+                        >
+                          <option value="PRIVATE">Chỉ mình tôi và người được mời</option>
+                          <option value="WORKSPACE_VIEW">
+                            Mọi người trong Workspace: Xem
+                          </option>
+                          <option value="WORKSPACE_EDIT">
+                            Mọi người trong Workspace: Chỉnh sửa
+                          </option>
+                        </select>
+                      </div>
                     )}
 
-                    {/* Collaborators List */}
-                    <div>
-                         <h4 className="font-medium text-gray-900 mb-2 text-sm">Thành viên ({collaborators.length})</h4>
-                         <div className="max-h-40 overflow-y-auto space-y-2 pr-1">
-                            {collaborators.map(collab => (
-                                <div key={collab.userId} className="flex items-center justify-between p-2 hover:bg-gray-50 rounded-lg transition-colors">
-                                    <div className="flex items-center gap-3">
-                                        <div className="w-8 h-8 rounded-full bg-gradient-to-br from-purple-500 to-blue-500 flex items-center justify-center text-white font-bold text-xs">
-                                            {collab.displayName?.[0]?.toUpperCase() || '?'}
-                                        </div>
-                                        <div>
-                                            <div className="font-medium text-sm text-gray-900">{collab.displayName}</div>
-                                            <div className="text-xs text-gray-500">{collab.userId === user?.sub ? '(Bạn)' : 'Thành viên'}</div>
-                                        </div>
-                                    </div>
 
-                                    <div className="flex items-center gap-2">
-                                        {collab.permission === 'OWNER' ? (
-                                            <span className="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded">Chủ sở hữu</span>
-                                        ) : (
-                                            isOwner ? (
-                                                <>
-                                                    <select 
-                                                        value={collab.permission} 
-                                                        onChange={(e) => handleUpdatePermission(collab.userId, e.target.value as Permission)}
-                                                        className="text-xs border-none bg-transparent font-medium text-gray-700 focus:ring-0 cursor-pointer"
-                                                    >
-                                                        <option value="VIEWER">Viewer</option>
-                                                        <option value="EDITOR">Editor</option>
-                                                    </select>
-                                                    <button onClick={() => handleRemove(collab.userId)} className="text-gray-400 hover:text-red-600 p-1 rounded-full hover:bg-red-50 transition-colors">
-                                                        <Trash2 size={14} />
-                                                    </button>
-                                                </>
-                                            ) : (
-                                                <span className="text-xs text-gray-500">{collab.permission}</span>
-                                            )
-                                        )}
-                                    </div>
-                                </div>
-                            ))}
-                         </div>
-                    </div>
+                    {shareSettings?.isPublic && shareSettings.shareLink && (
+                      <div className="flex gap-2">
+                        <input
+                          readOnly
+                          value={shareSettings.shareLink}
+                          className="flex-1 bg-white border border-gray-300 text-gray-600 text-sm rounded-lg p-2 outline-none"
+                        />
+                        <button
+                          onClick={() => copyToClipboard(shareSettings.shareLink!)}
+                          className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-2 rounded-lg font-medium flex items-center gap-1 transition-colors"
+                        >
+                          <Copy size={16} />
+                        </button>
+                      </div>
+                    )}
+                  </div>
                 </div>
+
+
+                <hr className="border-gray-100" />
+
+                {/* Invite Form */}
+                {isOwner && (
+                  <div>
+                    <h4 className="font-medium text-gray-900 mb-3 flex items-center gap-2">
+                      <UserPlus size={18} /> Mời cộng tác viên
+                    </h4>
+                    <form
+                      onSubmit={handleInvite}
+                      className="flex gap-2 flex-wrap"
+                    >
+                      <input
+                        type="email"
+                        placeholder="Nhập email (vd: abc@gmail.com)"
+                        className="flex-1 min-w-[180px] border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 outline-none text-sm"
+                        value={inviteEmail}
+                        onChange={(e) => setInviteEmail(e.target.value)}
+                        required
+                      />
+                      <select
+                        value={invitePermission}
+                        onChange={(e) =>
+                          setInvitePermission(
+                            e.target.value as Permission,
+                          )
+                        }
+                        className="border border-gray-300 rounded-lg px-3 py-2 outline-none bg-white text-sm"
+                      >
+                        <option value="VIEWER">Xem</option>
+                        <option value="EDITOR">Sửa</option>
+                      </select>
+                      <button
+                        type="submit"
+                        disabled={isInviting}
+                        className="bg-gray-900 hover:bg-gray-800 text-white px-4 py-2 rounded-lg font-medium transition-colors disabled:opacity-50 text-sm"
+                      >
+                        {isInviting ? '...' : 'Mời'}
+                      </button>
+                    </form>
+                  </div>
+                )}
+
+                {/* Collaborators List */}
+                <div>
+                  <h4 className="font-medium text-gray-900 mb-2 text-sm">
+                    Thành viên ({collaborators.length})
+                  </h4>
+                  <div className="max-h-40 overflow-y-auto space-y-2 pr-1">
+                    {collaborators.map((collab: Collaborator) => (
+                      <div
+                        key={collab.userId}
+                        className="flex items-center justify-between p-2 hover:bg-gray-50 rounded-lg transition-colors"
+                      >
+                        <div className="flex items-center gap-3">
+                          <div className="w-8 h-8 rounded-full bg-gradient-to-br from-purple-500 to-blue-500 flex items-center justify-center text-white font-bold text-xs">
+                            {collab.displayName?.[0]?.toUpperCase() ||
+                              '?'}
+                          </div>
+                          <div>
+                            <div className="font-medium text-sm text-gray-900">
+                              {collab.displayName}
+                            </div>
+                            <div className="text-xs text-gray-500">
+                              {collab.userId === user?.sub
+                                ? '(Bạn)'
+                                : 'Thành viên'}
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                          {collab.permission === 'OWNER' ? (
+                            <span className="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded">
+                              Chủ sở hữu
+                            </span>
+                          ) : isOwner ? (
+                            <>
+                              <select
+                                value={collab.permission}
+                                onChange={(e) =>
+                                  handleUpdatePermission(
+                                    collab.userId,
+                                    e.target.value as Permission,
+                                  )
+                                }
+                                className="text-xs border-none bg-transparent font-medium text-gray-700 focus:ring-0 cursor-pointer"
+                              >
+                                <option value="VIEWER">Viewer</option>
+                                <option value="EDITOR">Editor</option>
+                              </select>
+                              <button
+                                onClick={() =>
+                                  handleRemove(collab.userId)
+                                }
+                                className="text-gray-400 hover:text-red-600 p-1 rounded-full hover:bg-red-50 transition-colors"
+                              >
+                                <Trash2 size={14} />
+                              </button>
+                            </>
+                          ) : (
+                            <span className="text-xs text-gray-500">
+                              {collab.permission}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Pending access requests (Firestore queue) */}
+                {isOwner && pendingRequests.length > 0 && (
+                <div className="mt-4">
+                  <h4 className="font-medium text-gray-900 mb-2 text-sm flex items-center gap-2">
+                    <Bell size={16} className="text-amber-500" />
+                    Yêu cầu truy cập ({pendingRequests.length})
+                  </h4>
+
+                  <div className="max-h-40 overflow-y-auto space-y-2 pr-1">
+                    {pendingRequests.map((req) => {
+                      const currentPerm =
+                        requestPermissions[req.uid] ||
+                        (req.requestedPermission as Permission) ||
+                        'VIEWER';
+
+                      return (
+                        <div
+                          key={req.uid}
+                          className="flex items-center justify-between p-2 bg-amber-50 rounded-lg border border-amber-100"
+                        >
+                          <div>
+                            <div className="font-medium text-sm text-gray-900">
+                              {req.displayName}
+                            </div>
+                            <div className="text-xs text-gray-500">
+                              {new Date(req.timestamp).toLocaleString()}
+                            </div>
+                            {req.requestedPermission && (
+                              <div className="text-xs text-gray-500 mt-0.5">
+                                Yêu cầu quyền:{' '}
+                                <span className="font-semibold">
+                                  {req.requestedPermission === 'EDITOR'
+                                    ? 'Chỉnh sửa'
+                                    : 'Xem'}
+                                </span>
+                              </div>
+                            )}
+                          </div>
+
+                          <div className="flex items-center gap-2">
+                            <select
+                              value={currentPerm}
+                              onChange={(e) =>
+                                setRequestPermissions((prev) => ({
+                                  ...prev,
+                                  [req.uid]: e.target.value as Permission,
+                                }))
+                              }
+                              className="border border-gray-300 rounded-md px-2 py-1 text-xs bg-white text-gray-700"
+                            >
+                              <option value="VIEWER">Viewer</option>
+                              <option value="EDITOR">Editor</option>
+                            </select>
+
+                            <button
+                              type="button"
+                              onClick={() =>
+                                onDenyRequest && onDenyRequest(req.uid)
+                              }
+                              className="px-2 py-1 text-xs rounded-md bg-white border border-gray-200 text-gray-600 hover:bg-gray-50"
+                            >
+                              Từ chối
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (!onApproveRequest) return;
+                                const permToGrant = currentPerm;
+                                onApproveRequest(req.uid, permToGrant);
+                              }}
+                              className="px-2 py-1 text-xs rounded-md bg-blue-600 text-white hover:bg-blue-700"
+                            >
+                              Duyệt
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              </div>
             )}
 
             {/* TAB 2: SOCIAL */}
             {activeTab === 'social' && (
-                <div className="space-y-8 text-center pt-4">
-                    {!shareSettings?.isPublic && (
-                        <div className="bg-yellow-50 text-yellow-800 text-sm p-3 rounded-lg border border-yellow-200 mb-4 text-left">
-                            Lưu ý: Bạn cần bật chế độ <strong>Công khai</strong> ở tab "Mời & Link" để người khác có thể xem mindmap từ liên kết chia sẻ.
-                        </div>
-                    )}
-                    
-                    <div className="flex justify-center gap-8">
-                        <button onClick={() => shareToSocial('facebook')} className="flex flex-col items-center gap-2 group">
-                            <div className="w-14 h-14 bg-[#1877F2] rounded-full flex items-center justify-center text-white shadow-lg group-hover:scale-110 transition-transform">
-                                <Facebook size={28} fill="white" />
-                            </div>
-                            <span className="text-xs font-medium text-gray-600">Facebook</span>
-                        </button>
-                        <button onClick={() => shareToSocial('twitter')} className="flex flex-col items-center gap-2 group">
-                            <div className="w-14 h-14 bg-black rounded-full flex items-center justify-center text-white shadow-lg group-hover:scale-110 transition-transform">
-                                <Twitter size={28} fill="white" />
-                            </div>
-                            <span className="text-xs font-medium text-gray-600">X (Twitter)</span>
-                        </button>
-                        <button onClick={() => shareToSocial('linkedin')} className="flex flex-col items-center gap-2 group">
-                            <div className="w-14 h-14 bg-[#0077B5] rounded-full flex items-center justify-center text-white shadow-lg group-hover:scale-110 transition-transform">
-                                <Linkedin size={28} fill="white" />
-                            </div>
-                            <span className="text-xs font-medium text-gray-600">LinkedIn</span>
-                        </button>
-                    </div>
+              <div className="space-y-8 text-center pt-4">
+                {!shareSettings?.isPublic && (
+                  <div className="bg-yellow-50 text-yellow-800 text-sm p-3 rounded-lg border border-yellow-200 mb-4 text-left">
+                    Lưu ý: Bạn cần bật chế độ{' '}
+                    <strong>Công khai</strong> ở tab &quot;Mời & Link&quot; để
+                    người khác có thể xem mindmap từ liên kết chia sẻ.
+                  </div>
+                )}
 
-                    <div className="border-t pt-6 flex items-center gap-4 text-left">
-                        <div className="bg-white p-2 border rounded-lg shadow-sm">
-                            {/* QR Placeholder - Thực tế nên dùng thư viện qrcode.react */}
-                            <QrCode size={80} className="text-gray-800" />
-                        </div>
-                        <div>
-                            <h4 className="font-bold text-gray-800">QR Code</h4>
-                            <p className="text-xs text-gray-500 mt-1">Quét mã để xem nhanh trên điện thoại.</p>
-                            <button className="text-blue-600 text-sm font-medium mt-2 hover:underline">Tải ảnh PNG</button>
-                        </div>
+                <div className="flex justify-center gap-8">
+                  <button
+                    onClick={() => shareToSocial('facebook')}
+                    className="flex flex-col items-center gap-2 group"
+                  >
+                    <div className="w-14 h-14 bg-[#1877F2] rounded-full flex items-center justify-center text-white shadow-lg group-hover:scale-110 transition-transform">
+                      <Facebook size={28} fill="white" />
                     </div>
+                    <span className="text-xs font-medium text-gray-600">
+                      Facebook
+                    </span>
+                  </button>
+                  <button
+                    onClick={() => shareToSocial('twitter')}
+                    className="flex flex-col items-center gap-2 group"
+                  >
+                    <div className="w-14 h-14 bg-black rounded-full flex items-center justify-center text-white shadow-lg group-hover:scale-110 transition-transform">
+                      <Twitter size={28} fill="white" />
+                    </div>
+                    <span className="text-xs font-medium text-gray-600">
+                      X (Twitter)
+                    </span>
+                  </button>
+                  <button
+                    onClick={() => shareToSocial('linkedin')}
+                    className="flex flex-col items-center gap-2 group"
+                  >
+                    <div className="w-14 h-14 bg-[#0077B5] rounded-full flex items-center justify-center text-white shadow-lg group-hover:scale-110 transition-transform">
+                      <Linkedin size={28} fill="white" />
+                    </div>
+                    <span className="text-xs font-medium text-gray-600">
+                      LinkedIn
+                    </span>
+                  </button>
                 </div>
+
+                <div className="border-t pt-6 flex items-center gap-4 text-left">
+                  <div className="bg-white p-2 border rounded-lg shadow-sm">
+                    {/* QR Placeholder - thực tế có thể dùng qrcode.react */}
+                    <QrCode size={80} className="text-gray-800" />
+                  </div>
+                  <div>
+                    <h4 className="font-bold text-gray-800">QR Code</h4>
+                    <p className="text-xs text-gray-500 mt-1">
+                      Quét mã để xem nhanh trên điện thoại.
+                    </p>
+                    <button className="text-blue-600 text-sm font-medium mt-2 hover:underline">
+                      Tải ảnh PNG
+                    </button>
+                  </div>
+                </div>
+              </div>
             )}
 
             {/* TAB 3: EMBED */}
             {activeTab === 'embed' && (
-                <div className="space-y-4 pt-2">
-                    <p className="text-sm text-gray-600">
-                        Sao chép mã iframe bên dưới để nhúng mindmap này vào blog hoặc website cá nhân của bạn.
-                    </p>
-                    
-                    <div className="relative">
-                        <textarea 
-                            readOnly 
-                            value={embedCode}
-                            className="w-full h-28 bg-gray-50 text-gray-600 font-mono text-xs rounded-lg p-3 border border-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
-                        />
-                        <button 
-                            onClick={() => copyToClipboard(embedCode)}
-                            className="absolute top-2 right-2 p-1.5 bg-white border border-gray-200 hover:bg-gray-50 rounded text-gray-600 transition-colors shadow-sm"
-                            title="Sao chép mã"
-                        >
-                            <Copy size={14} />
-                        </button>
-                    </div>
+              <div className="space-y-4 pt-2">
+                <p className="text-sm text-gray-600">
+                  Sao chép mã iframe bên dưới để nhúng mindmap này vào blog
+                  hoặc website cá nhân của bạn.
+                </p>
 
-                    <div className="grid grid-cols-2 gap-4">
-                        <div>
-                            <label className="block text-xs font-medium text-gray-700 mb-1">Chiều rộng</label>
-                            <input type="text" defaultValue="800px" className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm outline-none focus:border-blue-500" />
-                        </div>
-                        <div>
-                            <label className="block text-xs font-medium text-gray-700 mb-1">Chiều cao</label>
-                            <input type="text" defaultValue="600px" className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm outline-none focus:border-blue-500" />
-                        </div>
-                    </div>
+                <div className="relative">
+                  <textarea
+                    readOnly
+                    value={embedCode}
+                    className="w-full h-28 bg-gray-50 text-gray-600 font-mono text-xs rounded-lg p-3 border border-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+                  />
+                  <button
+                    onClick={() => copyToClipboard(embedCode)}
+                    className="absolute top-2 right-2 p-1.5 bg-white border border-gray-200 hover:bg-gray-50 rounded text-gray-600 transition-colors shadow-sm"
+                    title="Sao chép mã"
+                  >
+                    <Copy size={14} />
+                  </button>
                 </div>
-            )}
 
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-medium text-gray-700 mb-1">
+                      Chiều rộng
+                    </label>
+                    <input
+                      type="text"
+                      defaultValue="800px"
+                      className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm outline-none focus:border-blue-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-700 mb-1">
+                      Chiều cao
+                    </label>
+                    <input
+                      type="text"
+                      defaultValue="600px"
+                      className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm outline-none focus:border-blue-500"
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         )}
       </div>
     </div>
   );
 }
+
 ==== ./features/auth/LogoHeader.tsx ====
 // src/features/auth/LogoHeader.tsx
 import React from 'react';
@@ -1664,10 +2007,7 @@ import RegisterForm from './RegisterForm';
 import ConfirmForm from './ConfirmForm';
 import ForgotForm from './ForgotForm';
 import ResetForm from './ResetForm';
-
-// [MERGE] Sử dụng phiên bản "light mode" từ feature/tt
-// Logic bên trong (handleLogin, handleRegister, v.v.)
-// đã khớp với logic GĐ 1-10 của chúng ta.
+import api from '../../services/api'; // Import API để gọi sync
 
 type Props = {
   isOpen: boolean;
@@ -1733,14 +2073,28 @@ const AuthModal: React.FC<Props> = ({ isOpen, onClose, initialMode = 'login' }) 
     setErrors({});
     
     try {
+        // 1. Login bằng SDK Cognito
         const session = await cognitoDirect.signIn(formData.email, formData.password);
+        
         const tokens: Tokens = {
             id_token: session.getIdToken().getJwtToken(),
             access_token: session.getAccessToken().getJwtToken(),
             refresh_token: session.getRefreshToken().getToken(),
             expires_at: session.getIdToken().getExpiration(), 
         };
+        
+        // 2. Lưu token (Lúc này API Interceptor đã có token để dùng)
         setAuthTokens(tokens);
+
+        // 3. [QUAN TRỌNG] Gọi sync user ngay
+        try {
+            await api.post("/users/sync-cognito");
+            console.log("Synced user successfully");
+        } catch (syncErr) {
+            console.error("Sync user warning:", syncErr);
+            // Không block login nếu sync lỗi, nhưng nên log để debug
+        }
+
         onClose();
     } catch (err: any) {
         if (err.name === 'UserNotConfirmedException') {
@@ -1800,7 +2154,7 @@ const AuthModal: React.FC<Props> = ({ isOpen, onClose, initialMode = 'login' }) 
         await cognitoDirect.confirmSignUp(usernameForConfirm, confirmCode);
         setInfoMessage('Xác nhận thành công! Bây giờ bạn có thể đăng nhập.');
         setMode('login');
-        setUsernameForConfirm(''); 
+        // Không xóa usernameForConfirm ngay để user đỡ phải gõ lại email nếu muốn login ngay
     } catch (err: any) {
         let message = 'Mã xác nhận không hợp lệ.';
         if (err.name === 'CodeMismatchException') {
@@ -1907,7 +2261,6 @@ const AuthModal: React.FC<Props> = ({ isOpen, onClose, initialMode = 'login' }) 
 };
 
 export default AuthModal;
-
 ==== ./features/auth/GoogleLoginButton.tsx ====
 // src/features/auth/GoogleLoginButton.tsx
 import React from 'react';
@@ -2305,98 +2658,94 @@ export default function BigStartButton() {
 }
 
 ==== ./features/editor/AccessDeniedScreen.tsx ====
-import React, { useState } from 'react';
-import { Lock, Send, ChevronLeft } from 'lucide-react';
-import { useAuth } from '../../hooks/useAuth';
-import { mindmapsApi } from '../../services/mindmapsApi';
-import { useToast } from '../../hooks/useToast';
+// src/features/editor/AccessDeniedScreen.tsx
+
+import React from 'react';
+import { Lock, Loader2, Send, ChevronLeft, XCircle } from 'lucide-react';
+import Button from '../../components/common/Button';
 import { useNavigate } from 'react-router-dom';
 
+export type RequestStatus = 'none' | 'pending' | 'rejected';
+
 type Props = {
-  mindmapId: string;
+  onRequestAccess: () => void | Promise<void>;
+  requestStatus: RequestStatus;
+  userId?: string;
 };
 
-export default function AccessDeniedScreen({ mindmapId }: Props) {
-  const { isAuthed, login, user } = useAuth();
-  const { addToast } = useToast();
+const AccessDeniedScreen: React.FC<Props> = ({
+  onRequestAccess,
+  requestStatus,
+  userId,
+}) => {
   const navigate = useNavigate();
-  const [isRequesting, setIsRequesting] = useState(false);
-  const [isSent, setIsSent] = useState(false);
 
-  const handleRequestAccess = async () => {
-    setIsRequesting(true);
-    try {
-      await mindmapsApi.requestAccess(mindmapId);
-      setIsSent(true);
-      addToast('Đã gửi yêu cầu truy cập đến chủ sở hữu!', 'success');
-    } catch (error) {
-      addToast('Gửi yêu cầu thất bại. Vui lòng thử lại.', 'error');
-    } finally {
-      setIsRequesting(false);
-    }
-  };
+  const isPending = requestStatus === 'pending';
+  const isRejected = requestStatus === 'rejected';
 
   return (
-    <div className="w-screen h-screen bg-gray-50 flex flex-col items-center justify-center p-4">
-      <div className="bg-white max-w-md w-full rounded-2xl shadow-xl p-8 text-center border border-gray-100">
-        <div className="w-16 h-16 bg-red-100 text-red-500 rounded-full flex items-center justify-center mx-auto mb-6">
-          <Lock size={32} />
+    <div className="flex flex-col items-center justify-center h-screen bg-gray-50 p-4">
+      <div className="bg-white p-8 rounded-xl shadow-lg max-w-md w-full text-center border border-gray-100">
+        <div className="bg-blue-50 p-4 rounded-full inline-flex mb-6">
+          <Lock className="w-10 h-10 text-blue-600" />
         </div>
-        
-        <h2 className="text-2xl font-bold text-gray-900 mb-2">Bạn cần quyền truy cập</h2>
-        <p className="text-gray-500 mb-8">
-          Hiện tại bạn không có quyền xem tài liệu này. Hãy gửi yêu cầu truy cập hoặc chuyển đổi tài khoản.
+
+        <h2 className="text-2xl font-bold text-gray-800 mb-2">
+          Quyền truy cập bị giới hạn
+        </h2>
+
+        <p className="text-gray-500 mb-4">
+          Mindmap này đang ở chế độ riêng tư. Bạn cần gửi yêu cầu cho chủ sở hữu để được cấp quyền xem hoặc chỉnh sửa.
         </p>
 
-        {isAuthed ? (
-          <div className="space-y-4">
-            <div className="bg-gray-50 p-3 rounded-lg border border-gray-200 flex items-center gap-3 text-left">
-              <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 font-bold">
-                {user?.email?.[0]?.toUpperCase()}
-              </div>
-              <div className="flex-1 overflow-hidden">
-                <p className="text-sm font-medium text-gray-900">Bạn đang đăng nhập là:</p>
-                <p className="text-sm text-gray-500 truncate" title={user?.email}>{user?.email}</p>
-              </div>
-            </div>
-
-            {isSent ? (
-              <div className="bg-green-50 text-green-700 p-4 rounded-lg text-sm font-medium">
-                Yêu cầu đã được gửi. Bạn sẽ nhận được email khi chủ sở hữu phê duyệt.
-              </div>
-            ) : (
-              <button 
-                onClick={handleRequestAccess}
-                disabled={isRequesting}
-                className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-4 rounded-xl transition-all flex items-center justify-center gap-2"
-              >
-                {isRequesting ? 'Đang gửi...' : <><Send size={18} /> Yêu cầu quyền truy cập</>}
-              </button>
-            )}
-          </div>
-        ) : (
-          <div className="space-y-3">
-             <button 
-                onClick={() => login('login')}
-                className="w-full bg-gray-900 hover:bg-gray-800 text-white font-bold py-3 px-4 rounded-xl transition-all"
-              >
-                Đăng nhập để tiếp tục
-              </button>
-              <p className="text-xs text-gray-400">Bạn cần đăng nhập để chúng tôi biết ai đang yêu cầu.</p>
+        {isRejected && (
+          <div className="bg-red-50 text-red-700 px-4 py-3 rounded-lg border border-red-200 flex items-center justify-center gap-2 mb-4">
+            <XCircle className="w-4 h-4" />
+            <span>Yêu cầu truy cập của bạn đã bị từ chối.</span>
           </div>
         )}
 
+        {isPending ? (
+          <div className="bg-yellow-50 text-yellow-700 px-4 py-3 rounded-lg border border-yellow-200 flex items-center justify-center gap-2">
+            <Loader2 className="w-4 h-4 animate-spin" />
+            <span>Đã gửi yêu cầu, đang chờ duyệt...</span>
+          </div>
+        ) : !isRejected ? (
+          <div className="space-y-4">
+            <Button
+              onClick={onRequestAccess}
+              variant="gradient"
+              className="w-full justify-center py-3"
+            >
+              <Send className="w-4 h-4 mr-2" />
+              Gửi yêu cầu truy cập
+            </Button>
+
+            {userId && (
+              <p className="text-xs text-gray-400">
+                ID của bạn: {userId}
+              </p>
+            )}
+          </div>
+        ) : null}
+
         <div className="mt-8 pt-6 border-t border-gray-100">
-            <button onClick={() => navigate('/dashboard')} className="text-gray-500 hover:text-gray-800 text-sm font-medium flex items-center justify-center gap-1 mx-auto">
-                <ChevronLeft size={16} /> Quay về Dashboard
-            </button>
+          <button
+            onClick={() => navigate('/dashboard')}
+            className="text-gray-500 hover:text-gray-800 text-sm font-medium flex items-center justify-center gap-1 mx-auto"
+          >
+            <ChevronLeft size={16} /> Quay về Dashboard
+          </button>
         </div>
       </div>
     </div>
   );
-}
+};
+
+export default AccessDeniedScreen;
+
 ==== ./features/editor/EditorToolbar.tsx ====
-// src/components/editor/EditorToolbar.tsx
+// src/features/editor/EditorToolbar.tsx (hoặc src/components/editor/EditorToolbar.tsx)
 
 import React from 'react';
 import {
@@ -2414,6 +2763,7 @@ import {
   BoxSelect,
   TextSelect,
   PlusSquare,
+  Bell, // ✅ THÊM: icon chuông
 } from 'lucide-react';
 import UserAvatarMenu from '../auth/UserAvatarMenu';
 import { useEditorStore } from '../../app/store/useEditorStore';
@@ -2441,6 +2791,11 @@ type EditorToolbarProps = {
 
   // [MỚI] Cho phép hiển thị chế độ chỉ xem
   readOnly?: boolean;
+
+  // ✅ [MỚI] props cho nút chuông thông báo
+  pendingRequestsCount?: number;      // số request access đang chờ
+  onShowRequests?: () => void;        // mở modal/list request
+  isOwner?: boolean;                  // có phải owner mindmap không
 };
 
 type ToolbarButtonProps = {
@@ -2490,7 +2845,12 @@ const EditorToolbar: React.FC<EditorToolbarProps> = ({
   onAddChild,
   onAddSibling,
   onSetHyperlink,
-  readOnly = false, // Mặc định là false (có quyền edit)
+  readOnly = false,
+
+  // ✅ default cho props mới
+  pendingRequestsCount = 0,
+  onShowRequests,
+  isOwner = false,
 }) => {
   const setMindmapsItems = useMindmapsStore((s) => s.set);
   const mindmapItems = useMindmapsStore((s) => s.items);
@@ -2655,7 +3015,7 @@ const EditorToolbar: React.FC<EditorToolbarProps> = ({
         </div>
       )}
 
-      {/* 3. PHẦN PHẢI: Zoom, Undo, Save, Share... */}
+      {/* 3. PHẦN PHẢI: Zoom, Undo, Save, Chuông, Share... */}
       <div className="flex items-center gap-2 flex-shrink-0">
         {/* Undo / Redo - Ẩn khi readOnly */}
         {!readOnly && (
@@ -2751,6 +3111,29 @@ const EditorToolbar: React.FC<EditorToolbarProps> = ({
         </button>
 
         <div className="w-px h-6 bg-gray-300 mx-2" />
+
+        {/* ✅ NÚT CHUÔNG – chỉ hiện khi là Owner */}
+        {isOwner && (
+          <button
+            type="button"
+            onClick={() => onShowRequests && onShowRequests()}
+            className={`relative p-2 rounded-md transition-colors ${
+              pendingRequestsCount > 0
+                ? 'bg-red-50 text-red-600 hover:bg-red-100'
+                : 'text-gray-700 hover:bg-gray-300/50'
+            }`}
+            title={
+              pendingRequestsCount > 0
+                ? `Bạn có ${pendingRequestsCount} yêu cầu truy cập đang chờ`
+                : 'Yêu cầu truy cập'
+            }
+          >
+            <Bell className="w-5 h-5" />
+            {pendingRequestsCount > 0 && (
+              <span className="absolute top-1 right-1 w-2.5 h-2.5 bg-red-600 rounded-full border-2 border-white"></span>
+            )}
+          </button>
+        )}
 
         {/* Share & Formatting - luôn hiện (người xem vẫn cần chia sẻ link) */}
         <button
@@ -2971,6 +3354,111 @@ export function calculateNodeBox(node: NodeData, style: NodeData) {
 
   return { w, h, textToRender: wrappedLines.join('\n'), finalFontSize };
 }
+==== ./features/editor/AccessRequestModal.tsx ====
+import React, { useState } from 'react';
+import { X, Check, User } from 'lucide-react';
+import Modal from '../../components/common/Modal';
+import { RequestUser } from '../../hooks/useMindmapAccess';
+import type { Permission } from '../../services/mindmapsApi';
+
+type AccessRequestModalProps = {
+  isOpen: boolean;
+  onClose: () => void;
+  requests: RequestUser[];
+  onApprove: (uid: string, perm: Permission) => void | Promise<void>;
+  onDeny: (uid: string) => void | Promise<void>;
+};
+
+const AccessRequestModal: React.FC<AccessRequestModalProps> = ({
+  isOpen,
+  onClose,
+  requests,
+  onApprove,
+  onDeny
+}) => {
+
+  // ⬅️ PHẢI đặt ở đây — bên trong component
+  const [localPerms, setLocalPerms] = useState<Record<string, Permission>>({});
+
+  return (
+    <Modal isOpen={isOpen} onClose={onClose} title="Yêu cầu truy cập">
+      <div className="p-4">
+        {requests.length === 0 ? (
+          <div className="text-center py-8 text-gray-500">
+            <p>Không có yêu cầu nào đang chờ.</p>
+          </div>
+        ) : (
+          <div className="space-y-3">
+
+            {requests.map((req) => {
+              // ⬅️ PHẢI đặt currentPerm ở đây, trong map
+              const currentPerm =
+                localPerms[req.uid] ||
+                (req.requestedPermission as Permission) ||
+                'VIEWER';
+
+              return (
+                <div
+                  key={req.uid}
+                  className="flex items-center justify-between bg-gray-50 p-3 rounded-lg border border-gray-100"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="bg-blue-100 p-2 rounded-full text-blue-600">
+                      <User className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <p className="font-medium text-gray-800 text-sm">
+                        {req.displayName}
+                      </p>
+                      <p className="text-xs text-gray-500">
+                        {new Date(req.timestamp).toLocaleTimeString()}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* ⬅️ Admin chọn permission */}
+                  <select
+                    value={currentPerm}
+                    onChange={(e) =>
+                      setLocalPerms((p) => ({
+                        ...p,
+                        [req.uid]: e.target.value as Permission
+                      }))
+                    }
+                    className="border border-gray-300 rounded-md px-2 py-1 text-xs bg-white"
+                  >
+                    <option value="VIEWER">Xem</option>
+                    <option value="EDITOR">Sửa</option>
+                  </select>
+
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => onDeny(req.uid)}
+                      className="p-2 text-red-500 hover:bg-red-50 rounded-md transition"
+                      title="Từ chối"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+
+                    <button
+                      onClick={() => onApprove(req.uid, currentPerm)}
+                      className="flex items-center gap-1 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium rounded-md transition"
+                    >
+                      <Check className="w-3 h-3" /> Duyệt
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    </Modal>
+  );
+};
+
+export default AccessRequestModal;
+
 ==== ./features/editor/FormattingToolbar.tsx ====
 import React, { useState, useMemo, useRef, useEffect, ChangeEvent } from 'react';
 import {
@@ -5227,6 +5715,241 @@ export const useTheme = () => {
   // Đổi tên 'toggle' thành 'toggleTheme' cho rõ ràng hơn khi sử dụng
   return { theme: context.theme, toggleTheme: context.toggle };
 };
+==== ./hooks/useMindmapAccess.ts ====
+// src/hooks/useMindmapAccess.ts
+import { useState, useEffect } from 'react';
+import {
+  doc,
+  onSnapshot,
+  updateDoc,
+  arrayUnion,
+  arrayRemove,
+  setDoc,
+  type DocumentData,
+  type DocumentSnapshot,
+} from 'firebase/firestore';
+import { db } from '../services/firebase';
+
+export type PermissionState = 'loading' | 'allowed' | 'denied';
+export type RequestStatus = 'none' | 'pending' | 'rejected';
+
+// === NEW: type cho quyền & Firestore doc ===
+export type AccessPermission = 'VIEWER' | 'EDITOR';
+
+export interface RequestUser {
+  uid: string;
+  displayName: string;
+  timestamp: number;
+  requestedPermission?: AccessPermission;
+}
+
+export interface MindmapAccessDoc {
+  ownerId?: string;
+  allowedUsers?: string[];
+  pendingRequests?: RequestUser[];
+  lastDecisions?: {
+    [uid: string]: {
+      status: 'approved' | 'rejected';
+      permission: AccessPermission;
+      decidedAt: number;
+    };
+  };
+  updatedAt?: number;
+  version?: number;
+}
+
+interface UseMindmapAccessResult {
+  permission: 'loading' | 'allowed' | 'denied';
+  isOwner: boolean;
+  pendingRequests: RequestUser[];
+  requestStatus: RequestStatus;
+  requestAccess: (opts?: { requestedPermission?: AccessPermission }) => Promise<void>;
+  approveRequest: (uid: string, perm: AccessPermission) => Promise<void>;
+  denyRequest: (uid: string) => Promise<void>;
+}
+
+
+// ==========================================
+
+export const useMindmapAccess = (mindmapId: string, currentUser: any) => {
+  const [permission, setPermission] = useState<PermissionState>('loading');
+  const [requestStatus, setRequestStatus] = useState<RequestStatus>('none');
+  const [pendingRequests, setPendingRequests] = useState<RequestUser[]>([]);
+  const [isOwner, setIsOwner] = useState(false);
+
+  useEffect(() => {
+    if (!mindmapId) {
+      setPermission('allowed');
+      return;
+    }
+
+    const uid: string | undefined = currentUser?.id || currentUser?.sub;
+    const docRef = doc(db, 'mindmapAccess', mindmapId);
+
+    const unsubscribe = onSnapshot(
+      docRef,
+      (docSnap: DocumentSnapshot<DocumentData>) => {
+        if (import.meta.env.MODE === 'development') {
+          // Debug snapshot
+          console.debug('[useMindmapAccess] snapshot for', mindmapId, {
+            exists: docSnap.exists(),
+            data: docSnap.exists() ? docSnap.data() : null,
+          });
+        }
+
+        // Nếu chưa có document trên Firestore:
+        if (!docSnap.exists()) {
+          // Phase 0: giữ behavior cũ => default allowed
+          // (sau này Phase 1 sẽ tighten lại nếu cần)
+          setPermission('denied');
+          setIsOwner(false);
+          setPendingRequests([]);
+          setRequestStatus('none');
+          return;
+        }
+
+        const data = docSnap.data() as MindmapAccessDoc;
+        const ownerId: string | undefined = data.ownerId;
+        const allowedUsers: string[] = data.allowedUsers || [];
+        const requests: RequestUser[] = data.pendingRequests || [];
+
+        setPendingRequests(requests);
+
+        // Chưa đăng nhập → xem như không có quyền, để AccessDeniedScreen xử lý login
+        if (!uid) {
+          setIsOwner(false);
+          setPermission('denied');
+          setRequestStatus('none');
+          return;
+        }
+
+        // Chủ sở hữu
+        if (uid === ownerId) {
+          setIsOwner(true);
+          setPermission('allowed');
+          setRequestStatus('none');
+          return;
+        }
+
+        // Đã được cấp quyền
+        if (allowedUsers.includes(uid)) {
+          setIsOwner(false);
+          setPermission('allowed');
+          setRequestStatus('none');
+          return;
+        }
+
+        // Kiểm tra xem user đã gửi request chưa
+        const myReq = requests.find((r) => r.uid === uid);
+
+        // Nếu sau này bạn muốn xử lý rejected theo lastDecisions:
+        const lastDecision = data.lastDecisions?.[uid];
+
+        if (lastDecision?.status === 'rejected') {
+          setIsOwner(false);
+          setPermission('denied');
+          setRequestStatus('rejected');
+          return;
+        }
+
+        setIsOwner(false);
+        setPermission('denied');
+        setRequestStatus(myReq ? 'pending' : 'none');
+      },
+    );
+
+    return () => unsubscribe();
+  }, [mindmapId, currentUser]);
+
+  // Xin quyền truy cập
+const requestAccess = async (opts?: { requestedPermission?: AccessPermission }) => {
+  const uid: string | undefined = currentUser?.id || currentUser?.sub;
+  if (!mindmapId || !uid) return;
+
+  const requestedPermission: AccessPermission = opts?.requestedPermission ?? 'VIEWER';
+
+  const displayName =
+    currentUser?.username ||
+    currentUser?.email ||
+    currentUser?.name ||
+    'Unknown User';
+
+  const docRef = doc(db, 'mindmapAccess', mindmapId);
+
+  const newRequest: RequestUser = {
+    uid,
+    displayName,
+    timestamp: Date.now(),
+    requestedPermission,
+  };
+
+  await setDoc(
+    docRef,
+    {
+      pendingRequests: arrayUnion(newRequest),
+      updatedAt: Date.now(),
+    },
+    { merge: true },
+  );
+
+  setRequestStatus('pending');
+};
+
+
+  // Duyệt quyền (Owner)
+const approveRequest = async (requesterId: string, perm: AccessPermission) => {
+  if (!mindmapId) return;
+
+  const docRef = doc(db, 'mindmapAccess', mindmapId);
+  const reqToRemove = pendingRequests.find((r) => r.uid === requesterId);
+  if (!reqToRemove) return;
+
+  const effectivePerm: AccessPermission =
+    perm || reqToRemove.requestedPermission || 'VIEWER';
+
+  await updateDoc(docRef, {
+    allowedUsers: arrayUnion(requesterId),
+    pendingRequests: arrayRemove(reqToRemove),
+    [`lastDecisions.${requesterId}`]: {
+      status: 'approved',
+      permission: effectivePerm,
+      decidedAt: Date.now(),
+    },
+    updatedAt: Date.now(),
+  });
+};
+
+
+  // Từ chối yêu cầu (Owner)
+  const denyRequest = async (requesterId: string) => {
+    if (!mindmapId) return;
+
+    const docRef = doc(db, 'mindmapAccess', mindmapId);
+    const reqToRemove = pendingRequests.find((r) => r.uid === requesterId);
+    if (!reqToRemove) return;
+
+    await updateDoc(docRef, {
+      pendingRequests: arrayRemove(reqToRemove),
+      [`lastDecisions.${requesterId}`]: {
+        status: 'rejected',
+        permission: reqToRemove.requestedPermission || 'VIEWER',
+        decidedAt: Date.now(),
+      },
+      updatedAt: Date.now(),
+    });
+  };
+
+  return {
+    permission,
+    requestStatus,
+    pendingRequests,
+    isOwner,
+    requestAccess,
+    approveRequest,
+    denyRequest,
+  };
+};
+
 ==== ./pages/Dashboard.tsx ====
 // src/pages/Dashboard.tsx
 import Header from "../components/layout/Header";
@@ -5314,6 +6037,8 @@ import Spinner from '../components/common/Spinner';
 import CursorLayer from '../features/editor/CursorLayer';
 import ShareModal from '../features/collaboration/ShareModal';
 import AccessDeniedScreen from '../features/editor/AccessDeniedScreen';
+import AccessRequestModal from '../features/editor/AccessRequestModal'; // ✅ THÊM
+
 
 // --- Stores & Types ---
 import {
@@ -5341,6 +6066,8 @@ import {
   BeMindmapDoc,
   normalizeContentBEtoFE,
 } from '../services/dataMapper';
+import { useMindmapAccess } from '../hooks/useMindmapAccess'; // ✅ THÊM
+
 
 // --- Realtime & Helpers ---
 import { useRealtime } from '../hooks/useRealtime';
@@ -5369,6 +6096,22 @@ export default function Editor({ mode = 'edit' }: EditorProps) {
   const { toggleTheme } = useTheme();
   const { isAuthed, login, user } = useAuth();
   const { createGuest } = useLocalMindmap();
+
+    // ✅ Hook quản lý quyền & request access
+  const {
+    permission,
+    isOwner,
+    pendingRequests,
+    requestStatus,
+    requestAccess,
+    approveRequest,
+    denyRequest,
+  } = useMindmapAccess(id || '', user);
+
+
+  // ✅ Modal hiển thị danh sách yêu cầu cho Owner
+  const [isRequestModalOpen, setRequestModalOpen] = useState(false);
+
 
   const isGuest = !!id && id.startsWith('guest-');
   const isShareRoute = mode === 'share'; // /share route => view-only UI
@@ -5403,6 +6146,10 @@ export default function Editor({ mode = 'edit' }: EditorProps) {
   const [isShareModalOpen, setIsShareModalOpen] = useState(false);
   const [userPermission, setUserPermission] = useState<Permission | null>(null);
   const [accessDenied, setAccessDenied] = useState(false);
+
+  const [backendAccess, setBackendAccess] = useState<
+  'unknown' | 'allowed' | 'denied'
+>('unknown');
 
   const [dimensions, setDimensions] = useState({
     width: window.innerWidth,
@@ -5445,11 +6192,14 @@ export default function Editor({ mode = 'edit' }: EditorProps) {
     colorThemes[activeColorThemeId as keyof typeof colorThemes];
 
   // --- Permission: Owner ---
-  const isOwner = useMemo(() => {
+  const computedIsOwner = useMemo(() => {
     if (!user || !ownerId) return false;
     // So sánh linh hoạt cả sub (Cognito) và id
     return user.sub === ownerId || (user as any).id === ownerId;
   }, [user, ownerId]);
+
+  // ✅ Ưu tiên flag từ useMindmapAccess, fallback về computedIsOwner
+  // const isOwner = computedIsOwner;
 
   // --- isReadOnly (FIXED): tính thêm cả share route ---
   const isReadOnly = useMemo(() => {
@@ -5982,9 +6732,32 @@ export default function Editor({ mode = 'edit' }: EditorProps) {
     },
     onLayoutRequest: (keepCamera = false) => handleLayout(keepCamera),
     onSetRootCollapse: handleSetRootCollapse,
-    // chỉ connect khi không bị chặn quyền
-    shouldConnect: !accessDenied,
+    // Chỉ connect realtime khi BE cho phép truy cập
+    shouldConnect: !accessDenied && !!id,
   });
+
+    const handleRequestAccessFromScreen = useCallback(async () => {
+      if (!id) return;
+
+      if (!isAuthed) {
+        login('login' as any);
+        return;
+      }
+
+      try {
+        // 1) Gọi BE: xin quyền VIEWER (khi chưa có quyền gì)
+        await mindmapsApi.requestAccess(id, 'VIEWER');
+
+        // 2) Ghi vào Firestore queue (VIEWER)
+        await requestAccess({ requestedPermission: 'VIEWER' });
+
+        addToast('Đã gửi yêu cầu truy cập, vui lòng chờ chủ sở hữu duyệt.', 'success');
+      } catch (e) {
+        console.error('Request access failed:', e);
+        addToast('Gửi yêu cầu thất bại, vui lòng thử lại.', 'error');
+      }
+    }, [id, isAuthed, login, requestAccess, addToast]);
+
 
   // =========================================================================
   // 6. ZOOM & PAN
@@ -6044,11 +6817,88 @@ export default function Editor({ mode = 'edit' }: EditorProps) {
   // =========================================================================
 
   useEffect(() => {
+  // Chỉ chạy khi:
+  // - Có mindmapId
+  // - BE đang chặn (backendAccess === 'denied')
+  // - Firestore báo đã allowed (permission === 'allowed')
+  if (!id) return;
+  if (backendAccess !== 'denied') return;
+  if (permission !== 'allowed') return;
+
+  let cancelled = false;
+
+  (async () => {
+    try {
+      console.log(
+        '[Editor] Firestore access allowed, retry loading from backend...',
+      );
+      const data = await mindmapsApi.get(id);
+
+      if (cancelled) return;
+
+      // Nếu BE trả 200 ⇒ hydrate lại giống trong loadData
+      setBackendAccess('allowed');
+      setAccessDenied(false);
+
+      setName(data.name);
+      setOwnerId(data.ownerId);
+
+      useEditorStore.setState({
+        currentMindmapId: id,
+        currentMindmapName: data.name,
+        isDirty: false,
+      });
+
+      clearHistory();
+      setGraph(data.nodes, data.edges);
+
+      setGlobalStore({
+        globalStructure: (data.layoutMode as GlobalStructure) || 'mindmap',
+        globalFont: data.fontFamily || fonts[0].value,
+        branchLineWidth: data.branchLineWidth || 2,
+        isColoredBranch: data.isColoredBranch ?? true,
+        globalBranchColor: data.globalBranchColor || '#94A3B8',
+        activeColorThemeId: data.activeColorThemeId || 'dawn',
+        backgroundColor: data.backgroundColor || '#FAFAFB',
+      });
+
+      setBackgroundColor(data.backgroundColor || '#FAFAFB');
+      setSelectedNodeIds(['root']);
+      setIsDataLoaded(true);
+
+      console.log('[Editor] Auto reload after approve success.');
+    } catch (error: any) {
+      if (cancelled) return;
+      console.error('[Editor] Auto reload after approve failed', error);
+      // Option: show toast để user biết
+      addToast(
+        'Quyền đang được cập nhật, vui lòng thử lại sau ít giây...',
+        'info',
+      );
+    }
+  })();
+
+  return () => {
+    cancelled = true;
+  };
+}, [
+  id,
+  backendAccess,
+  permission,
+  clearHistory,
+  setGraph,
+  setGlobalStore,
+  addToast,
+]);
+
+
+  useEffect(() => {
     let isMounted = true;
 
     const loadData = async () => {
       setIsDataLoaded(false);
       setAccessDenied(false);
+      setBackendAccess('unknown');
 
       // 1. Không có id
       if (!id) {
@@ -6145,32 +6995,33 @@ export default function Editor({ mode = 'edit' }: EditorProps) {
 
           setIsDataLoaded(true);
         }
-      } catch (error: any) {
-        if (!isMounted) return;
+        } catch (error: any) {
+          if (!isMounted) return;
 
-        console.error('Load error detailed:', error);
-        const status = error?.response?.status;
+          console.error('Load error detailed:', error);
+          const status = error?.response?.status;
 
-        if (status === 403 || status === 401) {
-          // Không đủ quyền
-          console.log(
-            '⛔ Access Denied detected. Showing Request Access Screen.',
-          );
-          setAccessDenied(true);
-          setIsDataLoaded(true);
-        } else if (status === 429) {
-          addToast(
-            'Hệ thống đang bận (429). Vui lòng đợi vài giây rồi tải lại.',
-            'error',
-          );
-        } else {
-          addToast(
-            'Không thể tải mindmap (Lỗi ' + (status || 'Unknown') + ')',
-            'error',
-          );
-          navigate('/dashboard', { replace: true });
+          if (status === 403 || status === 401) {
+            // ❌ Không đủ quyền từ BE
+            console.log(
+              '⛔ Access Denied detected from backend. Will rely on Firestore to unlock when approved.',
+            );
+            setBackendAccess('denied');
+            setAccessDenied(true);
+            setIsDataLoaded(true);
+          } else if (status === 429) {
+            addToast(
+              'Hệ thống đang bận (429). Vui lòng đợi vài giây rồi tải lại.',
+              'error',
+            );
+          } else {
+            addToast(
+              'Không thể tải mindmap (Lỗi ' + (status || 'Unknown') + ')',
+              'error',
+            );
+            navigate('/dashboard', { replace: true });
+          }
         }
-      }
     };
 
     loadData();
@@ -6190,6 +7041,47 @@ export default function Editor({ mode = 'edit' }: EditorProps) {
     createGuest,
     user,
   ]);
+
+  // ✅ Wrapper cho Approve / Deny: BE + Firestore
+const handleDenyAccessRequest = useCallback(
+  async (requesterId: string) => {
+    if (!id) return;
+    try {
+      // 1. BE: update Collaboration status = REJECTED
+      await mindmapsApi.rejectAccessRequest(id, requesterId);
+
+      // 2. Firestore: pop khỏi pendingRequests + lưu lastDecisions
+      await denyRequest(requesterId);
+
+      addToast('Đã từ chối yêu cầu truy cập', 'info');
+    } catch (error) {
+      console.error('Deny access request failed', error);
+      addToast('Không thể từ chối yêu cầu', 'error');
+    }
+  },
+  [id, denyRequest, addToast],
+);
+
+const handleApproveAccessRequest = useCallback(
+  async (requesterId: string, perm: Permission) => {
+    if (!id) return;
+
+    try {
+      // 1. Backend: duyệt request, set Collaboration.status = ACCEPTED
+      await mindmapsApi.approveAccessRequest(id, requesterId, perm);
+
+      // 2. Firestore: cho user vào allowedUsers + xoá khỏi pending
+      const firestorePerm = perm === 'EDITOR' ? 'EDITOR' : 'VIEWER';
+      await approveRequest(requesterId, firestorePerm);
+
+      addToast('Đã duyệt yêu cầu truy cập', 'success');
+    } catch (error) {
+      console.error('Approve access request failed', error);
+      addToast('Không thể duyệt yêu cầu truy cập', 'error');
+    }
+  },
+  [id, approveRequest, addToast],
+);
 
   // =========================================================================
   // 8. SAVE
@@ -6235,7 +7127,7 @@ export default function Editor({ mode = 'edit' }: EditorProps) {
 
   const startEditing = useCallback(
     (nodeId: string) => {
-      if (isReadOnly) return; // share / viewer: không cho edit text
+      if (!promptUpgradeToEditorIfNeeded()) return;
       setSelectedNodeIds([nodeId]);
       setEditingNodeId(nodeId);
       setTimeout(() => {
@@ -6289,7 +7181,8 @@ export default function Editor({ mode = 'edit' }: EditorProps) {
 
   const handleAddChild = useCallback(
     (parentId: string) => {
-      if (isReadOnly) return;
+      if (!promptUpgradeToEditorIfNeeded()) return;
+
 
       const parentNode = nodeMap.get(parentId);
       const parentVisual = nodeVisuals.get(parentId);
@@ -6354,7 +7247,8 @@ export default function Editor({ mode = 'edit' }: EditorProps) {
 
   const handleAddSibling = useCallback(
     (nodeId: string) => {
-      if (isReadOnly) return;
+      if (!promptUpgradeToEditorIfNeeded()) return;
+
 
       if (nodeId === 'root') {
         handleAddChild('root');
@@ -6413,7 +7307,8 @@ export default function Editor({ mode = 'edit' }: EditorProps) {
   );
 
   const handleDeleteNode = useCallback(() => {
-    if (isReadOnly) return;
+    if (!promptUpgradeToEditorIfNeeded()) return;
+
     if (selectedNodeIds.length === 0) return;
 
     const idsToDelete = selectedNodeIds.filter((id) => id !== 'root');
@@ -6462,7 +7357,7 @@ export default function Editor({ mode = 'edit' }: EditorProps) {
 
     // nếu read-only (viewer/share) thì chỉ cho chỉnh local sandbox?
     // Tuỳ lựa chọn: ở đây tôn trọng isReadOnly = true => không cho update luôn.
-    if (isReadOnly) return;
+    if (!promptUpgradeToEditorIfNeeded()) return;
 
     let newNodes = [...nodes];
     const idSet = selectedIdsSet;
@@ -6631,7 +7526,7 @@ export default function Editor({ mode = 'edit' }: EditorProps) {
   }, [selectedNodeIds, handleAddSibling]);
 
   const handleSetHyperlink = useCallback(() => {
-    if (isReadOnly) return;
+    if (!promptUpgradeToEditorIfNeeded()) return;
     if (selectedNodeIds.length !== 1) return;
     const nodeId = selectedNodeIds[0];
     const node = nodeMap.get(nodeId);
@@ -6645,7 +7540,7 @@ export default function Editor({ mode = 'edit' }: EditorProps) {
   }, [selectedNodeIds, nodeMap, handleUpdateNode, isReadOnly]);
 
   const handleSetBackgroundColor = (color: string) => {
-    if (isReadOnly) return;
+   if (!promptUpgradeToEditorIfNeeded()) return; 
 
     setBackgroundColor(color);
     const newNodes = nodes.map((n) => {
@@ -6667,7 +7562,7 @@ export default function Editor({ mode = 'edit' }: EditorProps) {
   };
 
   const handleToggleColoredBranch = (state: boolean) => {
-    if (isReadOnly) return;
+    if (!promptUpgradeToEditorIfNeeded()) return;
 
     if (state) {
       const rootChildren = edges
@@ -6721,7 +7616,8 @@ export default function Editor({ mode = 'edit' }: EditorProps) {
   };
 
   const handleSetGlobalBranchColor = (color: string) => {
-    if (isReadOnly) return;
+    if (!promptUpgradeToEditorIfNeeded()) return;
+
     setGlobalStore({ globalBranchColor: color });
     const { isColoredBranch } = useEditorStore.getState();
     if (!isColoredBranch) {
@@ -6742,7 +7638,8 @@ export default function Editor({ mode = 'edit' }: EditorProps) {
   };
 
   const handleApplyQuickStyle = (styleId: QuickStyleId) => {
-    if (isReadOnly) return;
+    if (!promptUpgradeToEditorIfNeeded()) return;
+
     if (selectedNodeIds.length === 0) return;
 
     const idSet = selectedIdsSet;
@@ -6782,7 +7679,8 @@ export default function Editor({ mode = 'edit' }: EditorProps) {
   };
 
   const handlePasteStyle = () => {
-    if (isReadOnly) return;
+    if (!promptUpgradeToEditorIfNeeded()) return;
+
     if (!selectedNodeIds || !styleClipboard) return;
 
     const idSet = selectedIdsSet;
@@ -6800,7 +7698,8 @@ export default function Editor({ mode = 'edit' }: EditorProps) {
   };
 
   const handleResetStyle = () => {
-    if (isReadOnly) return;
+    if (!promptUpgradeToEditorIfNeeded()) return;
+
     if (!selectedNodeIds || !currentNode) return;
 
     const idSet = selectedIdsSet;
@@ -6837,19 +7736,43 @@ export default function Editor({ mode = 'edit' }: EditorProps) {
     [nodes, edges, applyUserAction, debouncedPersistData, sendPatch, isReadOnly],
   );
 
+const promptUpgradeToEditorIfNeeded = useCallback(() => {
+  if (!isReadOnly) return true;
+
+  // Chỉ show prompt nếu user đang là VIEWER (không phải chưa có quyền)
+  if (userPermission === 'VIEWER') {
+    const ok = window.confirm(
+      'Bạn hiện chỉ có quyền xem. Bạn có muốn gửi yêu cầu quyền chỉnh sửa không?',
+    );
+    if (ok && id) {
+      // Fire & forget: BE + Firestore
+      mindmapsApi.requestAccess(id, 'EDITOR').catch(console.error);
+      requestAccess({ requestedPermission: 'EDITOR' }).catch(console.error);
+      addToast('Đã gửi yêu cầu quyền chỉnh sửa', 'info');
+    }
+  } else {
+    addToast('Bạn không có quyền chỉnh sửa mindmap này.', 'error');
+  }
+
+  return false;
+}, [isReadOnly, userPermission, id, requestAccess, addToast]);
+
+
   // =========================================================================
   // 11. DRAG & DROP
   // =========================================================================
 
   const handleDragStart = (nodeId: string) => {
-    if (isReadOnly) return;
+    if (!promptUpgradeToEditorIfNeeded()) return;
+
     setDragStartState({ nodes, edges });
     const node = stageRef.current?.findOne(`#${nodeId}`);
     if (node && editingNodeId === nodeId) node.stopDrag();
   };
 
   const handleDragMove = (e: any, draggedNodeId: string) => {
-    if (isReadOnly) return;
+    if (!promptUpgradeToEditorIfNeeded()) return;
+
     const pos = e.target.position();
     let targetFound: string | null = null;
     for (const node of nodes) {
@@ -6872,7 +7795,8 @@ export default function Editor({ mode = 'edit' }: EditorProps) {
   };
 
   const handleDragEnd = (e: any, draggedNodeId: string) => {
-    if (isReadOnly) return;
+    if (!promptUpgradeToEditorIfNeeded()) return;
+
     setDragStartState(null);
     const finalX = e.target.x();
     const finalY = e.target.y();
@@ -6962,7 +7886,9 @@ export default function Editor({ mode = 'edit' }: EditorProps) {
   // 12. RENDER
   // =========================================================================
 
-  if (!isDataLoaded) {
+  // Chỉ chờ BE load xong mindmap
+  // 1) Đang load dữ liệu từ BE hoặc Firestore chưa xong
+  if (!isDataLoaded || permission === 'loading') {
     return (
       <div className="w-screen h-screen bg-white flex items-center justify-center text-gray-800 gap-2">
         <Spinner className="w-8 h-8 border-gray-400 border-t-gray-800" />
@@ -6971,9 +7897,17 @@ export default function Editor({ mode = 'edit' }: EditorProps) {
     );
   }
 
-  if (accessDenied && id) {
-    return <AccessDeniedScreen mindmapId={id} />;
-  }
+  // 2) BE đã từ chối (403) VÀ Firestore cũng nói 'denied' → màn Request Access
+if (accessDenied) {
+  return (
+    <AccessDeniedScreen
+      onRequestAccess={handleRequestAccessFromScreen}
+      requestStatus={requestStatus}
+    />
+  );
+}
+
+
 
   return (
     <>
@@ -7015,7 +7949,11 @@ export default function Editor({ mode = 'edit' }: EditorProps) {
           onAddSibling={handleToolbarAddSibling}
           onSetHyperlink={handleSetHyperlink}
           readOnly={isReadOnly}
+          isOwner={isOwner}
+          pendingRequestsCount={pendingRequests?.length ?? 0}
+          onShowRequests={() => setRequestModalOpen(true)}
         />
+
 
         <Sidebar />
 
@@ -7271,7 +8209,7 @@ export default function Editor({ mode = 'edit' }: EditorProps) {
               }
             }}
             onDblClick={(e) => {
-              if (isReadOnly) return;
+              if (!promptUpgradeToEditorIfNeeded()) return;
 
               const stage = e.target.getStage();
               if (e.target !== stage || !stage) return;
@@ -7468,7 +8406,8 @@ export default function Editor({ mode = 'edit' }: EditorProps) {
                       !isReadOnly && handleDragEnd(e, node.id)
                     }
                     onClick={(e) => {
-                      if (isReadOnly) return;
+                      if (!promptUpgradeToEditorIfNeeded()) return;
+
                       e.cancelBubble = true;
 
                       if (e.evt.shiftKey) {
@@ -7819,12 +8758,27 @@ export default function Editor({ mode = 'edit' }: EditorProps) {
             </div>
           )}
 
-          <ShareModal
-            isOpen={isShareModalOpen}
-            onClose={() => setIsShareModalOpen(false)}
-            mindmapId={id || ''}
-            isOwner={isOwner}
-          />
+        <ShareModal
+          isOpen={isShareModalOpen}
+          onClose={() => setIsShareModalOpen(false)} 
+          mindmapId={id!}
+          isOwner={isOwner}
+          pendingRequests={pendingRequests}
+          onApproveRequest={handleApproveAccessRequest}
+          onDenyRequest={handleDenyAccessRequest}
+        />
+
+
+          {isOwner && (
+            <AccessRequestModal
+              isOpen={isRequestModalOpen}
+              onClose={() => setRequestModalOpen(false)}
+              requests={pendingRequests || []}
+              onApprove={handleApproveAccessRequest}
+              onDeny={handleDenyAccessRequest}
+            />
+          )}
+
         </div>
       </div>
     </>
@@ -7860,8 +8814,8 @@ import { useNavigate } from "react-router-dom";
 import { exchangeCodeForTokens } from "../auth/cognito";
 import { AuthContext } from "../app/providers/AuthProvider";
 import Spinner from "../components/common/Spinner";
+import api from "../services/api"; // Import API instance đã cấu hình
 
-// [MERGE] Sử dụng phiên bản "light mode" từ feature/tt
 export default function Callback() {
   const navigate = useNavigate();
   const { setAuthTokens } = useContext(AuthContext);
@@ -7886,23 +8840,40 @@ export default function Callback() {
       }
 
       try {
+        // 1. Đổi code lấy token từ Cognito
         const res = await exchangeCodeForTokens(code);
         
-        setAuthTokens({
+        const tokens = {
           access_token: res.access_token,
           id_token: res.id_token,
           refresh_token: res.refresh_token,
           expires_at: Math.floor(Date.now() / 1000) + (res.expires_in ?? 3600),
-        });
+        };
 
+        // 2. Lưu token vào Context/Storage
+        setAuthTokens(tokens);
+        // Trigger event để các tab khác cập nhật (nếu cần)
         window.dispatchEvent(new StorageEvent("storage", { key: "mm_tokens" }));
+
+        // 3. [QUAN TRỌNG] Gọi API Sync User ngay lập tức
+        // Backend sẽ dùng Access Token trong header để lấy thông tin user từ Cognito và lưu vào DB
+        try {
+            console.log("Đang đồng bộ thông tin người dùng...");
+            await api.post("/users/sync-cognito"); 
+            console.log("Đồng bộ người dùng thành công.");
+        } catch (syncError) {
+            console.error("Lỗi khi đồng bộ user:", syncError);
+            // Vẫn cho phép login nhưng có thể user profile sẽ thiếu trong DB
+        }
         
+        // 4. Chuyển hướng
         navigate("/dashboard", { replace: true });
 
       } catch (e) {
         console.error("Token exchange error:", e instanceof Error ? e.message : e);
         navigate("/dashboard", { replace: true });
       } finally {
+        // Xóa query params trên URL để sạch đẹp
         window.history.replaceState({}, document.title, "/dashboard");
       }
     };
@@ -7916,11 +8887,13 @@ export default function Callback() {
   return (
     <div className="min-h-screen bg-white text-gray-900 flex flex-col items-center justify-center gap-4"> 
       <Spinner className="w-8 h-8" />
-      <span>Đang xử lý đăng nhập...</span>
+      <div className="flex flex-col items-center">
+        <span className="font-semibold text-lg">Đang đăng nhập...</span>
+        <span className="text-sm text-gray-500">Đang đồng bộ dữ liệu người dùng</span>
+      </div>
     </div>
   );
 }
-
 ==== ./services/mindmapsApi.ts ====
 /**
  * src/api/mindmapsApi.ts
@@ -7951,6 +8924,8 @@ import {
 
 // === [MỚI] TYPES CHO TÍNH NĂNG COLLABORATION & SHARE ===
 export type Permission = 'OWNER' | 'EDITOR' | 'VIEWER';
+export type PublicAccessLevel = 'DISABLED' | 'VIEW' | 'EDIT';
+
 
 export type Collaborator = {
   userId: string;
@@ -7962,7 +8937,7 @@ export type Collaborator = {
 export type ShareSettingsResponse = {
   mindmapId: string;
   isPublic: boolean;
-  publicAccessLevel: 'VIEW' | 'DISABLED';
+  publicAccessLevel: PublicAccessLevel;
   shareLink: string | null;
 };
 
@@ -7992,10 +8967,11 @@ export type FeMindmapDoc = {
     // [MỚI] Bổ sung 2 trường này để Editor.tsx đọc được quyền
   collaborators: Collaborator[];
   accessSettings: {
-      isPublic: boolean;
-      publicAccessLevel: 'VIEW' | 'DISABLED';
+    isPublic: boolean;
+    publicAccessLevel: PublicAccessLevel;
   };
 };
+
 
 // Tóm tắt mindmap (dùng cho danh sách)
 export type MindmapSummaryDto = {
@@ -8005,10 +8981,26 @@ export type MindmapSummaryDto = {
   updatedAt?: string;
 };
 
+async function approveAccessRequest(
+  mindmapId: string,
+  userId: string,
+  permission: Permission,
+) {
+  return api.post(`/mindmaps/${mindmapId}/requests/${userId}/approve`, {
+    permission,
+  });
+}
+
+async function rejectAccessRequest(mindmapId: string, userId: string) {
+  return api.post(`/mindmaps/${mindmapId}/requests/${userId}/reject`);
+}
+
+
 // =========================================================================
 // mindmapsApi - TẤT CẢ CÁC HÀM API
 // =========================================================================
 export const mindmapsApi = {
+
   // ===== 1. CORE CRUD =====
   list: async (): Promise<MindmapSummaryDto[]> =>
     (await api.get<MindmapSummaryDto[]>('/mindmaps')).data,
@@ -8148,25 +9140,53 @@ export const mindmapsApi = {
   /**
    * Bật/tắt chia sẻ công khai + cấp quyền xem công khai
    */
-  updateShareSettings: async (
-    mindmapId: string,
-    isPublic: boolean,
-    publicAccessLevel: 'VIEW' | 'DISABLED'
-  ): Promise<ShareSettingsResponse> => {
-    return (
-      await api.put<ShareSettingsResponse>(`/mindmaps/${mindmapId}/share-settings`, {
-        isPublic,
-        publicAccessLevel,
-      })
-    ).data;
-  },
+    updateShareSettings: async (
+      mindmapId: string,
+      payload: { isPublic: boolean; publicAccessLevel: PublicAccessLevel }
+    ): Promise<ShareSettingsResponse> => {
+      return (
+        await api.put<ShareSettingsResponse>(
+          `/mindmaps/${mindmapId}/share-settings`,
+          payload,
+        )
+      ).data;
+    },
   
-    requestAccess: async (mindmapId: string): Promise<void> => {
-    // Giả định BE có endpoint này. Nếu chưa có, bạn cần bảo BE thêm vào.
-    // Logic BE: Gửi noti hoặc email cho Owner.
-    return (await api.post<void>(`/mindmaps/${mindmapId}/request-access`)).data;
-  },
+    requestAccess: async (
+      mindmapId: string,
+      requestedPermission: Permission = 'VIEWER',
+    ): Promise<void> => {
+      await api.post<void>(`/mindmaps/${mindmapId}/request-access`, {
+        requestedPermission,
+      });
+    },
+
+
+  approveAccessRequest,
+  rejectAccessRequest,
 };
+==== ./services/firebase.ts ====
+import { initializeApp, getApps, getApp } from 'firebase/app';
+import { getFirestore } from 'firebase/firestore';
+
+const firebaseConfig = {
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
+  appId: import.meta.env.VITE_FIREBASE_APP_ID,
+};
+
+// (tùy chọn) log một lần để debug:
+// console.log('firebaseConfig:', firebaseConfig);
+
+// Singleton pattern: Chỉ khởi tạo nếu chưa có app nào
+const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
+
+// Export Firestore instance
+export const db = getFirestore(app);
+
 ==== ./services/AuthApi.ts ====
 import { cognitoConfig } from '../auth/cognitoConfig';
 
@@ -8343,65 +9363,91 @@ export const getGoogleLoginUrl = () => {
 };
 ==== ./services/api.ts ====
 // src/services/api.ts
-import axios, { AxiosHeaders } from "axios";
-// SỬA: Thêm clearTokens, thay đổi imports
+import axios, { AxiosHeaders, AxiosError } from "axios";
 import { loadTokens, saveTokens, clearTokens, type Tokens } from "./authStorage"; 
-import { getCurrentUserSession } from "../auth/cognitoDirect"; // SỬA: Import từ cognitoDirect
+import { getCurrentUserSession } from "../auth/cognitoDirect"; 
 
 const baseURL =
- import.meta.env.VITE_API_URL?.trim() ||
-// ... existing code ...
- "/api";
+  import.meta.env.VITE_API_URL?.trim() ||
+  "http://localhost:8081/api"; // Fallback URL nếu biến môi trường chưa set
 
 const api = axios.create({ baseURL });
 
-// SỬA: Cập nhật toàn bộ logic interceptor để dùng SDK
+// --- REQUEST INTERCEPTOR (Xử lý Refresh Token trước khi gửi) ---
 api.interceptors.request.use(async (config) => {
- const t = loadTokens();
- if (!t?.access_token) return config; // Không có token, cứ gửi request
+  const t = loadTokens();
+  if (!t?.access_token) return config; 
 
- const now = Math.floor(Date.now() / 1000);
- // Kiểm tra 60 giây trước khi hết hạn
- const expiresSoon = (t.expires_at ?? 0) - now <= 60; 
+  const now = Math.floor(Date.now() / 1000);
+  // Kiểm tra 60 giây trước khi hết hạn
+  const expiresSoon = (t.expires_at ?? 0) - now <= 60; 
 
- let accessToken = t.access_token; // Mặc định dùng token cũ
+  let accessToken = t.access_token; 
 
- if (expiresSoon) {
-  // Token sắp hết hạn, thử làm mới bằng SDK
-  try {
-   const session = await getCurrentUserSession(); // SDK sẽ tự động refresh nếu cần
-   const newAccessToken = session.getAccessToken().getJwtToken();
-   const newIdToken = session.getIdToken().getJwtToken();
-   const newRefreshToken = session.getRefreshToken()?.getToken() ?? t.refresh_token;
+  if (expiresSoon) {
+    console.log("[API] Token sắp hết hạn, đang refresh...");
+    try {
+      const session = await getCurrentUserSession(); 
+      const newAccessToken = session.getAccessToken().getJwtToken();
+      const newIdToken = session.getIdToken().getJwtToken();
+      const newRefreshToken = session.getRefreshToken()?.getToken() ?? t.refresh_token;
 
-   const next: Tokens = {
-    access_token: newAccessToken,
-    id_token: newIdToken,
-    refresh_token: newRefreshToken,
-    expires_at: session.getAccessToken().getExpiration(),
-   };
-   saveTokens(next); // Lưu token mới
-   accessToken = next.access_token; // Dùng token mới cho request này
-  } catch (e) {
-   console.error("API interceptor refresh failed:", e);
-   // Refresh thất bại, xóa token và tải lại trang để logout
-   clearTokens();
-   window.location.reload(); 
-   return Promise.reject(new Error("Session expired, logging out."));
+      const next: Tokens = {
+        access_token: newAccessToken,
+        id_token: newIdToken,
+        refresh_token: newRefreshToken,
+        expires_at: session.getAccessToken().getExpiration(),
+      };
+      saveTokens(next); 
+      accessToken = next.access_token; 
+      
+      // Emit event để AuthProvider cập nhật state nếu cần
+      window.dispatchEvent(new StorageEvent("storage", { key: "mm_tokens" }));
+    } catch (e) {
+      console.error("[API] Interceptor refresh failed:", e);
+      clearTokens();
+      window.location.href = "/dashboard"; // Redirect về trang chủ thay vì reload
+      return Promise.reject(new Error("Session expired, logging out."));
+    }
   }
- }
 
- // Gán header Authorization với token (cũ hoặc mới)
- if (!config.headers) config.headers = new AxiosHeaders();
- (config.headers as AxiosHeaders).set(
-  "Authorization",
-  `Bearer ${accessToken}`
- );
- return config;
+  if (!config.headers) config.headers = new AxiosHeaders();
+  (config.headers as AxiosHeaders).set(
+    "Authorization",
+    `Bearer ${accessToken}`
+  );
+  return config;
+}, (error) => {
+    return Promise.reject(error);
 });
 
-export default api;
+// --- [NEW] RESPONSE INTERCEPTOR (Xử lý lỗi 401 từ Backend) ---
+api.interceptors.response.use(
+  (response) => response,
+  async (error: AxiosError) => {
+    const originalRequest = error.config;
+    
+    // Nếu lỗi là 401 (Unauthorized) và không phải là request đang retry
+    if (error.response?.status === 401 && originalRequest) {
+      console.warn("[API] Nhận lỗi 401 từ Backend. Token có thể không hợp lệ hoặc User bị khóa.");
+      
+      // Xóa token và logout người dùng
+      clearTokens();
+      
+      // Dispatch event để UI cập nhật (UserAvatarMenu về guest)
+      window.dispatchEvent(new StorageEvent("storage", { key: "mm_tokens" }));
+      
+      // Chuyển hướng về trang chủ hoặc trang login
+      // window.location.href = "/dashboard"; 
+      
+      // Tùy chọn: Bạn có thể hiển thị Toast thông báo ở đây nếu tích hợp được
+    }
+    
+    return Promise.reject(error);
+  }
+);
 
+export default api;
 ==== ./services/authStorage.ts ====
 // src/services/authStorage.ts
 export type Tokens = {

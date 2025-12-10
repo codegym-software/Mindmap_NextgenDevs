@@ -1,4 +1,3 @@
-// src/main/java/com/example/mindmap/features/mindmap/MindmapService.java
 package com.example.mindmap.features.mindmap;
 
 import com.example.mindmap.core.auth.AuthUtils;
@@ -12,17 +11,17 @@ import com.example.mindmap.features.mindmap.content.EdgeData;
 import com.example.mindmap.features.mindmap.content.MindmapContent;
 import com.example.mindmap.features.mindmap.content.NodeData;
 import com.example.mindmap.features.mindmap.content.NodeStyle;
-import com.example.mindmap.features.mindmap.dto.MindmapCreateRequest;
 import com.example.mindmap.features.mindmap.dto.MindmapDetailResponse;
 import com.example.mindmap.features.mindmap.dto.MindmapSummaryResponse;
 import com.example.mindmap.features.mindmap.dto.MindmapSyncRequest;
-import com.example.mindmap.features.mindmap.dto.MindmapUpdateRequest; // [FIX] Import
+import com.example.mindmap.features.mindmap.dto.MindmapUpdateRequest;
 import com.example.mindmap.features.user.User;
 import com.example.mindmap.features.user.UserRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.StringUtils;
 
 import java.time.Instant;
 import java.util.ArrayList;
@@ -33,7 +32,6 @@ import java.util.Map;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
-import org.springframework.util.StringUtils;
 
 @Service
 public class MindmapService {
@@ -45,7 +43,6 @@ public class MindmapService {
     private final UserRepository userRepository;
     private final AuthUtils authUtils;
     
-    // ID của node gốc luôn là "root"
     private static final String ROOT_NODE_ID = "root";
 
     public MindmapService(MindmapRepository mindmapRepository, CollaborationRepository collaborationRepository, UserRepository userRepository, AuthUtils authUtils) {
@@ -54,8 +51,105 @@ public class MindmapService {
         this.userRepository = userRepository;
         this.authUtils = authUtils;
     }
-    
-    // --- Logic cho Endpoint (Giai đoạn 1) ---
+
+    // ===================================================================
+    // MAIN API METHODS
+    // ===================================================================
+
+    @Transactional(readOnly = true)
+    public MindmapDetailResponse getMindmapForCurrentUser(String id) {
+        String userId = authUtils.getRequiredCurrentUserId();
+        Mindmap mindmap = findMindmapById(id);
+        checkViewPermission(userId, mindmap);
+        return toDetailResponse(mindmap);
+    }
+
+    /**
+     * Kiểm tra quyền xem (VIEW):
+     * 1. Là Owner
+     * 2. Mindmap Public (chế độ VIEW)
+     * 3. Là Collaborator ĐÃ ĐƯỢC CHẤP NHẬN (ACTIVE)
+     */
+    public void checkViewPermission(String userId, Mindmap mindmap) {
+        if (mindmap.getOwnerId().equals(userId)) return;
+        
+        if (mindmap.getAccessSettings().isPublic() && mindmap.getAccessSettings().getPublicAccessLevel() == Mindmap.PublicAccessLevel.VIEW) return;
+        
+        // [QUAN TRỌNG] Phải check cả status ACCEPTED
+        boolean hasActiveCollab = collaborationRepository.existsByMindmapIdAndUserIdAndStatus(
+                mindmap.getId(), 
+                userId, 
+                Collaboration.InviteStatus.ACCEPTED
+        );
+        
+        if (hasActiveCollab) return;
+
+        throw new AccessDeniedException("mindmap", "view");
+    }
+
+    /**
+     * Kiểm tra quyền sửa (EDIT):
+     * 1. Là Owner
+     * 2. Là Collaborator ĐÃ ĐƯỢC CHẤP NHẬN (ACTIVE) + Quyền EDITOR
+     */
+    public void checkEditPermission(String userId, Mindmap mindmap) {
+        if (mindmap.getOwnerId().equals(userId)) return;
+        
+        collaborationRepository.findByMindmapIdAndUserId(mindmap.getId(), userId)
+                .filter(c -> c.getStatus() == Collaboration.InviteStatus.ACCEPTED) // Phải Active
+                .filter(c -> c.getPermission() == Permission.EDITOR)               // Phải là Editor
+                .orElseThrow(() -> new AccessDeniedException("mindmap", "edit"));
+    }
+
+    // ===================================================================
+    // CRUD OPERATIONS
+    // ===================================================================
+
+    @Transactional
+    public MindmapDetailResponse createMindmap(MindmapUpdateRequest request) {
+        String userId = authUtils.getRequiredCurrentUserId();
+        Mindmap mindmap = new Mindmap();
+        mindmap.setName(request.name());
+        mindmap.setOwnerId(userId);
+        mindmap.setLastEditedBy(userId);
+
+        if (request.content() != null && request.content().getNodes() != null && !request.content().getNodes().isEmpty()) {
+            mindmap.setContent(request.content());
+        } else {
+            mindmap.setContent(createDefaultContent());
+        }
+
+        Mindmap savedMindmap = mindmapRepository.save(mindmap);
+        return toDetailResponse(savedMindmap);
+    }
+
+    @Transactional
+    public MindmapDetailResponse updateMindmap(String id, MindmapUpdateRequest request) {
+        String userId = authUtils.getRequiredCurrentUserId();
+        Mindmap mindmap = findMindmapById(id);
+        checkEditPermission(userId, mindmap);
+
+        if (request.name() != null && !request.name().isBlank()) {
+            mindmap.setName(request.name().trim());
+        }
+        if (request.content() != null) {
+            mindmap.setContent(request.content());
+        }
+        mindmap.setLastEditedBy(userId);
+        Mindmap updatedMindmap = mindmapRepository.save(mindmap);
+        return toDetailResponse(updatedMindmap);
+    }
+
+    @Transactional
+    public void deleteMindmap(String id) {
+        String userId = authUtils.getRequiredCurrentUserId();
+        Mindmap mindmap = findMindmapById(id);
+        if (!mindmap.getOwnerId().equals(userId)) {
+            throw new AccessDeniedException("mindmap", "delete");
+        }
+        collaborationRepository.deleteByMindmapId(id);
+        mindmapRepository.deleteById(id);
+    }
 
     @Transactional
     public MindmapDetailResponse duplicateMindmap(String originalMindmapId) {
@@ -71,16 +165,13 @@ public class MindmapService {
         MindmapContent originalContent = originalMindmap.getContent();
         if (originalContent != null) {
             MindmapContent newContent = new MindmapContent();
-
             newContent.setLayoutMode(originalContent.getLayoutMode());
-            
             if (originalContent.getNodes() != null) {
                 List<NodeData> newNodes = originalContent.getNodes().stream()
                         .map(this::deepCopyNodeData)
                         .collect(Collectors.toList());
                 newContent.setNodes(newNodes);
             }
-            
             if (originalContent.getEdges() != null) {
                 List<EdgeData> newEdges = originalContent.getEdges().stream()
                         .map(this::deepCopyEdgeData)
@@ -95,7 +186,28 @@ public class MindmapService {
         Mindmap savedMindmap = mindmapRepository.save(newMindmap);
         return toDetailResponse(savedMindmap);
     }
-    
+
+    @Transactional(readOnly = true)
+    public List<MindmapSummaryResponse> listForCurrentUser(String search) {
+        String userId = authUtils.getRequiredCurrentUserId();
+        List<Mindmap> owned = mindmapRepository.findByOwnerIdOrderByUpdatedAtDesc(userId);
+        
+        // Lấy các mindmap được chia sẻ (chỉ tính những cái đã ACCEPTED)
+        List<String> collaboratedMapIds = collaborationRepository.findByUserId(userId).stream()
+                .filter(c -> c.getStatus() == Collaboration.InviteStatus.ACCEPTED) // [FIX] Chỉ hiện map đã active
+                .map(Collaboration::getMindmapId)
+                .collect(Collectors.toList());
+                
+        List<Mindmap> collaborated = mindmapRepository.findByIdInOrderByUpdatedAtDesc(collaboratedMapIds);
+
+        return Stream.concat(owned.stream(), collaborated.stream())
+                .distinct()
+                .filter(mindmap -> !StringUtils.hasText(search) || 
+                        mindmap.getName().toLowerCase().contains(search.toLowerCase()))
+                .map(this::toSummaryResponse)
+                .collect(Collectors.toList());
+    }
+
     @Transactional(readOnly = true)
     public String exportMindmapAsText(String id) {
         String currentUserId = authUtils.getRequiredCurrentUserId();
@@ -127,174 +239,49 @@ public class MindmapService {
         
         return sb.toString();
     }
-    
-    private void buildTextTreeRecursive(String nodeId, Map<String, NodeData> nodesMap, Map<String, List<String>> childrenMap, StringBuilder sb, int depth) {
-        NodeData node = nodesMap.get(nodeId);
-        if (node == null) return;
-        
-        if (!nodeId.equals(ROOT_NODE_ID)) {
-            sb.append("    ".repeat(depth - 1));
-            sb.append("- ");
-            sb.append(node.getText() != null ? node.getText() : "[Trống]");
-            sb.append("\n");
-        }
-        
-        List<String> childrenIds = childrenMap.getOrDefault(nodeId, Collections.emptyList());
-        int nextDepth = nodeId.equals(ROOT_NODE_ID) ? 1 : depth + 1;
 
-        for (String childId : childrenIds) {
-            buildTextTreeRecursive(childId, nodesMap, childrenMap, sb, nextDepth);
-        }
-    }
-
-
-    // --- Logic CRUD (Cập nhật cho List<NodeData>) ---
-    
-    @Transactional(readOnly = true)
-    public List<MindmapSummaryResponse> listForCurrentUser(String search) {
-        String userId = authUtils.getRequiredCurrentUserId();
-        List<Mindmap> owned = mindmapRepository.findByOwnerIdOrderByUpdatedAtDesc(userId);
-        List<String> collaboratedMapIds = collaborationRepository.findByUserId(userId).stream()
-                .map(Collaboration::getMindmapId)
-                .collect(Collectors.toList());
-        List<Mindmap> collaborated = mindmapRepository.findByIdInOrderByUpdatedAtDesc(collaboratedMapIds);
-
-        return Stream.concat(owned.stream(), collaborated.stream())
-                .distinct()
-                .filter(mindmap -> !StringUtils.hasText(search) || 
-                        mindmap.getName().toLowerCase().contains(search.toLowerCase()))
-                .map(this::toSummaryResponse)
-                .collect(Collectors.toList());
-    }
-
-    @Transactional(readOnly = true)
-    public MindmapDetailResponse getMindmapForCurrentUser(String id) {
-        String userId = authUtils.getRequiredCurrentUserId();
-        Mindmap mindmap = findMindmapById(id);
-        checkViewPermission(userId, mindmap);
-        return toDetailResponse(mindmap);
-    }
-    
-    /**
-     * [FIX] Thay đổi signature để nhận MindmapUpdateRequest
-     * và sử dụng 'content' do FE gửi lên.
-     */
-    @Transactional
-    public MindmapDetailResponse createMindmap(MindmapUpdateRequest request) { // <-- FIX LỖI 1
-        String userId = authUtils.getRequiredCurrentUserId();
-        Mindmap mindmap = new Mindmap();
-        mindmap.setName(request.name());
-        mindmap.setOwnerId(userId);
-        mindmap.setLastEditedBy(userId);
-
-        // [FIX] Sử dụng content từ request nếu có, ngược lại dùng default
-        if (request.content() != null && request.content().getNodes() != null && !request.content().getNodes().isEmpty()) {
-            mindmap.setContent(request.content());
-        } else {
-            mindmap.setContent(createDefaultContent());
-        }
-
-        Mindmap savedMindmap = mindmapRepository.save(mindmap);
-        return toDetailResponse(savedMindmap);
-    }
-
-    /**
-    * [MỚI] Logic xử lý đồng bộ (sync) mindmap của Guest.
-    */
     @Transactional
     public List<MindmapSummaryResponse> syncGuestMindmaps(List<MindmapSyncRequest> requests) {
-    
         String currentUserId = authUtils.getRequiredCurrentUserId();
         List<Mindmap> newMindmaps = new ArrayList<>();
-    
+        
         for (MindmapSyncRequest request : requests) {
-    
             Mindmap mindmap = new Mindmap();
             mindmap.setName(request.name());
             mindmap.setOwnerId(currentUserId);
             mindmap.setLastEditedBy(currentUserId);
-    
             mindmap.setContent(request.content());
-    
             try {
                 Instant guestCreatedAt = Instant.parse(request.createdAt());
                 mindmap.setCreatedAt(guestCreatedAt);
             } catch (Exception e) {
                 log.warn("Invalid guest createdAt format '{}'. Defaulting to now.", request.createdAt());
             }
-    
             newMindmaps.add(mindmap);
         }
-    
+        
         List<Mindmap> savedMindmaps = mindmapRepository.saveAll(newMindmaps);
-    
         return savedMindmaps.stream()
                 .map(this::toSummaryResponse)
                 .collect(Collectors.toList());
     }
 
-    
-
-    @Transactional
-    public MindmapDetailResponse updateMindmap(String id, MindmapUpdateRequest request) {
-        String userId = authUtils.getRequiredCurrentUserId();
-        Mindmap mindmap = findMindmapById(id);
-        checkEditPermission(userId, mindmap);
-
-        if (request.name() != null && !request.name().isBlank()) {
-            mindmap.setName(request.name().trim());
-        }
-        if (request.content() != null) {
-            mindmap.setContent(request.content());
-        }
-        mindmap.setLastEditedBy(userId);
-        Mindmap updatedMindmap = mindmapRepository.save(mindmap);
-        return toDetailResponse(updatedMindmap);
-    }
-    
-    @Transactional
-    public void deleteMindmap(String id) {
-        String userId = authUtils.getRequiredCurrentUserId();
-        Mindmap mindmap = findMindmapById(id);
-        if (!mindmap.getOwnerId().equals(userId)) {
-            throw new AccessDeniedException("mindmap", "delete");
-        }
-        collaborationRepository.deleteByMindmapId(id);
-        mindmapRepository.deleteById(id);
-    }
-    
-    // --- Hàm Helper (Không thay đổi) ---
+    // ===================================================================
+    // HELPER METHODS
+    // ===================================================================
 
     public Mindmap findMindmapById(String id) {
         return mindmapRepository.findById(id)
             .orElseThrow(() -> new ResourceNotFoundException("Mindmap", "id", id));
     }
-    
-    public void checkViewPermission(String userId, Mindmap mindmap) {
-        if (mindmap.getOwnerId().equals(userId)) return;
-        if (mindmap.getAccessSettings().isPublic() && mindmap.getAccessSettings().getPublicAccessLevel() == Mindmap.PublicAccessLevel.VIEW) return;
-        if (collaborationRepository.existsByMindmapIdAndUserId(mindmap.getId(), userId)) return;
-        throw new AccessDeniedException("mindmap", "view");
-    }
-
-    public void checkEditPermission(String userId, Mindmap mindmap) {
-        if (mindmap.getOwnerId().equals(userId)) return;
-        collaborationRepository.findByMindmapIdAndUserId(mindmap.getId(), userId)
-                .filter(c -> c.getPermission() == Permission.EDITOR)
-                .orElseThrow(() -> new AccessDeniedException("mindmap", "edit"));
-    }
-    
-    // --- Helper functions (Sửa lỗi + Cập nhật) ---
 
     private MindmapContent createDefaultContent() {
         MindmapContent content = new MindmapContent();
-        NodeData root = new NodeData(); // [FIX] NodeData.java đã tự khởi tạo style
-        
+        NodeData root = new NodeData();
         root.setId(ROOT_NODE_ID);  
         root.setText("Chủ đề chính");
         root.setX(0);
         root.setY(0);
-        
         content.setNodes(List.of(root));  
         content.setEdges(Collections.emptyList());
         content.setLayoutMode("FREEFORM");
@@ -306,7 +293,11 @@ public class MindmapService {
     }
 
     private MindmapDetailResponse toDetailResponse(Mindmap mindmap) {
-        List<Collaboration> collaborations = collaborationRepository.findByMindmapId(mindmap.getId());
+        // Lấy danh sách collaborator (chỉ ACTIVE mới trả về cho client hiển thị)
+        List<Collaboration> collaborations = collaborationRepository.findByMindmapId(mindmap.getId()).stream()
+                .filter(c -> c.getStatus() == Collaboration.InviteStatus.ACCEPTED) // [FIX] Filter Active
+                .collect(Collectors.toList());
+                
         List<String> userIds = collaborations.stream().map(Collaboration::getUserId).collect(Collectors.toList());
         userIds.add(mindmap.getOwnerId());
         
@@ -341,8 +332,26 @@ public class MindmapService {
                 mindmap.getVersion()
         );
     }
-    
-    // [FIX] Sửa deepCopyNodeData để xử lý style (quan trọng khi nhân bản)
+
+    private void buildTextTreeRecursive(String nodeId, Map<String, NodeData> nodesMap, Map<String, List<String>> childrenMap, StringBuilder sb, int depth) {
+        NodeData node = nodesMap.get(nodeId);
+        if (node == null) return;
+        
+        if (!nodeId.equals(ROOT_NODE_ID)) {
+            sb.append("    ".repeat(depth - 1));
+            sb.append("- ");
+            sb.append(node.getText() != null ? node.getText() : "[Trống]");
+            sb.append("\n");
+        }
+        
+        List<String> childrenIds = childrenMap.getOrDefault(nodeId, Collections.emptyList());
+        int nextDepth = nodeId.equals(ROOT_NODE_ID) ? 1 : depth + 1;
+
+        for (String childId : childrenIds) {
+            buildTextTreeRecursive(childId, nodesMap, childrenMap, sb, nextDepth);
+        }
+    }
+
     private NodeData deepCopyNodeData(NodeData original) {
         if (original == null) return null;
         NodeData copy = new NodeData();
@@ -351,19 +360,11 @@ public class MindmapService {
         copy.setX(original.getX());
         copy.setY(original.getY());
         copy.setParentId(original.getParentId());
-        
         copy.setCollapsed(original.isCollapsed());
         copy.setHyperlink(original.getHyperlink());
         copy.setNotes(original.getNotes());
         
-        // [FIX] Phải deep copy style, nếu không các node sẽ chia sẻ
-        // cùng một object style
         if (original.getStyle() != null) {
-            // Giả định NodeStyle có @Data,
-            // chúng ta có thể tạo bản sao (hoặc dùng thư viện)
-            // Tạm thời dùng shallow copy (Lombok @Data không tự deep copy)
-            // Nếu NodeStyle chứa object con, cần logic copy sâu hơn.
-            // *Nhưng NodeStyle.java hiện tại chỉ có kiểu nguyên thủy -> an toàn*
             NodeStyle originalStyle = original.getStyle();
             NodeStyle newStyle = new NodeStyle();
             newStyle.setColor(originalStyle.getColor());
@@ -373,12 +374,10 @@ public class MindmapService {
             newStyle.setTextAlign(originalStyle.getTextAlign());
             copy.setStyle(newStyle);
         } else {
-            copy.setStyle(new NodeStyle()); // Đảm bảo không null
+            copy.setStyle(new NodeStyle());
         }
         
-        // Sao chép externalReference (shallow copy là đủ)
         copy.setExternalReference(original.getExternalReference());
-        
         return copy;
     }
     

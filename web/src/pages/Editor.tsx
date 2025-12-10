@@ -29,8 +29,7 @@ import Spinner from '../components/common/Spinner';
 import CursorLayer from '../features/editor/CursorLayer';
 import ShareModal from '../features/collaboration/ShareModal';
 import AccessDeniedScreen from '../features/editor/AccessDeniedScreen';
-import AccessRequestModal from '../features/editor/AccessRequestModal'; // ✅ THÊM
-
+import AccessRequestModal from '../features/editor/AccessRequestModal';
 
 // --- Stores & Types ---
 import {
@@ -58,8 +57,7 @@ import {
   BeMindmapDoc,
   normalizeContentBEtoFE,
 } from '../services/dataMapper';
-import { useMindmapAccess } from '../hooks/useMindmapAccess'; // ✅ THÊM
-
+import { useMindmapAccess } from '../hooks/useMindmapAccess';
 
 // --- Realtime & Helpers ---
 import { useRealtime } from '../hooks/useRealtime';
@@ -76,7 +74,7 @@ import {
   getCursorColor,
 } from '../features/editor/utils/EditorHelpers';
 
-// ===== NEW: EditorProps để phân biệt /editor vs /share =====
+// ===== EditorProps: phân biệt /editor vs /share =====
 type EditorProps = {
   mode?: 'edit' | 'share';
 };
@@ -84,30 +82,30 @@ type EditorProps = {
 export default function Editor({ mode = 'edit' }: EditorProps) {
   const { id } = useParams<{ id?: string }>();
   const navigate = useNavigate();
+
   const { addToast } = useToast();
   const { toggleTheme } = useTheme();
   const { isAuthed, login, user } = useAuth();
   const { createGuest } = useLocalMindmap();
 
-    // ✅ Hook quản lý quyền & request access
+  const isGuest = !!id && id.startsWith('guest-');
+  const isShareRoute = mode === 'share'; // /share => view-only UI
+
+  // --- Firestore Access Hook (collab, pending requests, ...) ---
   const {
-    permission,            // 'loading' | 'denied' | ... (tùy bạn implement)
-    requestStatus,         // 'none' | 'pending' | 'rejected'
-    pendingRequests,       // danh sách request cần duyệt (Owner)
-    isOwner: accessIsOwner,
+    permission: fsAccessState,     // 'loading' | 'allowed' | 'denied' | ...
+    isOwner: isOwnerFromAccess,    // owner theo Firestore
+    pendingRequests,
+    requestStatus,
     requestAccess,
     approveRequest,
     denyRequest,
   } = useMindmapAccess(id || '', user);
 
-  // ✅ Modal hiển thị danh sách yêu cầu cho Owner
+  // Modal request list cho owner
   const [isRequestModalOpen, setRequestModalOpen] = useState(false);
 
-
-  const isGuest = !!id && id.startsWith('guest-');
-  const isShareRoute = mode === 'share'; // /share route => view-only UI
-
-  // --- State từ Store ---
+  // --- Store từ Zustand ---
   const {
     nodes,
     edges,
@@ -131,12 +129,16 @@ export default function Editor({ mode = 'edit' }: EditorProps) {
 
   // --- State nội bộ ---
   const [name, setName] = useState('Loading...');
-  const [ownerId, setOwnerId] = useState<string | null>(null);
+  const [ownerId, setOwnerId] = useState<string | null>(null); // owner từ BE
   const [isDataLoaded, setIsDataLoaded] = useState(false);
   const [isFormattingToolbarOpen, setFormattingToolbarOpen] = useState(false);
   const [isShareModalOpen, setIsShareModalOpen] = useState(false);
-  const [userPermission, setUserPermission] = useState<Permission | null>(null);
+  const [userPermission, setUserPermission] = useState<Permission | null>(null); // quyền từ BE (OWNER/EDITOR/VIEWER)
   const [accessDenied, setAccessDenied] = useState(false);
+
+  const [backendAccess, setBackendAccess] = useState<
+    'unknown' | 'allowed' | 'denied'
+  >('unknown');
 
   const [dimensions, setDimensions] = useState({
     width: window.innerWidth,
@@ -178,29 +180,30 @@ export default function Editor({ mode = 'edit' }: EditorProps) {
   const activeTheme =
     colorThemes[activeColorThemeId as keyof typeof colorThemes];
 
-  // --- Permission: Owner ---
+  // --- Resolve Owner: Backend + Firestore ---
   const computedIsOwner = useMemo(() => {
     if (!user || !ownerId) return false;
-    // So sánh linh hoạt cả sub (Cognito) và id
+    // So sánh linh hoạt giữa Cognito `sub` và `id` cục bộ
     return user.sub === ownerId || (user as any).id === ownerId;
   }, [user, ownerId]);
 
-  // ✅ Ưu tiên flag từ useMindmapAccess, fallback về computedIsOwner
-  const isOwner = accessIsOwner ?? computedIsOwner;
+  // Kết hợp hai nguồn: nếu BE nói owner thì ưu tiên, nếu không thì dùng Firestore
+  const isOwner = useMemo(
+    () => Boolean(computedIsOwner || isOwnerFromAccess),
+    [computedIsOwner, isOwnerFromAccess],
+  );
 
-  // --- isReadOnly (FIXED): tính thêm cả share route ---
+  // --- isReadOnly: tuỳ theo route + quyền từ BE ---
   const isReadOnly = useMemo(() => {
-    if (isShareRoute) return true; // /share luôn view-only
-    if (isOwner) return false;
+    if (isShareRoute) return true;         // share route luôn view-only
+    if (isOwner) return false;             // owner luôn được sửa
     if (userPermission === 'EDITOR') return false;
-    // Viewer, Guest, hoặc không có permission => read-only
-    return true;
-  }, [isOwner, userPermission, isShareRoute]);
+    return true;                           // còn lại => chỉ xem
+  }, [isShareRoute, isOwner, userPermission]);
 
-  // --- Tên & màu của current user (presence) ---
+  // --- Tên & màu user cho realtime presence ---
   const myName = useMemo(() => {
     if (!user) return 'Guest';
-    // Ưu tiên displayName, sau đó username/email
     return user.displayName || user.email?.split('@')[0] || 'User';
   }, [user]);
 
@@ -387,7 +390,7 @@ export default function Editor({ mode = 'edit' }: EditorProps) {
     if (isGuest) {
       saveGuestDoc(id, name, currentNodes, currentEdges);
     } else if (isAuthed) {
-      // Chỉ Owner mới auto-save lên server
+      // Chỉ owner mới auto-save bản gốc
       if (!isReadOnly && isOwner) {
         const docToSave = {
           name,
@@ -401,7 +404,7 @@ export default function Editor({ mode = 'edit' }: EditorProps) {
   }, 5000);
 
   // =========================================================================
-  // 4. LAYOUT (giữ nguyên)
+  // 4. LAYOUT
   // =========================================================================
 
   const handleLayout = useCallback(
@@ -719,9 +722,29 @@ export default function Editor({ mode = 'edit' }: EditorProps) {
     },
     onLayoutRequest: (keepCamera = false) => handleLayout(keepCamera),
     onSetRootCollapse: handleSetRootCollapse,
-    // chỉ connect khi không bị chặn quyền
-    shouldConnect: !accessDenied && permission !== 'denied',
+    shouldConnect: !accessDenied && !!id,
   });
+
+  const handleRequestAccessFromScreen = useCallback(async () => {
+    if (!id) return;
+
+    if (!isAuthed) {
+      login('login' as any);
+      return;
+    }
+
+    try {
+      // 1) Gọi BE xin quyền VIEWER
+      await mindmapsApi.requestAccess(id, 'VIEWER');
+      // 2) Ghi vào Firestore queue
+      await requestAccess({ requestedPermission: 'VIEWER' });
+
+      addToast('Đã gửi yêu cầu truy cập, vui lòng chờ chủ sở hữu duyệt.', 'success');
+    } catch (e) {
+      console.error('Request access failed:', e);
+      addToast('Gửi yêu cầu thất bại, vui lòng thử lại.', 'error');
+    }
+  }, [id, isAuthed, login, requestAccess, addToast]);
 
   // =========================================================================
   // 6. ZOOM & PAN
@@ -777,7 +800,84 @@ export default function Editor({ mode = 'edit' }: EditorProps) {
   }, [handleResize]);
 
   // =========================================================================
-  // 7. LOAD DATA & PERMISSION (FIX)
+  // 7. AUTO RELOAD KHI FIRESTORE MỞ QUYỀN (SAU 403 BE)
+  // =========================================================================
+
+  useEffect(() => {
+    // Chỉ chạy khi:
+    // - Có mindmapId
+    // - Backend đã trả 403 => backendAccess = 'denied'
+    // - Firestore đã ghi 'allowed' (owner đã approve)
+    if (!id) return;
+    if (backendAccess !== 'denied') return;
+    if (fsAccessState !== 'allowed') return;
+
+    let cancelled = false;
+
+    (async () => {
+      try {
+        console.log(
+          '[Editor] Firestore access allowed, retry loading from backend...',
+        );
+        const data = await mindmapsApi.get(id);
+
+        if (cancelled) return;
+
+        setBackendAccess('allowed');
+        setAccessDenied(false);
+
+        setName(data.name);
+        setOwnerId(data.ownerId);
+
+        useEditorStore.setState({
+          currentMindmapId: id,
+          currentMindmapName: data.name,
+          isDirty: false,
+        });
+
+        clearHistory();
+        setGraph(data.nodes, data.edges);
+
+        setGlobalStore({
+          globalStructure: (data.layoutMode as GlobalStructure) || 'mindmap',
+          globalFont: data.fontFamily || fonts[0].value,
+          branchLineWidth: data.branchLineWidth || 2,
+          isColoredBranch: data.isColoredBranch ?? true,
+          globalBranchColor: data.globalBranchColor || '#94A3B8',
+          activeColorThemeId: data.activeColorThemeId || 'dawn',
+          backgroundColor: data.backgroundColor || '#FAFAFB',
+        });
+
+        setBackgroundColor(data.backgroundColor || '#FAFAFB');
+        setSelectedNodeIds(['root']);
+        setIsDataLoaded(true);
+
+        console.log('[Editor] Auto reload after approve success.');
+      } catch (error: any) {
+        if (cancelled) return;
+        console.error('[Editor] Auto reload after approve failed', error);
+        addToast(
+          'Quyền đang được cập nhật, vui lòng thử lại sau ít giây...',
+          'info',
+        );
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    id,
+    backendAccess,
+    fsAccessState,
+    clearHistory,
+    setGraph,
+    setGlobalStore,
+    addToast,
+  ]);
+
+  // =========================================================================
+  // 8. LOAD DATA (BE + GUEST + SESSION) & QUYỀN TỪ BACKEND
   // =========================================================================
 
   useEffect(() => {
@@ -786,8 +886,9 @@ export default function Editor({ mode = 'edit' }: EditorProps) {
     const loadData = async () => {
       setIsDataLoaded(false);
       setAccessDenied(false);
+      setBackendAccess('unknown');
 
-      // 1. Không có id
+      // 1. Không có id: tạo guest hoặc quay về dashboard
       if (!id) {
         if (isAuthed) {
           navigate('/dashboard', { replace: true });
@@ -803,7 +904,7 @@ export default function Editor({ mode = 'edit' }: EditorProps) {
       try {
         let data: FeMindmapDoc | null = null;
 
-        // 2. Ưu tiên lấy từ sessionStorage
+        // 2. Ưu tiên lấy từ sessionStorage (mindmap mới tạo xong redirect)
         const tempGuestData = sessionStorage.getItem('temp_mindmap_guest');
         const tempAuthedData = sessionStorage.getItem('temp_mindmap');
 
@@ -817,7 +918,7 @@ export default function Editor({ mode = 'edit' }: EditorProps) {
           sessionStorage.removeItem('temp_mindmap');
         }
 
-        // 3. Nếu vẫn chưa có data -> guest local hoặc API
+        // 3. Nếu vẫn chưa có: guest local hoặc API BE
         if (!data) {
           if (isGuest) {
             data = loadGuestDoc(id);
@@ -834,7 +935,7 @@ export default function Editor({ mode = 'edit' }: EditorProps) {
           setName(data.name);
           setOwnerId(data.ownerId);
 
-          // PERMISSION CHECK (FIX: check cả sub & id & public view)
+          // Quyền từ backend (OWNER/EDITOR/VIEWER/public view)
           if (
             user &&
             (user.sub === data.ownerId || (user as any).id === data.ownerId)
@@ -881,6 +982,7 @@ export default function Editor({ mode = 'edit' }: EditorProps) {
           setSelectedNodeIds(['root']);
 
           setIsDataLoaded(true);
+          setBackendAccess('allowed');
         }
       } catch (error: any) {
         if (!isMounted) return;
@@ -889,10 +991,11 @@ export default function Editor({ mode = 'edit' }: EditorProps) {
         const status = error?.response?.status;
 
         if (status === 403 || status === 401) {
-          // Không đủ quyền
+          // Không đủ quyền BE -> chờ Firestore signal
           console.log(
-            '⛔ Access Denied detected. Showing Request Access Screen.',
+            '⛔ Access Denied from backend. Waiting for Firestore to unlock after approve...',
           );
+          setBackendAccess('denied');
           setAccessDenied(true);
           setIsDataLoaded(true);
         } else if (status === 429) {
@@ -929,7 +1032,49 @@ export default function Editor({ mode = 'edit' }: EditorProps) {
   ]);
 
   // =========================================================================
-  // 8. SAVE
+  // 9. APPROVE / DENY REQUEST: BE + FIRESTORE
+  // =========================================================================
+
+  const handleDenyAccessRequest = useCallback(
+    async (requesterId: string) => {
+      if (!id) return;
+      try {
+        // BE
+        await mindmapsApi.rejectAccessRequest(id, requesterId);
+        // Firestore
+        await denyRequest(requesterId);
+        addToast('Đã từ chối yêu cầu truy cập', 'info');
+      } catch (error) {
+        console.error('Deny access request failed', error);
+        addToast('Không thể từ chối yêu cầu', 'error');
+      }
+    },
+    [id, denyRequest, addToast],
+  );
+
+  const handleApproveAccessRequest = useCallback(
+    async (requesterId: string, perm: Permission) => {
+      if (!id) return;
+
+      try {
+        // BE
+        await mindmapsApi.approveAccessRequest(id, requesterId, perm);
+
+        // Firestore
+        const firestorePerm = perm === 'EDITOR' ? 'EDITOR' : 'VIEWER';
+        await approveRequest(requesterId, firestorePerm);
+
+        addToast('Đã duyệt yêu cầu truy cập', 'success');
+      } catch (error) {
+        console.error('Approve access request failed', error);
+        addToast('Không thể duyệt yêu cầu truy cập', 'error');
+      }
+    },
+    [id, approveRequest, addToast],
+  );
+
+  // =========================================================================
+  // 10. SAVE HANDLER
   // =========================================================================
 
   const handleSave = () => {
@@ -967,12 +1112,36 @@ export default function Editor({ mode = 'edit' }: EditorProps) {
   }, [selectedNodeIds]);
 
   // =========================================================================
-  // 9. INTERACTION (SANDBOX + READONLY)
+  // 11. PROMPT REQUEST ACCESS KHI ĐANG VIEW-ONLY
+  // =========================================================================
+
+  const promptUpgradeToEditorIfNeeded = useCallback(() => {
+    if (!isReadOnly) return true;
+
+    // Chỉ show prompt nếu đã có quyền xem (VIEWER)
+    if (userPermission === 'VIEWER') {
+      const ok = window.confirm(
+        'Bạn hiện chỉ có quyền xem. Bạn có muốn gửi yêu cầu quyền chỉnh sửa không?',
+      );
+      if (ok && id) {
+        mindmapsApi.requestAccess(id, 'EDITOR').catch(console.error);
+        requestAccess({ requestedPermission: 'EDITOR' }).catch(console.error);
+        addToast('Đã gửi yêu cầu quyền chỉnh sửa', 'info');
+      }
+    } else {
+      addToast('Bạn không có quyền chỉnh sửa mindmap này.', 'error');
+    }
+
+    return false;
+  }, [isReadOnly, userPermission, id, requestAccess, addToast]);
+
+  // =========================================================================
+  // 12. INTERACTION: EDIT TEXT / NODES
   // =========================================================================
 
   const startEditing = useCallback(
     (nodeId: string) => {
-      if (isReadOnly) return; // share / viewer: không cho edit text
+      if (!promptUpgradeToEditorIfNeeded()) return;
       setSelectedNodeIds([nodeId]);
       setEditingNodeId(nodeId);
       setTimeout(() => {
@@ -980,7 +1149,7 @@ export default function Editor({ mode = 'edit' }: EditorProps) {
         editingInputRef.current?.select();
       }, 50);
     },
-    [isReadOnly],
+    [promptUpgradeToEditorIfNeeded],
   );
 
   const justStoppedEditingRef = useRef(false);
@@ -1026,7 +1195,7 @@ export default function Editor({ mode = 'edit' }: EditorProps) {
 
   const handleAddChild = useCallback(
     (parentId: string) => {
-      if (isReadOnly) return;
+      if (!promptUpgradeToEditorIfNeeded()) return;
 
       const parentNode = nodeMap.get(parentId);
       const parentVisual = nodeVisuals.get(parentId);
@@ -1085,13 +1254,13 @@ export default function Editor({ mode = 'edit' }: EditorProps) {
       startEditing,
       handleLayout,
       sendPatch,
-      isReadOnly,
+      promptUpgradeToEditorIfNeeded,
     ],
   );
 
   const handleAddSibling = useCallback(
     (nodeId: string) => {
-      if (isReadOnly) return;
+      if (!promptUpgradeToEditorIfNeeded()) return;
 
       if (nodeId === 'root') {
         handleAddChild('root');
@@ -1145,12 +1314,13 @@ export default function Editor({ mode = 'edit' }: EditorProps) {
       handleLayout,
       handleAddChild,
       sendPatch,
-      isReadOnly,
+      promptUpgradeToEditorIfNeeded,
     ],
   );
 
   const handleDeleteNode = useCallback(() => {
-    if (isReadOnly) return;
+    if (!promptUpgradeToEditorIfNeeded()) return;
+
     if (selectedNodeIds.length === 0) return;
 
     const idsToDelete = selectedNodeIds.filter((id) => id !== 'root');
@@ -1191,15 +1361,13 @@ export default function Editor({ mode = 'edit' }: EditorProps) {
     handleLayout,
     debouncedPersistData,
     sendPatch,
-    isReadOnly,
+    promptUpgradeToEditorIfNeeded,
   ]);
 
   const handleUpdateNode = (updates: Partial<NodeData>) => {
     if (selectedNodeIds.length === 0) return;
 
-    // nếu read-only (viewer/share) thì chỉ cho chỉnh local sandbox?
-    // Tuỳ lựa chọn: ở đây tôn trọng isReadOnly = true => không cho update luôn.
-    if (isReadOnly) return;
+    if (!promptUpgradeToEditorIfNeeded()) return;
 
     let newNodes = [...nodes];
     const idSet = selectedIdsSet;
@@ -1287,7 +1455,7 @@ export default function Editor({ mode = 'edit' }: EditorProps) {
       if (
         document.activeElement &&
         ['INPUT', 'TEXTAREA', 'SELECT'].includes(
-          document.activeElement.tagName,
+          (document.activeElement as HTMLElement).tagName,
         )
       )
         return;
@@ -1351,12 +1519,12 @@ export default function Editor({ mode = 'edit' }: EditorProps) {
   );
 
   useEffect(() => {
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
+    window.addEventListener('keydown', handleKeyDown as any);
+    return () => window.removeEventListener('keydown', handleKeyDown as any);
   }, [handleKeyDown]);
 
   // =========================================================================
-  // 10. TOOLBAR HANDLERS
+  // 13. TOOLBAR HANDLERS
   // =========================================================================
 
   const handleToolbarAddChild = useCallback(() => {
@@ -1368,7 +1536,7 @@ export default function Editor({ mode = 'edit' }: EditorProps) {
   }, [selectedNodeIds, handleAddSibling]);
 
   const handleSetHyperlink = useCallback(() => {
-    if (isReadOnly) return;
+    if (!promptUpgradeToEditorIfNeeded()) return;
     if (selectedNodeIds.length !== 1) return;
     const nodeId = selectedNodeIds[0];
     const node = nodeMap.get(nodeId);
@@ -1379,10 +1547,10 @@ export default function Editor({ mode = 'edit' }: EditorProps) {
       currentUrl,
     );
     if (url !== null) handleUpdateNode({ hyperlink: url || undefined });
-  }, [selectedNodeIds, nodeMap, handleUpdateNode, isReadOnly]);
+  }, [selectedNodeIds, nodeMap, handleUpdateNode, promptUpgradeToEditorIfNeeded]);
 
   const handleSetBackgroundColor = (color: string) => {
-    if (isReadOnly) return;
+    if (!promptUpgradeToEditorIfNeeded()) return;
 
     setBackgroundColor(color);
     const newNodes = nodes.map((n) => {
@@ -1404,7 +1572,7 @@ export default function Editor({ mode = 'edit' }: EditorProps) {
   };
 
   const handleToggleColoredBranch = (state: boolean) => {
-    if (isReadOnly) return;
+    if (!promptUpgradeToEditorIfNeeded()) return;
 
     if (state) {
       const rootChildren = edges
@@ -1458,7 +1626,8 @@ export default function Editor({ mode = 'edit' }: EditorProps) {
   };
 
   const handleSetGlobalBranchColor = (color: string) => {
-    if (isReadOnly) return;
+    if (!promptUpgradeToEditorIfNeeded()) return;
+
     setGlobalStore({ globalBranchColor: color });
     const { isColoredBranch } = useEditorStore.getState();
     if (!isColoredBranch) {
@@ -1479,7 +1648,8 @@ export default function Editor({ mode = 'edit' }: EditorProps) {
   };
 
   const handleApplyQuickStyle = (styleId: QuickStyleId) => {
-    if (isReadOnly) return;
+    if (!promptUpgradeToEditorIfNeeded()) return;
+
     if (selectedNodeIds.length === 0) return;
 
     const idSet = selectedIdsSet;
@@ -1519,7 +1689,8 @@ export default function Editor({ mode = 'edit' }: EditorProps) {
   };
 
   const handlePasteStyle = () => {
-    if (isReadOnly) return;
+    if (!promptUpgradeToEditorIfNeeded()) return;
+
     if (!selectedNodeIds || !styleClipboard) return;
 
     const idSet = selectedIdsSet;
@@ -1537,7 +1708,8 @@ export default function Editor({ mode = 'edit' }: EditorProps) {
   };
 
   const handleResetStyle = () => {
-    if (isReadOnly) return;
+    if (!promptUpgradeToEditorIfNeeded()) return;
+
     if (!selectedNodeIds || !currentNode) return;
 
     const idSet = selectedIdsSet;
@@ -1575,18 +1747,20 @@ export default function Editor({ mode = 'edit' }: EditorProps) {
   );
 
   // =========================================================================
-  // 11. DRAG & DROP
+  // 14. DRAG & DROP
   // =========================================================================
 
   const handleDragStart = (nodeId: string) => {
-    if (isReadOnly) return;
+    if (!promptUpgradeToEditorIfNeeded()) return;
+
     setDragStartState({ nodes, edges });
     const node = stageRef.current?.findOne(`#${nodeId}`);
     if (node && editingNodeId === nodeId) node.stopDrag();
   };
 
   const handleDragMove = (e: any, draggedNodeId: string) => {
-    if (isReadOnly) return;
+    if (!promptUpgradeToEditorIfNeeded()) return;
+
     const pos = e.target.position();
     let targetFound: string | null = null;
     for (const node of nodes) {
@@ -1609,7 +1783,8 @@ export default function Editor({ mode = 'edit' }: EditorProps) {
   };
 
   const handleDragEnd = (e: any, draggedNodeId: string) => {
-    if (isReadOnly) return;
+    if (!promptUpgradeToEditorIfNeeded()) return;
+
     setDragStartState(null);
     const finalX = e.target.x();
     const finalY = e.target.y();
@@ -1696,10 +1871,11 @@ export default function Editor({ mode = 'edit' }: EditorProps) {
   };
 
   // =========================================================================
-  // 12. RENDER
+  // 15. RENDER: LOADING & ACCESS DENIED
   // =========================================================================
 
-if (!isDataLoaded || permission === 'loading') {
+  // Đợi BE load xong + Firestore hook init
+  if (!isDataLoaded || fsAccessState === 'loading') {
     return (
       <div className="w-screen h-screen bg-white flex items-center justify-center text-gray-800 gap-2">
         <Spinner className="w-8 h-8 border-gray-400 border-t-gray-800" />
@@ -1708,16 +1884,19 @@ if (!isDataLoaded || permission === 'loading') {
     );
   }
 
-  // ✅ Nếu bị từ chối quyền: dùng AccessDeniedScreen mới + hook requestAccess
-  if ((accessDenied || permission === 'denied') && id) {
+  // BE đã từ chối (403) và chưa được mở khoá lại
+  if (accessDenied) {
     return (
       <AccessDeniedScreen
-        onRequestAccess={requestAccess}
+        onRequestAccess={handleRequestAccessFromScreen}
         requestStatus={requestStatus}
-        userId={(user as any)?.id || user?.sub || undefined}
       />
     );
   }
+
+  // =========================================================================
+  // 16. RENDER CHÍNH
+  // =========================================================================
 
   return (
     <>
@@ -1764,10 +1943,9 @@ if (!isDataLoaded || permission === 'loading') {
           onShowRequests={() => setRequestModalOpen(true)}
         />
 
-
         <Sidebar />
 
-        {/* Banner cho chế độ share */}
+        {/* Banner cho /share */}
         {isShareRoute && (
           <div className="absolute top-14 left-1/2 -translate-x-1/2 bg-blue-100 text-blue-800 px-4 py-1 rounded-full text-xs font-medium z-50 pointer-events-none opacity-80">
             Chế độ xem (View Only)
@@ -2019,7 +2197,7 @@ if (!isDataLoaded || permission === 'loading') {
               }
             }}
             onDblClick={(e) => {
-              if (isReadOnly) return;
+              if (!promptUpgradeToEditorIfNeeded()) return;
 
               const stage = e.target.getStage();
               if (e.target !== stage || !stage) return;
@@ -2053,7 +2231,7 @@ if (!isDataLoaded || permission === 'loading') {
               left: 0,
             }}
           >
-            {/* Layer chính - tắt lắng nghe nếu read-only */}
+            {/* Layer chính */}
             <Layer listening={!isReadOnly}>
               {visibleEdges.map((edge) => {
                 const fromVisual = nodeVisuals.get(edge.from);
@@ -2216,7 +2394,8 @@ if (!isDataLoaded || permission === 'loading') {
                       !isReadOnly && handleDragEnd(e, node.id)
                     }
                     onClick={(e) => {
-                      if (isReadOnly) return;
+                      if (!promptUpgradeToEditorIfNeeded()) return;
+
                       e.cancelBubble = true;
 
                       if (e.evt.shiftKey) {
@@ -2493,11 +2672,11 @@ if (!isDataLoaded || permission === 'loading') {
               )}
             </Layer>
 
-            {/* Cursor layer luôn hiển thị cho mọi mode */}
+            {/* Cursor layer cho realtime */}
             <CursorLayer />
           </Stage>
 
-          {/* FormattingToolbar: chỉ hiện nếu không read-only */}
+          {/* FormattingToolbar: chỉ hiện khi có quyền edit */}
           {isFormattingToolbarOpen && !isReadOnly && (
             <FormattingToolbar
               selectedIds={selectedNodeIds}
@@ -2570,16 +2749,20 @@ if (!isDataLoaded || permission === 'loading') {
           <ShareModal
             isOpen={isShareModalOpen}
             onClose={() => setIsShareModalOpen(false)}
-            mindmapId={id || ''}
+            mindmapId={id!}
             isOwner={isOwner}
+            pendingRequests={pendingRequests}
+            onApproveRequest={handleApproveAccessRequest}
+            onDenyRequest={handleDenyAccessRequest}
           />
+
           {isOwner && (
             <AccessRequestModal
               isOpen={isRequestModalOpen}
               onClose={() => setRequestModalOpen(false)}
               requests={pendingRequests || []}
-              onApprove={approveRequest}
-              onDeny={denyRequest}
+              onApprove={handleApproveAccessRequest}
+              onDeny={handleDenyAccessRequest}
             />
           )}
         </div>

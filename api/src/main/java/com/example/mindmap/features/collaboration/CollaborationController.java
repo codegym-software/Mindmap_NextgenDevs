@@ -1,23 +1,16 @@
-// src/main/java/com/example/mindmap/features/collaboration/CollaborationController.java
 package com.example.mindmap.features.collaboration;
 
-import com.example.mindmap.features.collaboration.dto.CollaboratorResponse;
-import com.example.mindmap.features.collaboration.dto.InviteRequest;
-import com.example.mindmap.features.collaboration.dto.PermissionUpdateRequest;
-import com.example.mindmap.features.collaboration.dto.ShareSettingsRequest;
-import com.example.mindmap.features.collaboration.dto.ShareSettingsResponse;
+import com.example.mindmap.features.collaboration.dto.*;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
-import org.springframework.web.bind.annotation.*; // Rest + Mapping
+import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 
 @RestController
-@RequestMapping("/api/mindmaps/{mindmapId}") // mindmapId nằm ở base path
-// Nếu muốn fix CORS chỉ riêng controller này, bạn có thể bật dòng dưới:
-// @CrossOrigin(origins = "http://localhost:3000")
+@RequestMapping("/api/mindmaps/{mindmapId}")
 public class CollaborationController {
 
     private final CollaborationService collaborationService;
@@ -31,18 +24,17 @@ public class CollaborationController {
     // ======================================================================
 
     @PutMapping("/share-settings")
-    @PreAuthorize("isAuthenticated()") // Check owner ở tầng Service
+    @PreAuthorize("isAuthenticated()")
     public ResponseEntity<ShareSettingsResponse> updatePublicShareSettings(
             @PathVariable String mindmapId,
             @Valid @RequestBody ShareSettingsRequest request
     ) {
-        ShareSettingsResponse response =
-                collaborationService.updatePublicShareSettings(mindmapId, request);
+        ShareSettingsResponse response = collaborationService.updatePublicShareSettings(mindmapId, request);
         return ResponseEntity.ok(response);
     }
 
     // ======================================================================
-    // 2. QUẢN LÝ COLLABORATOR
+    // 2. QUẢN LÝ COLLABORATOR (CRUD)
     // ======================================================================
 
     /**
@@ -53,13 +45,12 @@ public class CollaborationController {
     public ResponseEntity<List<CollaboratorResponse>> getCollaborators(
             @PathVariable String mindmapId
     ) {
-        List<CollaboratorResponse> collaborators =
-                collaborationService.getCollaborators(mindmapId);
+        List<CollaboratorResponse> collaborators = collaborationService.getCollaborators(mindmapId);
         return ResponseEntity.ok(collaborators);
     }
 
     /**
-     * Mời collaborator mới bằng email.
+     * Mời collaborator mới bằng email (Invite).
      */
     @PostMapping("/collaborators")
     @PreAuthorize("isAuthenticated()")
@@ -67,16 +58,8 @@ public class CollaborationController {
             @PathVariable String mindmapId,
             @Valid @RequestBody InviteRequest request
     ) {
-        CollaboratorResponse collaborator =
-                collaborationService.addCollaborator(mindmapId, request);
+        CollaboratorResponse collaborator = collaborationService.addCollaborator(mindmapId, request);
         return new ResponseEntity<>(collaborator, HttpStatus.CREATED);
-    }
-
-        @PostMapping("/request-access")
-    @PreAuthorize("isAuthenticated()") // Bắt buộc phải đăng nhập mới được xin quyền
-    public ResponseEntity<Void> requestAccess(@PathVariable String mindmapId) {
-        collaborationService.requestAccess(mindmapId);
-        return ResponseEntity.ok().build();
     }
 
     /**
@@ -89,8 +72,7 @@ public class CollaborationController {
             @PathVariable String userId,
             @Valid @RequestBody PermissionUpdateRequest request
     ) {
-        CollaboratorResponse updated =
-                collaborationService.updateCollaboratorPermission(mindmapId, userId, request);
+        CollaboratorResponse updated = collaborationService.updateCollaboratorPermission(mindmapId, userId, request);
         return ResponseEntity.ok(updated);
     }
 
@@ -105,5 +87,54 @@ public class CollaborationController {
     ) {
         collaborationService.removeCollaborator(mindmapId, userId);
         return ResponseEntity.noContent().build();
+    }
+
+    // ======================================================================
+    // 3. QUẢN LÝ LIFECYCLE (REQUEST / APPROVE / REJECT) - [MỚI]
+    // ======================================================================
+
+    /**
+     * User tự xin quyền truy cập vào Mindmap (Request Access).
+     * Body (optional): chứa requestedPermission (EDITOR/VIEWER). Mặc định là VIEWER.
+     */
+    @PostMapping("/request-access")
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<Void> requestAccess(
+            @PathVariable String mindmapId,
+            @RequestBody(required = false) RequestAccessRequest body
+    ) {
+        Permission requestedPerm = (body != null && body.requestedPermission() != null)
+                ? body.requestedPermission()
+                : Permission.VIEWER; // Default là Viewer nếu không gửi body
+
+        collaborationService.requestAccess(mindmapId, requestedPerm);
+        return ResponseEntity.accepted().build();
+    }
+
+    /**
+     * Owner duyệt yêu cầu -> chuyển trạng thái thành ACCEPTED (ACTIVE).
+     */
+    @PostMapping("/requests/{userId}/approve")
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<Void> approveRequest(
+            @PathVariable String mindmapId,
+            @PathVariable String userId,
+            @Valid @RequestBody ApproveAccessRequest body
+    ) {
+        collaborationService.approveRequest(mindmapId, userId, body.permission());
+        return ResponseEntity.ok().build();
+    }
+
+    /**
+     * Owner từ chối yêu cầu -> chuyển trạng thái thành REJECTED.
+     */
+    @PostMapping("/requests/{userId}/reject")
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<Void> rejectRequest(
+            @PathVariable String mindmapId,
+            @PathVariable String userId
+    ) {
+        collaborationService.rejectRequest(mindmapId, userId);
+        return ResponseEntity.ok().build();
     }
 }

@@ -1,4 +1,3 @@
-// src/main/java/com/example/mindmap/features/collaboration/dto/ShareSettingsResponse.java
 package com.example.mindmap.features.collaboration.dto;
 
 import com.example.mindmap.features.mindmap.Mindmap;
@@ -12,16 +11,21 @@ public record ShareSettingsResponse(
     // Helper factory method
     public static ShareSettingsResponse fromMindmap(Mindmap mindmap, String baseUrl) {
         String shareLink = null;
-        if (mindmap.getAccessSettings().isPublic() && mindmap.getAccessSettings().getPublicAccessLevel() == Mindmap.PublicAccessLevel.VIEW) {
-            // TODO: Tạo token an toàn thay vì chỉ ID
-            // Tạm thời dùng ID cho Giai đoạn 1
+        Mindmap.AccessSettings access = mindmap.getAccessSettings();
+        
+        // Kiểm tra nếu là Public (VIEW hoặc EDIT) thì sinh link
+        if (access.isPublic() && 
+           (access.getPublicAccessLevel() == Mindmap.PublicAccessLevel.VIEW || 
+            access.getPublicAccessLevel() == Mindmap.PublicAccessLevel.EDIT)) {
+            
+            // TODO: Giai đoạn sau nên mã hóa ID này thành token ngắn gọn hơn
             shareLink = baseUrl + "/share/" + mindmap.getId();
         }
         
         return new ShareSettingsResponse(
                 mindmap.getId(),
-                mindmap.getAccessSettings().isPublic(),
-                mindmap.getAccessSettings().getPublicAccessLevel(),
+                access.isPublic(),
+                access.getPublicAccessLevel(),
                 shareLink
         );
     }

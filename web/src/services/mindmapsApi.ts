@@ -27,6 +27,8 @@ import {
 
 // === [MỚI] TYPES CHO TÍNH NĂNG COLLABORATION & SHARE ===
 export type Permission = 'OWNER' | 'EDITOR' | 'VIEWER';
+export type PublicAccessLevel = 'DISABLED' | 'VIEW' | 'EDIT';
+
 
 export type Collaborator = {
   userId: string;
@@ -38,7 +40,7 @@ export type Collaborator = {
 export type ShareSettingsResponse = {
   mindmapId: string;
   isPublic: boolean;
-  publicAccessLevel: 'VIEW' | 'DISABLED';
+  publicAccessLevel: PublicAccessLevel;
   shareLink: string | null;
 };
 
@@ -68,10 +70,11 @@ export type FeMindmapDoc = {
     // [MỚI] Bổ sung 2 trường này để Editor.tsx đọc được quyền
   collaborators: Collaborator[];
   accessSettings: {
-      isPublic: boolean;
-      publicAccessLevel: 'VIEW' | 'DISABLED';
+    isPublic: boolean;
+    publicAccessLevel: PublicAccessLevel;
   };
 };
+
 
 // Tóm tắt mindmap (dùng cho danh sách)
 export type MindmapSummaryDto = {
@@ -81,10 +84,26 @@ export type MindmapSummaryDto = {
   updatedAt?: string;
 };
 
+async function approveAccessRequest(
+  mindmapId: string,
+  userId: string,
+  permission: Permission,
+) {
+  return api.post(`/mindmaps/${mindmapId}/requests/${userId}/approve`, {
+    permission,
+  });
+}
+
+async function rejectAccessRequest(mindmapId: string, userId: string) {
+  return api.post(`/mindmaps/${mindmapId}/requests/${userId}/reject`);
+}
+
+
 // =========================================================================
 // mindmapsApi - TẤT CẢ CÁC HÀM API
 // =========================================================================
 export const mindmapsApi = {
+
   // ===== 1. CORE CRUD =====
   list: async (): Promise<MindmapSummaryDto[]> =>
     (await api.get<MindmapSummaryDto[]>('/mindmaps')).data,
@@ -224,22 +243,28 @@ export const mindmapsApi = {
   /**
    * Bật/tắt chia sẻ công khai + cấp quyền xem công khai
    */
-  updateShareSettings: async (
-    mindmapId: string,
-    isPublic: boolean,
-    publicAccessLevel: 'VIEW' | 'DISABLED'
-  ): Promise<ShareSettingsResponse> => {
-    return (
-      await api.put<ShareSettingsResponse>(`/mindmaps/${mindmapId}/share-settings`, {
-        isPublic,
-        publicAccessLevel,
-      })
-    ).data;
-  },
+    updateShareSettings: async (
+      mindmapId: string,
+      payload: { isPublic: boolean; publicAccessLevel: PublicAccessLevel }
+    ): Promise<ShareSettingsResponse> => {
+      return (
+        await api.put<ShareSettingsResponse>(
+          `/mindmaps/${mindmapId}/share-settings`,
+          payload,
+        )
+      ).data;
+    },
   
-    requestAccess: async (mindmapId: string): Promise<void> => {
-    // Giả định BE có endpoint này. Nếu chưa có, bạn cần bảo BE thêm vào.
-    // Logic BE: Gửi noti hoặc email cho Owner.
-    return (await api.post<void>(`/mindmaps/${mindmapId}/request-access`)).data;
-  },
+    requestAccess: async (
+      mindmapId: string,
+      requestedPermission: Permission = 'VIEWER',
+    ): Promise<void> => {
+      await api.post<void>(`/mindmaps/${mindmapId}/request-access`, {
+        requestedPermission,
+      });
+    },
+
+
+  approveAccessRequest,
+  rejectAccessRequest,
 };
