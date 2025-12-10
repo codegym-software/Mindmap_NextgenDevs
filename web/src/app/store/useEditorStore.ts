@@ -204,6 +204,7 @@ export function getNodeComputedStyle(
     baseStyle.fontSize = 40; // Font size lớn hơn
     baseStyle.fontWeight = 'bold';
     baseStyle.shape = 'roundedRect';
+    baseStyle.nodeLength = 'fit'; // Root auto-expands to fit full text
   } else if (topology) {
     // Nodes có parent - apply style theo depth/level
     const { depth, branchBaseColor } = topology;
@@ -289,6 +290,11 @@ export function getNodeComputedStyle(
       (computed as any)[key] = node[key];
     }
   });
+
+  // Force root to auto-fit its text regardless of stored overrides
+  if (node.id === 'root') {
+    computed.nodeLength = 'fit';
+  }
 
   if (node.color !== undefined && node.textColor === undefined) {
     computed.textColor = getContrastingTextColor(node.color);
@@ -562,7 +568,7 @@ export const useEditorStore = create<State>((set, get) => ({
     }
     
     // Lấy màu của parent node để áp dụng cho summary
-    const parentBorderColor = parentNode?.borderColor || '#f59e0b';
+    const parentBorderColor = parentNode?.borderColor || '#484747ff';
     
     // Tạo summary node mới - parent là summaryId đặc biệt
     const summaryNodeId = `summary_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
@@ -571,12 +577,13 @@ export const useEditorStore = create<State>((set, get) => ({
       nodeText: text || 'Summary',
       x: summaryX,
       y: summaryY,
-      parentId: summaryId, // Parent là chính summary ID
+      parentId: summaryId, 
       side: startNode?.side,
       shape: 'roundedRect',
-      color: 'transparent', // Transparent background
-      borderColor: parentBorderColor, // Inherit parent border color
+      color: 'transparent', 
+      borderColor: parentBorderColor, 
       borderWidth: 2,
+      textColor: '#8f5f00ff',
     };
     
     const newSummary: SummaryData = {

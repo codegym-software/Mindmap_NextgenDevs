@@ -181,7 +181,7 @@ function calculateNodeBox(node: NodeData, style: NodeData) {
     context?.measureText(text).width || text.length * finalFontSize * 0.6;
   if (nodeLength === 'fit') {
     // Set a maximum width for 'fit' mode to enable text wrapping
-    const maxFitWidth = 400; // Maximum width for auto-fit nodes
+    const maxFitWidth = node.id === 'root' ? 800 : 400; // Root can grow wider
     let maxWidth = 0;
     const lines = processedText.split('\n');
     
@@ -349,7 +349,10 @@ export default function Editor() {
 
   const handleToggleBoundary = () => {
     if (selectedNodeIds.length === 1) {
-      toggleNodeBoundary(selectedNodeIds[0]);
+      const targetId = selectedNodeIds[0];
+      toggleNodeBoundary(targetId);
+      // Re-run layout so boundary sizing/padding is updated immediately
+      setTimeout(() => handleLayout(), 0);
     }
   };
 
@@ -848,11 +851,12 @@ export default function Editor() {
                   x: 0,
                   y: 0,
                   shape: 'roundedRect',
-                  color: '#FFFBEB',
+                  color: 'transparent',
                   borderColor: '#F59E0B',
                   borderWidth: 2,
                   fontSize: 12,
                   nodeLength: 150,
+                  textColor: '#000000',
                 };
                 loadedNodes.push(summaryNode);
                 
@@ -868,6 +872,7 @@ export default function Editor() {
               } else {
                 // Đồng bộ summary text từ summaryData
                 existingSummaryNode.nodeText = sum.summaryText || existingSummaryNode.nodeText;
+                if (!existingSummaryNode.textColor) existingSummaryNode.textColor = '#000000';
               }
             }
           });
@@ -1674,12 +1679,12 @@ const handleLayout = useCallback(
       });
 
       const outwardBase = 80;
-      const outwardStep = 24;
+      const outwardStep = 28;
 
       grouped.forEach(group => {
         group.sort((a, b) => b.spanHeight - a.spanHeight); // outer first
         group.forEach((layout, idx) => {
-          const level = idx; // already sorted outer -> inner
+          const level = group.length - idx - 1; // inner summaries get smaller offset
           const { summary, direction, xMid, midY, firstNodeSide } = layout;
           const summaryNodeIndex = newNodes.findIndex(n => n.id === summary.summaryNodeId);
           if (summaryNodeIndex !== -1) {
