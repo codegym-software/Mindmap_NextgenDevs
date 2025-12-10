@@ -253,7 +253,7 @@ const Summary: React.FC<SummaryProps> = ({
 
       <Path
         data={createCurlyBracePath()}
-        stroke={summary.color || '#f59e0b'}
+        stroke={summary.color || '#000000'}
         strokeWidth={2}
         lineCap="round"
         lineJoin="round"
@@ -278,7 +278,7 @@ const Summary: React.FC<SummaryProps> = ({
           y={midY - 10}
           text={summary.summaryText}
           fontSize={14}
-          fill={summary.color || '#f59e0b'}
+          fill={summary.color || '#000000'}
           fontStyle="bold"
           width={80}
           align={isLeft ? 'right' : 'left'}

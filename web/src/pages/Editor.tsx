@@ -1675,19 +1675,18 @@ const handleLayout = useCallback(
 
       const outwardBase = 80;
       const outwardStep = 24;
-      const verticalStep = 24;
 
       grouped.forEach(group => {
         group.sort((a, b) => b.spanHeight - a.spanHeight); // outer first
         group.forEach((layout, idx) => {
-          const level = group.length - idx - 1; // larger span (parent) gets bigger offset
+          const level = idx; // already sorted outer -> inner
           const { summary, direction, xMid, midY, firstNodeSide } = layout;
           const summaryNodeIndex = newNodes.findIndex(n => n.id === summary.summaryNodeId);
           if (summaryNodeIndex !== -1) {
             newNodes[summaryNodeIndex] = {
              ...newNodes[summaryNodeIndex],
               x: xMid + (direction * (outwardBase + level * outwardStep)),
-              y: midY + level * verticalStep,
+              y: midY, // keep aligned to brace, avoid vertical drift/overlap
               side: firstNodeSide,
             };
           }
