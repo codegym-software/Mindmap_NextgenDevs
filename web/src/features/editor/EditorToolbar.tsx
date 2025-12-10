@@ -302,11 +302,11 @@ export default function EditorToolbar({
 
     {presentationMode && (
       <div className="fixed inset-0 pointer-events-none z-40">
-        <div className="absolute top-4 left-1/2 -translate-x-1/2 px-4 py-2 rounded-full bg-ink-900/80 text-white backdrop-blur-xl shadow-elevation-strong pointer-events-auto flex items-center gap-3">
+        <div className="absolute top-4 left-1/2 -translate-x-1/2 px-4 py-2 rounded-full bg-gray-100 text-gray-500 backdrop-blur-xl shadow-elevation-strong pointer-events-auto flex items-center gap-3">
           <span className="text-sm font-semibold">Chế độ thuyết trình</span>
           <button
             onClick={() => onSetPresentationMode(false)}
-            className="px-3 py-1 rounded-full bg-white/20 hover:bg-white/30 text-white text-sm"
+            className="px-3 py-1 rounded-full bg-blue-100 hover:bg-blue-200 text-gray-600 text-sm"
           >
             Thoát
           </button>

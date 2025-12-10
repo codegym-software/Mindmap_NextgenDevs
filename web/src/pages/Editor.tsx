@@ -2189,8 +2189,13 @@ const handleFitToScreen = useCallback(() => {
     startRenderTracking('addChild');
     const parentNode = nodeMap.get(parentId); 
     const parentVisual = nodeVisuals.get(parentId); 
-    
     if (!parentNode || !parentVisual) return;
+
+    // Nếu cha đang collapsed thì mở nhánh ra
+    let updatedNodes = nodes;
+    if (parentNode.collapsed) {
+      updatedNodes = nodes.map(n => n.id === parentId ? { ...n, collapsed: false } : n);
+    }
 
     const parentComputedStyle = parentVisual.style; 
 
@@ -2304,7 +2309,7 @@ const handleFitToScreen = useCallback(() => {
 
     const newEdgeData: EdgeData = { id: `e-${newId}`, from: parentId, to: newId };
     
-    const newNodes = [...nodes, newNodeData];
+    const newNodes = [...updatedNodes, newNodeData];
     const newEdges = [...edges, newEdgeData];
 
     pushHistory(nodes, edges);
