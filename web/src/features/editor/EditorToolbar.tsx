@@ -234,7 +234,7 @@ export default function EditorToolbar({
             onInsertImage={() => setIsImageModalOpen(true)}
           />
           
-          <div className="w-px h-6 bg-gray-300 mx-2" />
+          {/* <div className="w-px h-6 bg-gray-300 mx-2" />
 
           <button
             onClick={() => setShowAiModal(true)}
@@ -242,7 +242,7 @@ export default function EditorToolbar({
             title="Magic AI"
           >
             Magic AI
-          </button>
+          </button> */}
         </div>
 
         <div className="flex items-center gap-2 flex-shrink-0">

@@ -159,11 +159,12 @@ function saveGuestDoc(
 }
 
 function calculateNodeBox(node: NodeData, style: NodeData) {
-  // [SỬA LỖI] Thêm imageUrl vào destructuring
   const { fontSize, nodeLength, nodeText, textCase, shape, imageUrl } = style; 
   const borderWidth = style.borderWidth || 0;
   let processedText = nodeText || '';
-  if (textCase === 'uppercase') processedText = processedText.toUpperCase();
+  if (textCase === 'uppercase' || node.id === 'root') {
+      processedText = processedText.toUpperCase();
+  }
   if (textCase === 'lowercase') processedText = processedText.toLowerCase();
   const finalFontSize = fontSize || 14;
   const finalLineHeight = finalFontSize * LINE_HEIGHT_MULTIPLIER;
@@ -181,7 +182,7 @@ function calculateNodeBox(node: NodeData, style: NodeData) {
     context?.measureText(text).width || text.length * finalFontSize * 0.6;
   if (nodeLength === 'fit') {
     // Set a maximum width for 'fit' mode to enable text wrapping
-    const maxFitWidth = node.id === 'root' ? 800 : 400; // Root can grow wider
+    const maxFitWidth = node.id === 'root' ? 1600 : 400; // Root can grow much wider
     let maxWidth = 0;
     const lines = processedText.split('\n');
     
@@ -318,6 +319,7 @@ export default function Editor() {
   const { isAuthed, login, getAccessToken } = useAuth();
   const { createGuest } = useLocalMindmap();
   const isGuest = !!id && id.startsWith('guest-');
+  const summaryLayoutLevelsRef = useRef<Map<string, number>>(new Map());
 
   // State từ store 
   const {
@@ -1682,16 +1684,17 @@ const handleLayout = useCallback(
       const outwardStep = 28;
 
       grouped.forEach(group => {
-        group.sort((a, b) => b.spanHeight - a.spanHeight); // outer first
+        group.sort((a, b) => b.spanHeight - a.spanHeight); 
         group.forEach((layout, idx) => {
-          const level = group.length - idx - 1; // inner summaries get smaller offset
+          const level = group.length - idx - 1; 
+          summaryLayoutLevelsRef.current.set(layout.summary.id, level);
           const { summary, direction, xMid, midY, firstNodeSide } = layout;
           const summaryNodeIndex = newNodes.findIndex(n => n.id === summary.summaryNodeId);
           if (summaryNodeIndex !== -1) {
             newNodes[summaryNodeIndex] = {
-             ...newNodes[summaryNodeIndex],
+              ...newNodes[summaryNodeIndex],
               x: xMid + (direction * (outwardBase + level * outwardStep)),
-              y: midY, // keep aligned to brace, avoid vertical drift/overlap
+              y: midY, 
               side: firstNodeSide,
             };
           }
@@ -4188,6 +4191,7 @@ const handleFitToScreen = useCallback(() => {
                   nodes={nodes}
                   nodeVisuals={nodeVisuals}
                   isSelected={selectedSummaryId === sum.id}
+                  level={summaryLayoutLevelsRef.current.get(sum.id) || 0}
                   onUpdateRange={handleUpdateSummaryRange}
                   onClick={() => {
                     setSelectedSummaryId(sum.id);

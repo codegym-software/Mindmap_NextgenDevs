@@ -10,6 +10,7 @@ type SummaryProps = {
   onUpdateRange?: (summaryId: string, newStartNodeId: string, newEndNodeId: string) => void;
   onClick?: () => void;
   onDelete?: () => void;
+  level?: number; // [MỚI] Nhận level từ Editor để đẩy brace ra xa
 };
 
 const Summary: React.FC<SummaryProps> = ({ 
@@ -19,16 +20,15 @@ const Summary: React.FC<SummaryProps> = ({
   isSelected = false,
   onUpdateRange,
   onClick,
-  onDelete
+  onDelete,
+  level = 0 // [MỚI] Mặc định là 0 (sát nhất)
 }) => {
   const startVisual = nodeVisuals.get(summary.startNodeId);
   const endVisual = nodeVisuals.get(summary.endNodeId);
-  const summaryNodeVisual = summary.summaryNodeId ? nodeVisuals.get(summary.summaryNodeId) : null;
-
+  
   if (!startVisual || !endVisual) return null;
 
-  const { style: startStyle, box: startBox } = startVisual;
-  const { style: endStyle, box: endBox } = endVisual;
+  const { style: startStyle } = startVisual;
 
   // Lấy tất cả nodes con của parent
   const parentNode = nodes.find(n => n.id === summary.parentId);
@@ -48,9 +48,6 @@ const Summary: React.FC<SummaryProps> = ({
   const currentEndVisual = nodeVisuals.get(localEndNodeId);
 
   if (!currentStartVisual || !currentEndVisual) return null;
-
-  const { style: currentStartStyle, box: currentStartBox } = currentStartVisual;
-  const { style: currentEndStyle, box: currentEndBox } = currentEndVisual;
 
   // Nếu node bị collapse, dùng chính node đó
   const getLeafNodesInRange = () => {
@@ -103,10 +100,17 @@ const Summary: React.FC<SummaryProps> = ({
   });
 
   // Điều chỉnh position cho brace
-  const startX = isLeft ? braceX - 20 : braceX + 20;
+  // [CẬP NHẬT] Tính thêm offset dựa trên level để tránh chồng lấn
+  const braceWidth = 15;
+  const basePadding = 20;
+  const levelOffset = level * 20; // Mỗi level cách nhau 20px
+
+  const startX = isLeft 
+    ? braceX - basePadding - levelOffset 
+    : braceX + basePadding + levelOffset;
+
   const height = endY - startY;
   const midY = (startY + endY) / 2;
-  const braceWidth = 15;
 
   // Tạo curly brace path
   const createCurlyBracePath = () => {
@@ -137,9 +141,9 @@ const Summary: React.FC<SummaryProps> = ({
   };
 
   const getSelectionBox = () => {
-    const startNode = nodes.find(n => n.id === localStartNodeId);
-    const endNode = nodes.find(n => n.id === localEndNodeId);
-    if (!startNode || !endNode) return null;
+    const startIdx = siblings.findIndex(n => n.id === localStartNodeId);
+    const endIdx = siblings.findIndex(n => n.id === localEndNodeId);
+    const [minIdx, maxIdx] = [Math.min(startIdx, endIdx), Math.max(startIdx, endIdx)];
 
     const collectDescendants = (nodeId: string): string[] => {
       const children = nodes.filter(n => n.parentId === nodeId).map(n => n.id);
@@ -147,10 +151,6 @@ const Summary: React.FC<SummaryProps> = ({
     };
 
     const allNodeIds = new Set<string>();
-    const startIdx = siblings.findIndex(n => n.id === localStartNodeId);
-    const endIdx = siblings.findIndex(n => n.id === localEndNodeId);
-    const [minIdx, maxIdx] = [Math.min(startIdx, endIdx), Math.max(startIdx, endIdx)];
-
     for (let i = minIdx; i <= maxIdx; i++) {
       collectDescendants(siblings[i].id).forEach(id => allNodeIds.add(id));
     }
