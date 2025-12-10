@@ -21,7 +21,6 @@ import {
 } from 'react-konva';
 import { SquareArrowOutUpRight } from 'lucide-react'; 
 import * as dagre from 'dagre';
-import useImage from 'use-image'; 
 import { useDebouncedCallback } from 'use-debounce';
 
 import EditorToolbar from '../features/editor/EditorToolbar';
@@ -149,7 +148,7 @@ function saveGuestDoc(
   feSummaries?: any[] 
 ) {
   try {
-    const beContent = normalizeContentFEtoBE(feNodes, feEdges, feRelationships, feSummaries);
+    const beContent = normalizeContentFEtoBE(feNodes, feEdges);
     const all = JSON.parse(localStorage.getItem(GUEST_BUCKET) || '{}');
     const beDoc: BeGuestDoc = { id: id, name: name, content: beContent };
     all[id] = beDoc;
@@ -298,18 +297,18 @@ function calculateNodeBox(node: NodeData, style: NodeData) {
   };
 }
 
-const URLImage = ({ src, x, y, width, height, onImageLoad }: any) => {
-  const [image] = useImage(src);
-  
-  useEffect(() => {
-    if (image && onImageLoad) {
-      onImageLoad(image.width, image.height);
-    }
-  }, [image, onImageLoad]); 
+// const URLImage = ({ src, x, y, width, height, onImageLoad }: any) => {
+//   const [image] = useImage(src);
+//   
+//   useEffect(() => {
+//     if (image && onImageLoad) {
+//       onImageLoad(image.width, image.height);
+//     }
+//   }, [image, onImageLoad]); 
 
-  if (!image) return null;
-  return <KonvaImage image={image} x={x} y={y} width={width} height={height} cornerRadius={4} />;
-};
+//   if (!image) return null;
+//   return <KonvaImage image={image} x={x} y={y} width={width} height={height} cornerRadius={4} />;
+// };
 
 export default function Editor() {
   const { id } = useParams<{ id?: string }>();
@@ -3685,6 +3684,7 @@ const handleFitToScreen = useCallback(() => {
           onToggleBoundary={handleToggleBoundary}
           onAddRelationship={handleAddRelationship}
           onAddSummary={handleAddSummary}
+          stageRef={stageRef}
         />
         {!presentationMode && <Sidebar />}
 
@@ -4322,6 +4322,7 @@ const handleFitToScreen = useCallback(() => {
                             <Rect {...shapeProps} cornerRadius={style.shape === 'roundedRect' ? 8 : 0} />
                           )}
                           
+                          {/* Tạm comment URLImage do useImage không available
                           {style.imageUrl && (
                             <URLImage 
                               src={style.imageUrl}
@@ -4332,6 +4333,7 @@ const handleFitToScreen = useCallback(() => {
                               onImageLoad={(imgW: number, imgH: number) => handleImageLoad(node.id, imgW, imgH)}
                             />
                           )}
+                          */}
                         </>
                       );
                     })()}
