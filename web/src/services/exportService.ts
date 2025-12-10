@@ -138,47 +138,29 @@ export function downloadAsPDF(
   try {
     const stage = stageRef.current;
     stage.draw();
-    // Xác định bbox nội dung từ nodes để crop chính xác
-    let minX = Number.POSITIVE_INFINITY;
-    let minY = Number.POSITIVE_INFINITY;
-    let maxX = Number.NEGATIVE_INFINITY;
-    let maxY = Number.NEGATIVE_INFINITY;
+    
+    // Capture full stage
+    const stageWidth = stage.width ? stage.width() : 1200;
+    const stageHeight = stage.height ? stage.height() : 800;
+    const dataURL = stage.toDataURL({ pixelRatio: 2, mimeType: 'image/png' });
 
-    if (nodes && nodes.length > 0) {
-      nodes.forEach(n => {
-        minX = Math.min(minX, n.x);
-        minY = Math.min(minY, n.y);
-        maxX = Math.max(maxX, n.x);
-        maxY = Math.max(maxY, n.y);
-      });
-    }
+    // Determine orientation based on stage dimensions
+    const orientation = stageWidth >= stageHeight ? 'l' : 'p';
+    const doc = new jsPDF({ orientation, unit: 'mm', format: 'a4' });
+    
+    // A4 dimensions in mm
+    const pageWidth = orientation === 'l' ? 297 : 210;
+    const pageHeight = orientation === 'l' ? 210 : 297;
+    const marginMM = 10;
+    const availW = pageWidth - marginMM * 2;
+    const availH = pageHeight - marginMM * 2;
 
-    const hasBBox = isFinite(minX) && isFinite(minY) && isFinite(maxX) && isFinite(maxY);
-    const padding = 60;
-    const cropX = hasBBox ? minX - padding : 0;
-    const cropY = hasBBox ? minY - padding : 0;
-    const cropW = hasBBox ? maxX - minX + padding * 2 : (stage.width ? stage.width() : 1200);
-    const cropH = hasBBox ? maxY - minY + padding * 2 : (stage.height ? stage.height() : 800);
-
-    const dataURL = stage.toDataURL({
-      pixelRatio: 3,
-      mimeType: 'image/png',
-      x: cropX,
-      y: cropY,
-      width: cropW,
-      height: cropH,
-    });
-
-    const orientation = cropW >= cropH ? 'l' : 'p';
-    const doc = new jsPDF({ orientation, unit: 'px', format: 'a4' });
-    const pageWidth = doc.internal.pageSize.getWidth();
-    const pageHeight = doc.internal.pageSize.getHeight();
-    const margin = 24;
-    const targetW = Math.max(pageWidth - margin * 2, 120);
-    const targetH = Math.max(pageHeight - margin * 2, 120);
-    const ratio = Math.min(targetW / cropW, targetH / cropH);
-    const renderWidth = cropW * ratio;
-    const renderHeight = cropH * ratio;
+    // Calculate scale to fit stage into available space while preserving aspect ratio
+    const ratio = Math.min(availW / stageWidth, availH / stageHeight);
+    const renderWidth = stageWidth * ratio;
+    const renderHeight = stageHeight * ratio;
+    
+    // Center on page
     const offsetX = (pageWidth - renderWidth) / 2;
     const offsetY = (pageHeight - renderHeight) / 2;
 
