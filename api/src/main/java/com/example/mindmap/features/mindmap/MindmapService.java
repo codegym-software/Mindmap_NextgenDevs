@@ -12,11 +12,10 @@ import com.example.mindmap.features.mindmap.content.EdgeData;
 import com.example.mindmap.features.mindmap.content.MindmapContent;
 import com.example.mindmap.features.mindmap.content.NodeData;
 import com.example.mindmap.features.mindmap.content.NodeStyle;
-import com.example.mindmap.features.mindmap.dto.MindmapCreateRequest;
 import com.example.mindmap.features.mindmap.dto.MindmapDetailResponse;
 import com.example.mindmap.features.mindmap.dto.MindmapSummaryResponse;
 import com.example.mindmap.features.mindmap.dto.MindmapSyncRequest;
-import com.example.mindmap.features.mindmap.dto.MindmapUpdateRequest; // [FIX] Import
+import com.example.mindmap.features.mindmap.dto.MindmapUpdateRequest; 
 import com.example.mindmap.features.user.User;
 import com.example.mindmap.features.user.UserRepository;
 import org.slf4j.Logger;
@@ -302,7 +301,7 @@ public class MindmapService {
     }
 
     private MindmapSummaryResponse toSummaryResponse(Mindmap mindmap) {
-        return new MindmapSummaryResponse(mindmap.getId(), mindmap.getName(), mindmap.getOwnerId(), mindmap.getUpdatedAt(), mindmap.getTags(), mindmap.getAccessSettings());
+        return new MindmapSummaryResponse(mindmap.getId(), mindmap.getName(), mindmap.getOwnerId(), mindmap.getCreatedAt(), mindmap.getUpdatedAt(), mindmap.getTags(), mindmap.getAccessSettings());
     }
 
     private MindmapDetailResponse toDetailResponse(Mindmap mindmap) {
@@ -359,18 +358,35 @@ public class MindmapService {
         // [FIX] Phải deep copy style, nếu không các node sẽ chia sẻ
         // cùng một object style
         if (original.getStyle() != null) {
-            // Giả định NodeStyle có @Data,
-            // chúng ta có thể tạo bản sao (hoặc dùng thư viện)
-            // Tạm thời dùng shallow copy (Lombok @Data không tự deep copy)
-            // Nếu NodeStyle chứa object con, cần logic copy sâu hơn.
-            // *Nhưng NodeStyle.java hiện tại chỉ có kiểu nguyên thủy -> an toàn*
             NodeStyle originalStyle = original.getStyle();
             NodeStyle newStyle = new NodeStyle();
+            
+            // --- SAO CHÉP TẤT CẢ THUỘC TÍNH STYLE ---
             newStyle.setColor(originalStyle.getColor());
             newStyle.setFont(originalStyle.getFont());
             newStyle.setIsBold(originalStyle.getIsBold());
             newStyle.setIsItalic(originalStyle.getIsItalic());
             newStyle.setTextAlign(originalStyle.getTextAlign());
+            newStyle.setShape(originalStyle.getShape());
+            newStyle.setBorderColor(originalStyle.getBorderColor());
+            newStyle.setBorderWidth(originalStyle.getBorderWidth());
+            newStyle.setBorderStyle(originalStyle.getBorderStyle());
+            newStyle.setImageUrl(originalStyle.getImageUrl());
+            newStyle.setImageWidth(originalStyle.getImageWidth());
+            newStyle.setImageHeight(originalStyle.getImageHeight());
+            newStyle.setFontFamily(originalStyle.getFontFamily());
+            newStyle.setFontSize(originalStyle.getFontSize());
+            newStyle.setFontWeight(originalStyle.getFontWeight());
+            newStyle.setFontStyle(originalStyle.getFontStyle());
+            newStyle.setTextDecoration(originalStyle.getTextDecoration());
+            newStyle.setTextColor(originalStyle.getTextColor());
+            newStyle.setTextCase(originalStyle.getTextCase());
+            newStyle.setBranchColor(originalStyle.getBranchColor());
+            newStyle.setBranchLineStyle(originalStyle.getBranchLineStyle());
+            newStyle.setBranchLineEnd(originalStyle.getBranchLineEnd());
+            newStyle.setBranchLineThickness(originalStyle.getBranchLineThickness());
+            newStyle.setQuickStyleId(originalStyle.getQuickStyleId());
+
             copy.setStyle(newStyle);
         } else {
             copy.setStyle(new NodeStyle()); // Đảm bảo không null

@@ -15,6 +15,9 @@ export default defineConfig({
   define: {
     'process.env.NODE_ENV': JSON.stringify('development'),
     'global': 'globalThis'
+  },
+  optimizeDeps: {
+    include: ['jspdf']
   }
 
 })

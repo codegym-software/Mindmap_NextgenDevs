@@ -20,6 +20,8 @@ export function useAuth() {
     user: ctx.user,
     login: ctx.login,
     logout: ctx.logout,
+    openChangePassword: ctx.openChangePassword,
+    closeChangePassword: ctx.closeChangePassword,
     getAccessToken: ctx.ensureFreshAccessToken,
     setAuthTokens: ctx.setAuthTokens, // Expose this for callbacks/modals
   };
