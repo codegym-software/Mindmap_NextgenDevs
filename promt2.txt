@@ -1,450 +1,221 @@
-Giai đoạn 0 – Chuẩn hoá model & debug interface
+** Còn cần gộp một file nưa : src/features/editor/utils/EditorHelpers.ts
+Bạn kiểm tra lại file này, hàm loadGuestDoc phải trả về ownerId: 'guest' để khớp với logic check trong Editor.tsx. **
 
-Mục tiêu: có cấu trúc dữ liệu rõ ràng cho quyền, log/debug dễ, không “nhớ bằng miệng”.
+-- File mô tả thay đổi :
+// ... (imports giữ nguyên)
 
-0.1. Chuẩn JSON Firestore: mindmapAccess/{mindmapId}
-
-Đề xuất format (có thể cắt bớt nếu chưa cần hết):
-
-// Firestore: collection mindmapAccess, document id = mindmapId
-{
-  mindmapId: string;       // trùng với id của mindmap
-  ownerId: string;         // user.id hoặc user.sub
-
-  // (tuỳ chọn) mirror từ Mongo cho debug nhanh
-  allowedUsers?: string[]; // userId đã có quyền (VIEW/EDIT)
-
-  pendingRequests: {
-    uid: string;
-    displayName: string;
-    requestedPermission: 'VIEWER' | 'EDITOR'; // NEW
-    from: 'direct-link' | 'upgrade-request';  // NEW: vào từ link hay xin nâng quyền
-    timestamp: number; // millis
-  }[];
-
-  // Lưu quyết định gần nhất cho từng user để trả về "bị từ chối"
-  lastDecisions?: {
-    [uid: string]: {
-      status: 'approved' | 'rejected';
-      permission: 'VIEWER' | 'EDITOR';
-      decidedAt: number;
-    };
-  };
-
-  updatedAt: number;
-  version: number; // tăng +1 mỗi lần update, dễ debug conflict
-}
-
-
-Cái này giúp bạn mở Firestore console lên là nhìn ngay được:
-
-Ai là owner.
-
-Ai đang pending, xin VIEW hay EDIT.
-
-Ai đã từng bị reject.
-
-0.2. Chuẩn JSON Mongo: collaborators
-
-Hiện bạn đã có collection collaborators. Đề xuất mở rộng:
-
-{
-  _id: string;
-  mindmapId: string;
-  userId: string;
-
-  // Quyền hiện tại
-  permission: 'OWNER' | 'EDITOR' | 'VIEWER';
-
-  // Trạng thái lifecycle
-  status: 'ACTIVE' | 'PENDING' | 'REJECTED';
-
-  // Nếu là request access / upgrade
-  requestedPermission?: 'VIEWER' | 'EDITOR'; // B xin quyền gì
-  requestedAt?: Date;
-
-  // Ai tạo / ai mời
-  invitedBy?: string;    // ownerId hoặc người mời
-  inviteType?: 'OWNER_INVITE' | 'REQUEST_ACCESS' | 'LINK';
-
-  // Nếu owner đã quyết định
-  decidedBy?: string;    // userId của owner
-  decidedAt?: Date;
-
-  createdAt: Date;
-  updatedAt: Date;
-}
-
-
-Nhờ vậy:
-
-BE query được list pending bằng mindmapId + status:PENDING.
-
-Dễ audit: ai xin, xin quyền gì, ai duyệt, lúc nào.
-
-Giai đoạn 1 – Cho B auto “unlock” sau khi được duyệt (ưu tiên của bạn)
-
-Mục tiêu:
-
-B đang bị chặn (403) → thấy màn “Request access”.
-
-A approve → B tự động vào được mindmap, không cần F5.
-
-Chưa cần UI chọn VIEW/EDITOR trong modal, chỉ cần cấp VIEWER là đủ test luồng.
-
-1.1. FE: xử lý lại state ở Editor
-
-a/ Thêm phân biệt 2 nguồn:
-
-backendAccess (từ API GET):
-
-'unknown' | 'allowed' | 'denied'
-
-permission (từ Firestore hook useMindmapAccess):
-
-'loading' | 'allowed' | 'denied'
-
-Editor render theo:
-
-Nếu isDataLoaded === false → spinner.
-
-Nếu backendAccess === 'denied' && permission === 'denied' → AccessDeniedScreen.
-
-Nếu backendAccess === 'denied' && permission === 'allowed' → thử load lại từ BE.
-
-b/ Auto reload khi Firestore báo allowed
-
-Trong Editor:
-
-useEffect(() => {
-  if (!id) return;
-  if (permission !== 'allowed') return;
-  if (!accessDenied) return; // chỉ reload khi trước đó bị chặn
-
-  (async () => {
-    try {
-      const data = await mindmapsApi.get(id);
-      // nếu 200 → hydrate lại store
-      setAccessDenied(false);
-      setIsDataLoaded(true);
-
-      // TODO: tái sử dụng logic loadData:
-      setName(data.name);
-      setOwnerId(data.ownerId);
-      setGraph(data.nodes, data.edges);
-      setGlobalStore(...);
-      setBackgroundColor(...);
-      setSelectedNodeIds(['root']);
-    } catch (e: any) {
-      // nếu vẫn 403 thì thôi, giữ nguyên AccessDeniedScreen
-      // có thể show toast: "Quyền đang cập nhật, thử lại sau"
-    }
-  })();
-}, [permission, accessDenied, id]);
-
-
-c/ Sửa init useMindmapAccess
-
-Hiện hook khi không có doc thì set permission = 'allowed'.
-Để an toàn hơn:
-
-Nếu !docSnap.exists() → nên set permission = 'denied' (hoặc 'loading') cho tới khi BE confirm.
-Đặc biệt với doc private, việc “auto allowed” là nguy hiểm.
-
-1.2. BE + FE: A approve thì cập nhật quyền thật
-
-Tối thiểu để auto unlock chạy được:
-
-Khi A ấn “Duyệt” trong AccessRequestModal, FE phải:
-
-Gọi API cấp quyền thật.
-
-Cập nhật Firestore để B nhận signal.
-
-FE (pseudo):
-
-const handleApproveRequest = async (uid: string) => {
-  if (!id) return;
+export function loadGuestDoc(id: string) {
   try {
-    // 1. Cấp quyền Viewer trên BE
-    await mindmapsApi.updateCollaboratorPermission(id, uid, 'VIEWER');
-
-    // 2. Xoá khỏi pendingRequests Firestore
-    await approveRequest(uid);
-
-    addToast('Đã duyệt yêu cầu truy cập', 'success');
+    const raw = localStorage.getItem(GUEST_BUCKET);
+    if (!raw) return null;
+    const allDocs = JSON.parse(raw);
+    const beDoc = allDocs[id];
+    if (!beDoc) return null;
+    const feContent = normalizeContentBEtoFE(beDoc.content);
+    
+    return {
+      id: beDoc.id,
+      name: beDoc.name,
+      ...feContent,
+      ownerId: 'guest', // ✅ QUAN TRỌNG: Phải là 'guest'
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      version: 0,
+      collaborators: [],
+      accessSettings: { isPublic: false, publicAccessLevel: 'DISABLED' as const }
+    };
   } catch (e) {
-    addToast('Không thể duyệt yêu cầu', 'error');
+    console.error('Error loading guest doc:', e);
+    return null;
   }
+}
+// ... (phần còn lại giữ nguyên)
+
+--- File Gốc :
+
+import { NodeData, EdgeData, NodeData as FeNodeData } from '../../../app/store/useEditorStore';
+import {
+  BeMindmapContent,
+  normalizeContentBEtoFE,
+  normalizeContentFEtoBE,
+} from '../../../services/dataMapper';
+
+// =================================================================================
+// CONSTANTS
+// =================================================================================
+export const GUEST_BUCKET = 'mm_guest_docs';
+export const PADDING_X = 20;
+export const PADDING_Y = 12;
+export const LINE_HEIGHT_MULTIPLIER = 1.3;
+
+export const BRANCH_COLORS_PALETTE = [
+  '#EF4444', '#F97316', '#FACC15', '#22C55E',
+  '#06B6D4', '#3B82F6', '#8B5CF6', '#EC4899',
+];
+
+// =================================================================================
+// TYPES
+// =================================================================================
+type BeGuestDoc = {
+  id: string;
+  name: string;
+  content: BeMindmapContent;
 };
 
-
-BE phía PUT /api/mindmaps/{id}/collaborators/{userId}:
-
-Đảm bảo khi collaborator có permission != null và status=ACTIVE → GET /api/mindmaps/{id} trả 200 cho user đó.
-
-Như vậy:
-
-A ấn “Duyệt” → BE gán VIEWER.
-
-A cũng update Firestore → B nhận permission='allowed'.
-
-B thấy permission='allowed' && accessDenied === true → gọi lại GET.
-
-GET trả 200 → B load mindmap → xong.
-
-Ở giai đoạn này, UI duyệt chỉ cấp VIEWER mặc định, cho nhanh.
-
-Giai đoạn 2 – Duyệt với chọn VIEW/EDITOR + từ chối rõ ràng
-
-Mục tiêu:
-
-A có UI chọn cấp VIEWER hay EDITOR khi duyệt.
-
-A có thể từ chối, B thấy là “đã bị từ chối”.
-
-BE ghi đầy đủ vào collaborators (PENDING → ACTIVE/REJECTED).
-
-2.1. FE: AccessRequestModal cho chọn role
-
-Trong list pending request:
-
-Với mỗi req, thêm dropdown:
-
-“Cấp quyền: Viewer / Editor”
-
-Nút “Duyệt” gửi role:
-
-onApprove(uid, chosenPermission)
-
-
-ShareModal hoặc Editor bọc lại:
-
-const handleApproveRequest = async (uid: string, perm: Permission) => {
-  if (!id) return;
-  await mindmapsApi.updateCollaboratorPermission(id, uid, perm);
-  await approveRequest(uid); // Firestore
-};
-
-2.2. BE: xử lý lifecycle PENDING → ACTIVE / REJECTED
-
-POST /api/mindmaps/{id}/request-access:
-
-Tạo collaborators với:
-
-status: 'PENDING'
-
-requestedPermission: 'VIEWER'|'EDITOR' (từ FE)
-
-POST /api/mindmaps/{id}/requests/{userId}/approve:
-
-Set status: 'ACTIVE'
-
-Set permission = perm từ request
-
-Ghi decidedBy, decidedAt
-
-POST /api/mindmaps/{id}/requests/{userId}/reject:
-
-Set status: 'REJECTED'
-
-(Tuỳ bạn có xoá record hay giữ để log)
-
-Khi reject:
-
-BE cập nhật collaborators PENDING → REJECTED.
-
-BE (hoặc FE tạm thời) update Firestore lastDecisions[uid].status = 'rejected'.
-
-useMindmapAccess đọc lastDecisions → set requestStatus = 'rejected', hiển thị message: “Yêu cầu của bạn đã bị từ chối”.
-
-Giai đoạn 3 – Link chia sẻ công khai (VIEW/EDIT) + request nâng quyền
-
-Mục tiêu:
-
-Trong Share modal:
-
-Chọn “Bất kỳ ai có link: Xem / Chỉnh sửa”.
-
-B truy cập qua link public:
-
-Nếu chỉ được VIEW → vẫn xem bình thường.
-
-Nếu muốn EDIT → có nút “Yêu cầu quyền chỉnh sửa” → join vào queue giống Google Docs.
-
-3.1. BE: mở rộng accessSettings
-
-Trong collection mindmaps:
-
-accessSettings: {
-  isPublic: boolean;
-  publicAccessLevel: 'NONE' | 'VIEW' | 'VIEW_EDIT'; // hoặc 'VIEW' | 'EDIT'
-
-  // optional cho workspace/team sau
-  workspaceVisibility?: 'PRIVATE' | 'WORKSPACE_VIEW' | 'WORKSPACE_EDIT';
+// =================================================================================
+// COLOR UTILITIES
+// =================================================================================
+export function hexToRgb(hex: string) {
+  const h = hex.replace('#', '');
+  const full = h.length === 3 ? h.split('').map(c => c + c).join('') : h;
+  const bigint = parseInt(full, 16);
+  return { r: (bigint >> 16) & 255, g: (bigint >> 8) & 255, b: bigint & 255 };
 }
 
-
-Rule GET:
-
-Nếu user là owner hoặc collaborator ACTIVE:
-
-Cho phép theo permission.
-
-Nếu isPublic === true:
-
-Nếu publicAccessLevel cho VIEW:
-
-Cho xem (VIEWER).
-
-Nếu cho EDIT:
-
-Cho EDIT (EDITOR tạm thời), nhưng bạn nên yêu cầu login, không cho ẩn danh sửa.
-
-3.2. FE: ShareModal
-
-Trong block “Chia sẻ công khai”:
-
-Thay switch thành:
-
-<select
-  value={shareSettings.publicAccessLevel}
-  onChange={(e) => handleUpdatePublicAccess(e.target.value as 'NONE'|'VIEW'|'EDIT')}
->
-  <option value="NONE">Tắt (Chỉ người được mời)</option>
-  <option value="VIEW">Bất kỳ ai có link: Xem</option>
-  <option value="EDIT">Bất kỳ ai có link: Chỉnh sửa</option>
-</select>
-
-
-handleUpdatePublicAccess gọi:
-
-await mindmapsApi.updateShareSettings(mindmapId, {
-  isPublic: value !== 'NONE',
-  publicAccessLevel: value === 'NONE' ? 'DISABLED' : value === 'VIEW' ? 'VIEW' : 'EDIT',
-});
-
-3.3. FE cho người đang VIEW xin lên EDIT (câu hỏi bạn nêu)
-
-Khi B có quyền VIEW (do được mời hoặc do link VIEW) mà:
-
-Ấn nút “Edit” hoặc thực hiện thao tác chỉnh sửa.
-
-Nếu BE trả 403 (không cho EDIT):
-
-Show popup nhỏ:
-
-“Bạn hiện chỉ có quyền xem. Bạn muốn gửi yêu cầu quyền chỉnh sửa không?”
-
-Nếu đồng ý:
-
-Gọi POST /api/mindmaps/{id}/request-access với requestedPermission = 'EDITOR'.
-
-Cập nhật Firestore queue (hoặc nhờ BE).
-
-Owner A sẽ thấy trong queue:
-
-Request B tới từ from: 'upgrade-request'.
-
-requestedPermission: 'EDITOR'.
-
-Tức là bạn có 2 luồng request dùng chung hệ thống:
-
-Không có quyền → xin VIEW/EDIT.
-
-Đang VIEW → xin nâng lên EDIT.
-
-Giai đoạn 4 – Workspace / Team
-
-Mục tiêu:
-
-Nếu sau này có workspace (team), chia quyền theo team cho gọn.
-
-4.1. BE: bổ sung layer workspace
-
-users có workspaceId.
-
-mindmaps có workspaceId.
-
-accessSettings.workspaceVisibility:
-
-PRIVATE – chỉ owner + collaborators.
-
-WORKSPACE_VIEW – tất cả trong workspace VIEW được.
-
-WORKSPACE_EDIT – tất cả trong workspace EDIT được.
-
-Khi GET:
-
-Nếu user cùng workspaceId:
-
-Và visibility là WORKSPACE_VIEW/EDIT → auto coi như collaborator với role tương ứng (trừ khi bị explicit block trong future).
-
-4.2. FE: ShareModal
-
-Thêm block nhỏ:
-
-<select
-  value={workspaceVisibility}
-  onChange={...}
->
-  <option value="PRIVATE">Chỉ mình tôi và người được mời</option>
-  <option value="WORKSPACE_VIEW">Mọi người trong Workspace: Xem</option>
-  <option value="WORKSPACE_EDIT">Mọi người trong Workspace: Chỉnh sửa</option>
-</select>
-
-Giai đoạn 5 – Email / In-app notification
-
-Mục tiêu: nâng cấp lên “Google-level experience” nhưng làm sau cho đỡ overload.
-
-Ý tưởng:
-
-Khi có REQUEST_ACCESS:
-
-BE push:
-
-1 record vào notifications collection (Mongo).
-
-(Sau này) trigger gửi email nếu owner bật.
-
-FE:
-
-Nút “Chuông” trên toolbar không chỉ đọc từ Firestore mà còn có thể đọc từ API /api/notifications.
-
-Bạn có thể để phase này sau khi core flow request/approve/deny đã chạy cực ổn.
-
-Tóm tắt lại theo ưu tiên bạn nêu
-
-✅ Giai đoạn 0: chuẩn JSON cho Firestore + Mongo, chỉnh useMindmapAccess không tự “allowed”.
-
-✅ Giai đoạn 1 (ưu tiên):
-
-FE:
-
-Khi Firestore báo permission='allowed' thì Editor auto gọi lại BE để load mindmap cho B.
-
-FE+BE:
-
-Khi A ấn “Duyệt”: gọi updateCollaboratorPermission(...,'VIEWER') + approveRequest (Firestore).
-
-✅ Giai đoạn 2:
-
-UI chọn VIEW/EDITOR khi duyệt.
-
-Luồng từ chối + hiển thị “đã bị từ chối” phía B.
-
-✅ Giai đoạn 3:
-
-Public link mode: ANYONE WITH LINK: VIEW/EDIT.
-
-Viewer request upgrade lên Editor.
-
-✅ Giai đoạn 4:
-
-Workspace / team visibility.
-
-✅ Giai đoạn 5:
-
-Email / in-app notifications.
-
-Bạn có thể implement từng giai đoạn rồi mình cùng review lại code để đảm bảo đúng “tiêu chuẩn production” như bạn muốn.
+export function rgbToHex(r: number, g: number, b: number) {
+  return `#${[r, g, b].map(x => x.toString(16).padStart(2, '0')).join('')}`;
+}
+
+export function mixWithWhite(hex: string, amount = 0.85) {
+  const { r, g, b } = hexToRgb(hex);
+  const nr = Math.round(r + (255 - r) * amount);
+  const ng = Math.round(g + (255 - g) * amount);
+  const nb = Math.round(b + (255 - b) * amount);
+  return rgbToHex(nr, ng, nb);
+}
+
+export function getContrastColor(hex: string) {
+  const { r, g, b } = hexToRgb(hex);
+  const lum = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+  return lum > 0.6 ? '#000000' : '#FFFFFF';
+}
+
+// =================================================================================
+// CURSOR & USER UTILITIES
+// =================================================================================
+const CURSOR_COLORS = [
+  "#EF4444", "#F97316", "#F59E0B", "#10B981", "#06B6D4", 
+  "#3B82F6", "#6366F1", "#8B5CF6", "#EC4899", "#F43F5E"
+];
+
+export function getCursorColor(userId: string): string {
+  let hash = 0;
+  for (let i = 0; i < userId.length; i++) {
+    hash = userId.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  const index = Math.abs(hash % CURSOR_COLORS.length);
+  return CURSOR_COLORS[index];
+}
+
+// =================================================================================
+// STORAGE UTILITIES (Guest Logic)
+// =================================================================================
+export function loadGuestDoc(id: string) {
+  try {
+    const raw = localStorage.getItem(GUEST_BUCKET);
+    if (!raw) return null;
+    const allDocs = JSON.parse(raw);
+    const beDoc: BeGuestDoc = allDocs[id];
+    if (!beDoc) return null;
+    const feContent = normalizeContentBEtoFE(beDoc.content);
+    
+    // [FIX] Thêm collaborators và accessSettings mặc định cho Guest để khớp Type
+    return {
+      id: beDoc.id,
+      name: beDoc.name,
+      ...feContent,
+      ownerId: 'guest',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      version: 0,
+      collaborators: [], // Guest không có collaborator
+      accessSettings: { isPublic: false, publicAccessLevel: 'DISABLED' as const } // Guest không có public link
+    };
+  } catch (e) {
+    console.error('Error loading guest doc:', e);
+    return null;
+  }
+}
+
+export function saveGuestDoc(
+  id: string,
+  name: string,
+  feNodes: FeNodeData[],
+  feEdges: EdgeData[]
+) {
+  try {
+    const beContent = normalizeContentFEtoBE(feNodes, feEdges);
+    const all = JSON.parse(localStorage.getItem(GUEST_BUCKET) || '{}');
+    const beDoc: BeGuestDoc = { id: id, name: name, content: beContent };
+    all[id] = beDoc;
+    localStorage.setItem(GUEST_BUCKET, JSON.stringify(all));
+  } catch (e) {
+    console.error('Error saving guest doc:', e);
+  }
+}
+
+// =================================================================================
+// LAYOUT CALCULATION
+// =================================================================================
+export function calculateNodeBox(node: NodeData, style: NodeData) {
+  const { fontSize, nodeLength, nodeText, textCase } = style;
+  const borderWidth = style.borderWidth || 0;
+  let processedText = nodeText || '';
+  if (textCase === 'uppercase') processedText = processedText.toUpperCase();
+  if (textCase === 'lowercase') processedText = processedText.toLowerCase();
+  const finalFontSize = fontSize || 14;
+  const finalLineHeight = finalFontSize * LINE_HEIGHT_MULTIPLIER;
+  let w: number;
+  let wrappedLines: string[] = [];
+  
+  const canvas = document.createElement('canvas');
+  const context = canvas.getContext('2d');
+  if (context) {
+    context.font = `${finalFontSize}px ${style.fontFamily || 'Inter'}`;
+  }
+  const measureWidth = (text: string) =>
+    context?.measureText(text).width || text.length * finalFontSize * 0.6;
+
+  if (nodeLength === 'fit') {
+    let maxWidth = 0;
+    processedText.split('\n').forEach((line: string) => {
+      maxWidth = Math.max(maxWidth, measureWidth(line));
+    });
+    w = maxWidth + PADDING_X * 2 + borderWidth * 2;
+    w = Math.max(w, 80);
+    wrappedLines = processedText.split('\n');
+  } else {
+    w = Number(nodeLength) || 150;
+    const contentWidth = w - PADDING_X * 2 - borderWidth * 2;
+    const lines = processedText.split('\n');
+    lines.forEach((line: string) => {
+      if (line.length === 0) {
+        wrappedLines.push('');
+        return;
+      }
+      let currentLine = '';
+      const words = line.split(' ');
+      for (const word of words) {
+        const testLine = currentLine ? `${currentLine} ${word}` : word;
+        const testWidth = measureWidth(testLine);
+        if (testWidth > contentWidth) {
+          if (currentLine) wrappedLines.push(currentLine);
+          currentLine = word;
+          while (measureWidth(currentLine) > contentWidth) {
+            wrappedLines.push(currentLine.substring(0, 20));
+            currentLine = currentLine.substring(20);
+          }
+        } else {
+          currentLine = testLine;
+        }
+      }
+      if (currentLine) wrappedLines.push(currentLine);
+    });
+  }
+  let h = Math.max(
+    finalLineHeight + PADDING_Y * 2,
+    wrappedLines.length * finalLineHeight + PADDING_Y * 2
+  );
+
+  return { w, h, textToRender: wrappedLines.join('\n'), finalFontSize };
+}

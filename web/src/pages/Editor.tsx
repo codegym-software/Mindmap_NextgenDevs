@@ -180,26 +180,29 @@ export default function Editor({ mode = 'edit' }: EditorProps) {
   const activeTheme =
     colorThemes[activeColorThemeId as keyof typeof colorThemes];
 
-  // --- Resolve Owner: Backend + Firestore ---
-  const computedIsOwner = useMemo(() => {
-    if (!user || !ownerId) return false;
-    // So sánh linh hoạt giữa Cognito `sub` và `id` cục bộ
-    return user.sub === ownerId || (user as any).id === ownerId;
-  }, [user, ownerId]);
+const computedIsOwner = useMemo(() => {
+  // ✅ Guest luôn là chủ sở hữu của map local
+  if (isGuest) return true;
 
-  // Kết hợp hai nguồn: nếu BE nói owner thì ưu tiên, nếu không thì dùng Firestore
-  const isOwner = useMemo(
-    () => Boolean(computedIsOwner || isOwnerFromAccess),
-    [computedIsOwner, isOwnerFromAccess],
-  );
+  if (!user || !ownerId) return false;
+  // So sánh linh hoạt giữa Cognito `sub` và `id` cục bộ
+  return user.sub === ownerId || (user as any).id === ownerId;
+}, [user, ownerId, isGuest]);
 
+// Kết hợp hai nguồn: nếu BE nói owner thì ưu tiên, nếu không thì dùng Firestore
+const isOwner = useMemo(
+  () => (isGuest ? true : Boolean(computedIsOwner || isOwnerFromAccess)),
+  [isGuest, computedIsOwner, isOwnerFromAccess],
+);
   // --- isReadOnly: tuỳ theo route + quyền từ BE ---
-  const isReadOnly = useMemo(() => {
-    if (isShareRoute) return true;         // share route luôn view-only
-    if (isOwner) return false;             // owner luôn được sửa
-    if (userPermission === 'EDITOR') return false;
-    return true;                           // còn lại => chỉ xem
-  }, [isShareRoute, isOwner, userPermission]);
+const isReadOnly = useMemo(() => {
+  if (isShareRoute) return true;         // share route luôn view-only UI
+  if (isGuest) return false;             // ✅ Guest luôn được sửa (trừ share route)
+  if (isOwner) return false;             // owner luôn được sửa
+  if (userPermission === 'EDITOR') return false;
+  return true;                           // còn lại => chỉ xem
+}, [isShareRoute, isGuest, isOwner, userPermission]);
+
 
   // --- Tên & màu user cho realtime presence ---
   const myName = useMemo(() => {
@@ -711,19 +714,20 @@ export default function Editor({ mode = 'edit' }: EditorProps) {
     [],
   );
 
-  const { sendPatch, sendCursor, isConnected } = useRealtime({
-    mindmapId: id,
-    isGuest,
-    isDataLoaded,
-    isOwner,
-    userInfo: {
-      name: myName,
-      color: myColor,
-    },
-    onLayoutRequest: (keepCamera = false) => handleLayout(keepCamera),
-    onSetRootCollapse: handleSetRootCollapse,
-    shouldConnect: !accessDenied && !!id,
-  });
+const { sendPatch, sendCursor, isConnected } = useRealtime({
+  mindmapId: id,
+  isGuest,
+  isDataLoaded,
+  isOwner,
+  userInfo: {
+    name: myName,
+    color: myColor,
+  },
+  onLayoutRequest: (keepCamera = false) => handleLayout(keepCamera),
+  onSetRootCollapse: handleSetRootCollapse,
+  shouldConnect: !accessDenied && !!id && !isGuest, // ✅ chặn guest
+});
+
 
   const handleRequestAccessFromScreen = useCallback(async () => {
     if (!id) return;
@@ -936,7 +940,10 @@ export default function Editor({ mode = 'edit' }: EditorProps) {
           setOwnerId(data.ownerId);
 
           // Quyền từ backend (OWNER/EDITOR/VIEWER/public view)
-          if (
+          if (isGuest) {
+            // ✅ Guest luôn có quyền OWNER
+            setUserPermission('OWNER');
+          } else if (
             user &&
             (user.sub === data.ownerId || (user as any).id === data.ownerId)
           ) {
@@ -958,6 +965,7 @@ export default function Editor({ mode = 'edit' }: EditorProps) {
               }
             }
           }
+
 
           useEditorStore.setState({
             currentMindmapId: id,
@@ -1875,17 +1883,18 @@ export default function Editor({ mode = 'edit' }: EditorProps) {
   // =========================================================================
 
   // Đợi BE load xong + Firestore hook init
-  if (!isDataLoaded || fsAccessState === 'loading') {
-    return (
-      <div className="w-screen h-screen bg-white flex items-center justify-center text-gray-800 gap-2">
-        <Spinner className="w-8 h-8 border-gray-400 border-t-gray-800" />
-        Đang tải...
-      </div>
-    );
-  }
+if (!isDataLoaded || (!isGuest && fsAccessState === 'loading')) {
+  return (
+    <div className="w-screen h-screen bg-white flex items-center justify-center text-gray-800 gap-2">
+      <Spinner className="w-8 h-8 border-gray-400 border-t-gray-800" />
+      Đang tải...
+    </div>
+  );
+}
+
 
   // BE đã từ chối (403) và chưa được mở khoá lại
-  if (accessDenied) {
+  if (accessDenied && !isGuest) {
     return (
       <AccessDeniedScreen
         onRequestAccess={handleRequestAccessFromScreen}

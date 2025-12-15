@@ -79,28 +79,30 @@ export function loadGuestDoc(id: string) {
   try {
     const raw = localStorage.getItem(GUEST_BUCKET);
     if (!raw) return null;
+
     const allDocs = JSON.parse(raw);
     const beDoc: BeGuestDoc = allDocs[id];
     if (!beDoc) return null;
+
     const feContent = normalizeContentBEtoFE(beDoc.content);
-    
-    // [FIX] Thêm collaborators và accessSettings mặc định cho Guest để khớp Type
+
     return {
       id: beDoc.id,
       name: beDoc.name,
       ...feContent,
-      ownerId: 'guest',
+      ownerId: 'guest', // ✅ QUAN TRỌNG: Phải là 'guest' để khớp Editor.tsx
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
       version: 0,
-      collaborators: [], // Guest không có collaborator
-      accessSettings: { isPublic: false, publicAccessLevel: 'DISABLED' as const } // Guest không có public link
+      collaborators: [],
+      accessSettings: { isPublic: false, publicAccessLevel: 'DISABLED' as const },
     };
   } catch (e) {
     console.error('Error loading guest doc:', e);
     return null;
   }
 }
+
 
 export function saveGuestDoc(
   id: string,
