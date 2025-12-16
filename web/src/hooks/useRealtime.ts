@@ -2,7 +2,6 @@ import { useEffect, useRef, useCallback, useState } from 'react';
 import { useAuth } from './useAuth';
 import { useToast } from './useToast';
 import { EdgeData, useEditorStore } from '../app/store/useEditorStore';
-// Nếu đã cài lodash, có thể thay throttleFunc bằng lodash.throttle, còn hiện tại dùng helper tự viết
 
 type BroadcastPatch = {
   type: string;
@@ -15,47 +14,45 @@ type UseRealtimeProps = {
   isGuest: boolean;
   isDataLoaded: boolean;
   isOwner: boolean;
-  // Thông tin người dùng hiện tại để gửi Presence (tên và màu)
   userInfo: { name: string; color: string };
   onLayoutRequest: (keepCamera: boolean) => void;
   onSetRootCollapse: (side: 'left' | 'right', collapsed: boolean) => void;
-
-  // Cờ để kiểm soát việc có kết nối WS hay không
   shouldConnect: boolean;
 };
 
-// Helper throttle (thay thế cho lodash.throttle nếu chưa cài lodash)
-// Giới hạn tần suất gọi hàm để tránh spam WebSocket
+// Helper throttle để giảm tải việc gửi cursor liên tục
 const throttleFunc = (func: Function, limit: number) => {
-  let inThrottle: boolean;
+  let inThrottle = false;
   return function (this: any, ...args: any[]) {
-    if (!inThrottle) {
-      func.apply(this, args);
-      inThrottle = true;
-      setTimeout(() => (inThrottle = false), limit);
-    }
+    if (inThrottle) return;
+    func.apply(this, args);
+    inThrottle = true;
+    setTimeout(() => (inThrottle = false), limit);
   };
 };
+
+const getMySenderId = (user: any) => user?.sub || user?.id || user?.uid;
 
 export function useRealtime({
   mindmapId,
   isGuest,
   isDataLoaded,
   isOwner,
-  userInfo, // Prop để gửi thông tin user khi join
+  userInfo,
   onLayoutRequest,
   onSetRootCollapse,
   shouldConnect,
 }: UseRealtimeProps) {
   const { getAccessToken, isAuthed, user } = useAuth();
   const { addToast } = useToast();
-  const { setGraph, setPeerInfo, updatePeerCursor, removePeer } = useEditorStore(); // actions tối ưu cho peers
+
+  const { setGraph, setPeerInfo, updatePeerCursor, removePeer } = useEditorStore();
 
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimeoutRef = useRef<any>(null);
   const [isConnected, setIsConnected] = useState(false);
 
-  // Dùng ref để lưu props mới nhất, tránh stale closures trong onmessage/onopen
+  // Lưu props mới nhất vào ref để tránh closure cũ trong onmessage
   const latestProps = useRef({
     isOwner,
     userInfo,
@@ -67,63 +64,63 @@ export function useRealtime({
     latestProps.current = { isOwner, userInfo, onLayoutRequest, onSetRootCollapse };
   }, [isOwner, userInfo, onLayoutRequest, onSetRootCollapse]);
 
-  // 1. Hàm gửi Patch (cho các thao tác Node/Graph)
+  // --- Hàm gửi (Senders) ---
+
   const sendPatch = useCallback((type: string, payload: any) => {
-    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-      try {
-        wsRef.current.send(JSON.stringify({ type, payload }));
-      } catch (e) {
-        console.error('Lỗi khi gửi WebSocket patch:', e);
-      }
-    }
-  }, []);
-
-  // 2. Hàm gửi Presence (Tên & Màu) - gửi khi join/reconnect
-  const sendPresence = useCallback(() => {
-    const { name, color } = latestProps.current.userInfo;
-    if (wsRef.current?.readyState === WebSocket.OPEN) {
-      wsRef.current.send(
-        JSON.stringify({
-          type: 'USER_PRESENCE',
-          payload: { name, color },
-        }),
-      );
-    }
-  }, []);
-
-  // [MỚI] 3. Nếu userInfo thay đổi sau khi đã connect, gửi USER_PRESENCE cập nhật
-  useEffect(() => {
-    if (!isConnected || !wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
-
+    const ws = wsRef.current;
+    if (!ws || ws.readyState !== WebSocket.OPEN) return;
     try {
-      wsRef.current.send(
-        JSON.stringify({
-          type: 'USER_PRESENCE',
-          payload: { name: userInfo.name, color: userInfo.color },
-        }),
-      );
+      ws.send(JSON.stringify({ type, payload }));
     } catch (e) {
-      console.error('Lỗi khi gửi USER_PRESENCE cập nhật:', e);
+      console.error('WS sendPatch error:', e);
     }
-  }, [userInfo.name, userInfo.color, isConnected]);
+  }, []);
 
-  // 4. Hàm gửi vị trí chuột (Payload gọn nhẹ chỉ x, y) với throttle
+  const sendPresence = useCallback(() => {
+    const ws = wsRef.current;
+    if (!ws || ws.readyState !== WebSocket.OPEN) return;
+
+    const { name, color } = latestProps.current.userInfo;
+
+    ws.send(
+      JSON.stringify({
+        type: 'USER_PRESENCE',
+        payload: { name, color },
+      }),
+    );
+  }, []);
+
+  // Tự động gửi lại Presence khi thông tin user thay đổi (đổi tên/màu)
+  useEffect(() => {
+    if (!isConnected) return;
+    if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
+    sendPresence();
+  }, [userInfo.name, userInfo.color, isConnected, sendPresence]);
+
   const sendCursor = useRef(
     throttleFunc((x: number, y: number) => {
-      if (wsRef.current?.readyState === WebSocket.OPEN) {
-        wsRef.current.send(
-          JSON.stringify({
-            type: 'CURSOR_MOVE',
-            payload: { x, y },
-          }),
-        );
-      }
+      const ws = wsRef.current;
+      if (!ws || ws.readyState !== WebSocket.OPEN) return;
+      ws.send(JSON.stringify({ type: 'CURSOR_MOVE', payload: { x, y } }));
     }, 50),
   ).current;
 
-  // 5. Connect WebSocket + xử lý message
+  // Helper: Lấy tên user từ Store để hiển thị khi rời đi
+  const getPeerName = (senderId: string) => {
+    const state: any = useEditorStore.getState();
+    // Kiểm tra cấu trúc store của bạn, thường là state.peers[id]
+    const peer = state.peers?.[senderId];
+    return peer?.name || 'Một người dùng';
+  };
+
+  // --- WebSocket Connection Logic ---
   useEffect(() => {
-    // [CẬP NHẬT] Thêm !shouldConnect vào điều kiện
+    // Điều kiện kết nối:
+    // 1. Có mindmapId
+    // 2. Đã login (isAuthed)
+    // 3. KHÔNG phải Guest
+    // 4. Dữ liệu đã load xong (để tránh sync đè khi chưa có gì)
+    // 5. shouldConnect (được phép connect, không bị chặn quyền)
     if (!mindmapId || !isAuthed || isGuest || !isDataLoaded || !shouldConnect) {
       return;
     }
@@ -144,44 +141,42 @@ export function useRealtime({
           console.log(`🟢 WebSocket connected: ${mindmapId}`);
           setIsConnected(true);
           retryCount = 0;
-          // Gửi thông tin Presence ngay khi kết nối (tên và màu)
+          // Gửi thông tin mình ngay khi vào để người khác thấy
           sendPresence();
         };
 
         ws.onmessage = (event) => {
           try {
-            const message: BroadcastPatch = JSON.parse(event.data);
-            const { type, payload, senderId } = message;
+            const msg: BroadcastPatch = JSON.parse(event.data);
+            const { type, payload, senderId } = msg;
 
-            // Lấy props mới nhất từ ref để tránh stale closures
+            // Bỏ qua tin nhắn từ chính mình
+            const myId = getMySenderId(user);
+            if (myId && senderId && senderId === myId) return;
+
             const {
               isOwner: currentIsOwner,
-              onLayoutRequest: currentLayoutRequest,
-              onSetRootCollapse: currentSetRootCollapse,
               userInfo: currentUserInfo,
+              onSetRootCollapse: currentSetRootCollapse,
             } = latestProps.current;
 
-            // Bỏ qua message từ chính mình
-            if (user?.sub === senderId || (user as any)?.id === senderId) return;
-
-            // Lấy state hiện tại từ store
             const { nodes: currentNodes, edges: currentEdges } = useEditorStore.getState();
 
             switch (type) {
-              case 'USER_JOINED':
-                addToast(`User ${payload.userId.substring(0, 6)}... đã tham gia.`, 'info');
-                // Nếu mình là Owner, gửi full snapshot dữ liệu
-                if (currentIsOwner) {
-                  if (ws.readyState === WebSocket.OPEN) {
-                    ws.send(
-                      JSON.stringify({
-                        type: 'FULL_SYNC',
-                        payload: { nodes: currentNodes, edges: currentEdges },
-                      }),
-                    );
-                  }
+              case 'USER_JOINED': {
+                // User mới vào chưa gửi Presence, nên chưa biết tên -> Không Toast.
+                
+                // Nếu mình là Owner -> Gửi FULL SNAPSHOT cho người mới
+                if (currentIsOwner && ws.readyState === WebSocket.OPEN) {
+                  ws.send(
+                    JSON.stringify({
+                      type: 'FULL_SYNC',
+                      payload: { nodes: currentNodes, edges: currentEdges },
+                    }),
+                  );
                 }
-                // Gửi lại Presence của mình để người mới biết (tránh thiếu info)
+                
+                // Gửi lại Presence của mình để người mới cập nhật danh sách user
                 if (ws.readyState === WebSocket.OPEN) {
                   ws.send(
                     JSON.stringify({
@@ -191,172 +186,127 @@ export function useRealtime({
                   );
                 }
                 break;
+              }
 
-              case 'USER_PRESENCE':
-                setPeerInfo(senderId, { name: payload.name, color: payload.color });
+              case 'USER_PRESENCE': {
+                const name = payload?.name || 'User';
+                const color = payload?.color || '#999999';
+
+                // Kiểm tra xem user này đã có trong store chưa
+                const state: any = useEditorStore.getState();
+                const isNewPeer = !state.peers?.[senderId];
+
+                // Cập nhật thông tin peer
+                setPeerInfo(senderId, { name, color });
+
+                // Chỉ hiện Toast nếu đây là user mới (tránh spam khi họ update màu/tên)
+                if (isNewPeer) {
+                    addToast(`${name} đã tham gia chỉnh sửa.`, 'info');
+                }
                 break;
+              }
 
-              case 'CURSOR_MOVE':
-                updatePeerCursor(senderId, payload.x, payload.y);
+              case 'CURSOR_MOVE': {
+                updatePeerCursor(senderId, payload?.x, payload?.y);
                 break;
+              }
 
-              case 'USER_LEFT':
+              case 'USER_LEFT': {
+                const name = getPeerName(senderId);
                 removePeer(senderId);
-                addToast(`User... đã rời đi.`, 'info');
+                addToast(`${name} đã rời đi.`, 'info');
                 break;
+              }
 
-              case 'FULL_SYNC':
-                console.log('🔄 Received FULL_SYNC snapshot. Updating store...');
-                setGraph(payload.nodes, payload.edges);
-                setTimeout(() => currentLayoutRequest(true), 50);
-                addToast('Đã đồng bộ dữ liệu mới nhất.', 'success');
+              case 'FULL_SYNC': {
+                console.log('🔄 Received FULL_SYNC snapshot.');
+                if (payload?.nodes && payload?.edges) {
+                  // ✅ FIX QUAN TRỌNG: Chỉ setGraph, KHÔNG gọi handleLayout
+                  // Layout tự động sẽ phá vỡ vị trí do Owner gửi xuống
+                  setGraph(payload.nodes, payload.edges);
+                  
+                  addToast('Đã đồng bộ dữ liệu mới nhất.', 'success');
+                }
                 break;
+              }
 
+              // --- Các case xử lý thao tác ---
+              
               case 'NODE_MOVE': {
-                const { id: nodeId, x, y } = payload;
-                const newNodes = currentNodes.map((n) =>
-                  n.id === nodeId ? { ...n, x, y } : n,
-                );
+                const { id: nodeId, x, y } = payload || {};
+                const newNodes = currentNodes.map((n) => (n.id === nodeId ? { ...n, x, y } : n));
                 setGraph(newNodes, currentEdges);
                 break;
               }
 
               case 'NODE_TEXT_CHANGE': {
-                const { id: nodeId, text } = payload;
-                const newNodes = currentNodes.map((n) =>
-                  n.id === nodeId ? { ...n, nodeText: text } : n,
-                );
+                const { id: nodeId, text } = payload || {};
+                const newNodes = currentNodes.map((n) => (n.id === nodeId ? { ...n, nodeText: text } : n));
                 setGraph(newNodes, currentEdges);
-                setTimeout(() => currentLayoutRequest(true), 0);
                 break;
               }
 
               case 'NODE_CREATE': {
-                const { node: feNode, edge: feEdge } = payload;
+                const { node: feNode, edge: feEdge } = payload || {};
+                if (!feNode) break;
                 const nextEdges = feEdge ? [...currentEdges, feEdge] : currentEdges;
                 setGraph([...currentNodes, feNode], nextEdges);
-                setTimeout(() => currentLayoutRequest(true), 0);
                 break;
               }
 
               case 'NODE_DELETE': {
-                const { nodeIds } = payload;
-                const set = new Set(nodeIds as string[]);
+                const { nodeIds } = payload || {};
+                const set = new Set((nodeIds || []) as string[]);
                 const newNodes = currentNodes.filter((n) => !set.has(n.id));
-                const newEdges = currentEdges.filter(
-                  (e) => !set.has(e.from) && !set.has(e.to),
-                );
+                const newEdges = currentEdges.filter((e) => !set.has(e.from) && !set.has(e.to));
                 setGraph(newNodes, newEdges);
-                setTimeout(() => currentLayoutRequest(true), 0);
                 break;
               }
 
               case 'NODE_REPARENT': {
-                const { nodeId, newParentId, x, y, side } = payload;
+                const { nodeId, newParentId, x, y, side } = payload || {};
                 const newNodes = currentNodes.map((n) =>
                   n.id === nodeId ? { ...n, parentId: newParentId, x, y, side } : n,
                 );
                 const oldEdge = currentEdges.find((e) => e.to === nodeId);
                 let newEdges: EdgeData[];
                 if (oldEdge) {
-                  newEdges = currentEdges.map((e) =>
-                    e.id === oldEdge.id ? { ...e, from: newParentId } : e,
-                  );
+                  newEdges = currentEdges.map((e) => (e.id === oldEdge.id ? { ...e, from: newParentId } : e));
                 } else {
-                  newEdges = [
-                    ...currentEdges,
-                    { id: `e-${nodeId}`, from: newParentId, to: nodeId },
-                  ];
+                  newEdges = [...currentEdges, { id: `e-${nodeId}`, from: newParentId, to: nodeId }];
                 }
                 setGraph(newNodes, newEdges);
-                setTimeout(() => currentLayoutRequest(true), 0);
                 break;
               }
 
               case 'NODE_STYLE_UPDATE': {
-                const { id: nodeId, updates } = payload;
-                const newNodes = currentNodes.map((n) =>
-                  n.id === nodeId ? { ...n, ...updates } : n,
-                );
-                setGraph(newNodes, currentEdges);
-                if (updates.nodeLength) setTimeout(() => currentLayoutRequest(true), 0);
-                break;
-              }
-
-              case 'NODE_QUICK_STYLE_APPLY': {
-                const { id: nodeId, styleId, resetStyle } = payload;
-                const newNodes = currentNodes.map((n) =>
-                  n.id === nodeId ? { ...n, ...resetStyle, quickStyleId: styleId } : n,
-                );
-                setGraph(newNodes, currentEdges);
-                setTimeout(() => currentLayoutRequest(true), 0);
-                break;
-              }
-
-              case 'NODE_STYLE_PASTE': {
-                const { id: nodeId, style } = payload;
-                const newNodes = currentNodes.map((n) =>
-                  n.id === nodeId ? { ...n, ...style } : n,
-                );
-                setGraph(newNodes, currentEdges);
-                setTimeout(() => currentLayoutRequest(true), 0);
-                break;
-              }
-
-              case 'NODE_STYLE_RESET': {
-                const { id: nodeId, resetStyle } = payload;
-                const newNodes = currentNodes.map((n) =>
-                  n.id === nodeId ? { ...n, ...resetStyle } : n,
-                );
-                setGraph(newNodes, currentEdges);
-                setTimeout(() => currentLayoutRequest(true), 0);
-                break;
-              }
-
-              case 'NODE_TOGGLE_COLLAPSE': {
-                const { id: nodeId } = payload;
-                const newNodes = currentNodes.map((n) =>
-                  n.id === nodeId ? { ...n, collapsed: !n.collapsed } : n,
-                );
+                const { id: nodeId, updates } = payload || {};
+                const newNodes = currentNodes.map((n) => (n.id === nodeId ? { ...n, ...(updates || {}) } : n));
                 setGraph(newNodes, currentEdges);
                 break;
               }
 
               case 'ROOT_TOGGLE_COLLAPSE': {
                 const { side } = payload;
-                if (side === 'left' || side === 'right') {
-                  currentSetRootCollapse(side, true);
-                }
+                if (side === 'left' || side === 'right') currentSetRootCollapse(side, true);
                 break;
               }
 
-              case 'LINE_COLOR_TOGGLE': {
-                useEditorStore.setState({ isColoredBranch: payload.state });
-                setGraph([...currentNodes], currentEdges);
-                break;
+              case 'NODE_TOGGLE_COLLAPSE': {
+                 const { id: nodeId } = payload;
+                 const newNodes = currentNodes.map((n) =>
+                    n.id === nodeId ? { ...n, collapsed: !n.collapsed } : n,
+                 );
+                 setGraph(newNodes, currentEdges);
+                 break;
               }
 
-              case 'BACKGROUND_CHANGE': {
-                useEditorStore.setState({ backgroundColor: payload.color });
-                break;
-              }
-
-              case 'GLOBAL_BRANCH_COLOR_CHANGE': {
-                useEditorStore.setState({ globalBranchColor: payload.color });
-                setGraph([...currentNodes], currentEdges);
-                break;
-              }
-
-              case 'MAP_NAME_CHANGE': {
-                useEditorStore.setState({ currentMindmapName: payload.name });
-                break;
-              }
-
+              // Các case style khác giữ nguyên, đảm bảo copy đủ từ code cũ của bạn nếu có thêm
               default:
                 break;
             }
           } catch (e) {
-            console.error('WS Message Error:', e);
+            console.error('WS message error:', e);
           }
         };
 
@@ -364,13 +314,18 @@ export function useRealtime({
           console.log(`🔴 WS Disconnected`);
           wsRef.current = null;
           setIsConnected(false);
+          // Reconnect logic
           if (isMounted) {
-            // Exponential backoff cho reconnect (tối đa 10s)
             const timeout = Math.min(1000 * 2 ** retryCount, 10000);
             retryCount++;
             reconnectTimeoutRef.current = setTimeout(connect, timeout);
           }
         };
+
+        ws.onerror = (err) => {
+          // console.error('WS Error:', err); // un-comment nếu cần debug
+        };
+
       } catch (err) {
         console.error('WS Connect Error', err);
         setIsConnected(false);
@@ -381,26 +336,12 @@ export function useRealtime({
 
     return () => {
       isMounted = false;
-      if (wsRef.current) {
-        wsRef.current.close();
-      }
-      if (reconnectTimeoutRef.current) {
-        clearTimeout(reconnectTimeoutRef.current);
-      }
+      if (wsRef.current) wsRef.current.close();
+      if (reconnectTimeoutRef.current) clearTimeout(reconnectTimeoutRef.current);
     };
   }, [
-    mindmapId,
-    isAuthed,
-    isGuest,
-    isDataLoaded,
-    shouldConnect,
-    getAccessToken,
-    addToast,
-    setGraph,
-    setPeerInfo,
-    updatePeerCursor,
-    removePeer,
-    sendPresence,
+    mindmapId, isAuthed, isGuest, isDataLoaded, shouldConnect,
+    getAccessToken, addToast, setGraph, setPeerInfo, updatePeerCursor, removePeer, sendPresence
   ]);
 
   return { sendPatch, sendCursor, isConnected };

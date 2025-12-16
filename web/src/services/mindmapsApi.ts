@@ -1,23 +1,17 @@
 /**
- * src/api/mindmapsApi.ts
- * 
+ * src/services/mindmapsApi.ts
+ *
  * LỚP GIAO TIẾP API CHO MINDMAP
- * 
- * Đã được cập nhật đầy đủ:
- * - Các hàm CRUD cơ bản (list, get, create, update, delete...)
- * - Hỗ trợ global settings (font, branch color, background...)
- * - [MỚI] Tính năng Collaboration & Share (mời người, phân quyền, public link)
+ * Đã cập nhật: Loại bỏ Firebase, dùng API Backend hoàn toàn.
  */
 
 import api from './api';
 
-// === IMPORT CÁC TYPE & HÀM CHUYỂN ĐỔI DỮ LIỆU ===
 import {
   BeMindmapDoc,
   BeMindmapContent,
   normalizeContentBEtoFE,
   normalizeContentFEtoBE,
-  migrateOldGuestDataToBE,
 } from './dataMapper';
 
 import {
@@ -25,10 +19,9 @@ import {
   EdgeData as FeEdgeData,
 } from '../app/store/useEditorStore';
 
-// === [MỚI] TYPES CHO TÍNH NĂNG COLLABORATION & SHARE ===
+// === TYPES CHO TÍNH NĂNG COLLABORATION & SHARE ===
 export type Permission = 'OWNER' | 'EDITOR' | 'VIEWER';
 export type PublicAccessLevel = 'DISABLED' | 'VIEW' | 'EDIT';
-
 
 export type Collaborator = {
   userId: string;
@@ -44,7 +37,19 @@ export type ShareSettingsResponse = {
   shareLink: string | null;
 };
 
-// === CẤU TRÚC DỮ LIỆU TRẢ VỀ CHO FRONTEND (phẳng, dễ dùng trong Editor) ===
+// [MỚI] Type cho Access Request từ MongoDB
+export type AccessRequestDto = {
+  id: string; // Request ID
+  mindmapId: string;
+  userId: string;
+  requestedPermission: Permission;
+  requesterEmail: string;
+  requesterName: string;
+  requesterAvatar: string;
+  createdAt: string; // ISO String
+};
+
+// === CẤU TRÚC DỮ LIỆU TRẢ VỀ CHO FRONTEND ===
 export type FeMindmapDoc = {
   id: string;
   name: string;
@@ -53,13 +58,11 @@ export type FeMindmapDoc = {
   updatedAt: string;
   version: number;
 
-  // Nội dung canvas đã được "làm phẳng"
   nodes: FeNodeData[];
   edges: FeEdgeData[];
   layoutMode: string;
   theme: string;
 
-  // Global settings (từ backend)
   fontFamily?: string;
   branchLineWidth?: number;
   isColoredBranch?: boolean;
@@ -67,7 +70,6 @@ export type FeMindmapDoc = {
   backgroundColor?: string;
   activeColorThemeId?: string;
 
-    // [MỚI] Bổ sung 2 trường này để Editor.tsx đọc được quyền
   collaborators: Collaborator[];
   accessSettings: {
     isPublic: boolean;
@@ -75,8 +77,6 @@ export type FeMindmapDoc = {
   };
 };
 
-
-// Tóm tắt mindmap (dùng cho danh sách)
 export type MindmapSummaryDto = {
   id: string;
   name: string;
@@ -84,26 +84,10 @@ export type MindmapSummaryDto = {
   updatedAt?: string;
 };
 
-async function approveAccessRequest(
-  mindmapId: string,
-  userId: string,
-  permission: Permission,
-) {
-  return api.post(`/mindmaps/${mindmapId}/requests/${userId}/approve`, {
-    permission,
-  });
-}
-
-async function rejectAccessRequest(mindmapId: string, userId: string) {
-  return api.post(`/mindmaps/${mindmapId}/requests/${userId}/reject`);
-}
-
-
 // =========================================================================
 // mindmapsApi - TẤT CẢ CÁC HÀM API
 // =========================================================================
 export const mindmapsApi = {
-
   // ===== 1. CORE CRUD =====
   list: async (): Promise<MindmapSummaryDto[]> =>
     (await api.get<MindmapSummaryDto[]>('/mindmaps')).data,
@@ -120,9 +104,11 @@ export const mindmapsApi = {
       createdAt: beDoc.createdAt,
       updatedAt: beDoc.updatedAt,
       version: beDoc.version,
-      collaborators: (beDoc as any).collaborators || [], 
-      accessSettings: (beDoc as any).accessSettings || { isPublic: false, publicAccessLevel: 'DISABLED' },
-
+      collaborators: (beDoc as any).collaborators || [],
+      accessSettings: (beDoc as any).accessSettings || {
+        isPublic: false,
+        publicAccessLevel: 'DISABLED',
+      },
       ...feContent,
     };
   },
@@ -131,7 +117,10 @@ export const mindmapsApi = {
     name: string;
     content: { nodes: FeNodeData[]; edges: FeEdgeData[] };
   }) => {
-    const beContent = normalizeContentFEtoBE(payload.content.nodes, payload.content.edges);
+    const beContent = normalizeContentFEtoBE(
+      payload.content.nodes,
+      payload.content.edges,
+    );
     const response = await api.post<BeMindmapDoc>('/mindmaps', {
       name: payload.name,
       content: beContent,
@@ -141,11 +130,11 @@ export const mindmapsApi = {
 
   update: async (
     id: string,
-    payload: { name: string; content: { nodes: FeNodeData[]; edges: FeEdgeData[] } }
+    payload: { name: string; content: { nodes: FeNodeData[]; edges: FeEdgeData[] } },
   ) => {
     const beContent = normalizeContentFEtoBE(
       payload.content.nodes || [],
-      payload.content.edges || []
+      payload.content.edges || [],
     );
     const response = await api.put<BeMindmapDoc>(`/mindmaps/${id}`, {
       name: payload.name,
@@ -156,11 +145,11 @@ export const mindmapsApi = {
 
   remove: async (id: string) => (await api.delete<void>(`/mindmaps/${id}`)).data,
 
-  // ===== 2. ALIASES & TIỆN ÍCH =====
+  // Alias delete -> remove
+  delete: async (id: string) => (await api.delete<void>(`/mindmaps/${id}`)).data,
+
   updateName: async (id: string, name: string) =>
     (await api.put<BeMindmapDoc>(`/mindmaps/${id}`, { name })).data,
-
-  delete: async (id: string) => (await api.delete<void>(`/mindmaps/${id}`)).data,
 
   syncGuest: async (migratedDocs: BeMindmapDoc[]) =>
     (await api.post<MindmapSummaryDto[]>('/mindmaps/sync', migratedDocs)).data,
@@ -197,74 +186,84 @@ export const mindmapsApi = {
     });
   },
 
-  // ===== 3. [MỚI] COLLABORATION & SHARE API =====
-  /**
-   * Lấy danh sách người đang có quyền truy cập mindmap
-   */
+  // ===== 3. COLLABORATION & SHARE API (BE / MONGODB) =====
   getCollaborators: async (mindmapId: string): Promise<Collaborator[]> => {
-    return (await api.get<Collaborator[]>(`/mindmaps/${mindmapId}/collaborators`)).data;
+    return (await api.get<Collaborator[]>(`/mindmaps/${mindmapId}/collaborators`))
+      .data;
   },
 
-  /**
-   * Mời cộng tác viên mới qua email
-   */
   inviteCollaborator: async (
     mindmapId: string,
     email: string,
-    permission: Permission
+    permission: Permission,
   ): Promise<Collaborator> => {
-    return (await api.post<Collaborator>(`/mindmaps/${mindmapId}/collaborators`, {
-      email,
-      permission,
-    })).data;
+    return (
+      await api.post<Collaborator>(`/mindmaps/${mindmapId}/collaborators`, {
+        email,
+        permission,
+      })
+    ).data;
   },
 
-  /**
-   * Thay đổi quyền của một người (Editor ↔ Viewer)
-   */
   updateCollaboratorPermission: async (
     mindmapId: string,
     userId: string,
-    permission: Permission
+    permission: Permission,
   ): Promise<Collaborator> => {
-    return (await api.put<Collaborator>(
-      `/mindmaps/${mindmapId}/collaborators/${userId}`,
-      { permission }
-    )).data;
+    return (
+      await api.put<Collaborator>(
+        `/mindmaps/${mindmapId}/collaborators/${userId}`,
+        { permission },
+      )
+    ).data;
   },
 
-  /**
-   * Xóa một người khỏi danh sách cộng tác viên
-   */
   removeCollaborator: async (mindmapId: string, userId: string): Promise<void> => {
-    return (await api.delete<void>(`/mindmaps/${mindmapId}/collaborators/${userId}`)).data;
+    return (
+      await api.delete<void>(`/mindmaps/${mindmapId}/collaborators/${userId}`)
+    ).data;
   },
 
-  /**
-   * Bật/tắt chia sẻ công khai + cấp quyền xem công khai
-   */
-    updateShareSettings: async (
-      mindmapId: string,
-      payload: { isPublic: boolean; publicAccessLevel: PublicAccessLevel }
-    ): Promise<ShareSettingsResponse> => {
-      return (
-        await api.put<ShareSettingsResponse>(
-          `/mindmaps/${mindmapId}/share-settings`,
-          payload,
-        )
-      ).data;
-    },
-  
-    requestAccess: async (
-      mindmapId: string,
-      requestedPermission: Permission = 'VIEWER',
-    ): Promise<void> => {
-      await api.post<void>(`/mindmaps/${mindmapId}/request-access`, {
-        requestedPermission,
-      });
-    },
+  updateShareSettings: async (
+    mindmapId: string,
+    payload: { isPublic: boolean; publicAccessLevel: PublicAccessLevel },
+  ): Promise<ShareSettingsResponse> => {
+    return (
+      await api.put<ShareSettingsResponse>(
+        `/mindmaps/${mindmapId}/share-settings`,
+        payload,
+      )
+    ).data;
+  },
 
+  // --- Request / Approve / Reject (BE - MongoDB queue) ---
 
-  approveAccessRequest,
-  rejectAccessRequest,
+  requestAccess: async (
+    mindmapId: string,
+    requestedPermission: Permission = 'VIEWER',
+  ): Promise<void> => {
+    await api.post<void>(`/mindmaps/${mindmapId}/request-access`, {
+      requestedPermission,
+    });
+  },
+
+  approveAccessRequest: async (
+    mindmapId: string,
+    userId: string,
+    permission: Permission,
+  ) => {
+    return api.post(`/mindmaps/${mindmapId}/requests/${userId}/approve`, {
+      permission,
+    });
+  },
+
+  rejectAccessRequest: async (mindmapId: string, userId: string) => {
+    return api.post(`/mindmaps/${mindmapId}/requests/${userId}/reject`);
+  },
+
+  // [MỚI] Lấy danh sách yêu cầu đang chờ (Owner)
+  getPendingRequests: async (mindmapId: string): Promise<AccessRequestDto[]> => {
+    return (await api.get<AccessRequestDto[]>(`/mindmaps/${mindmapId}/requests`))
+      .data;
+  },
 };

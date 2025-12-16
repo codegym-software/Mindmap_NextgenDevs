@@ -1,42 +1,15 @@
-// src/hooks/useMindmapAccess.ts
-import { useState, useEffect } from 'react';
-import {
-  doc,
-  onSnapshot,
-  updateDoc,
-  arrayUnion,
-  arrayRemove,
-  setDoc,
-  type DocumentData,
-  type DocumentSnapshot,
-} from 'firebase/firestore';
-import { db } from '../services/firebase';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { mindmapsApi, Permission, AccessRequestDto } from '../services/mindmapsApi';
 
 export type PermissionState = 'loading' | 'allowed' | 'denied';
 export type RequestStatus = 'none' | 'pending' | 'rejected';
 
-export type AccessPermission = 'VIEWER' | 'EDITOR';
-
+// Map structure để UI dễ hiển thị
 export interface RequestUser {
   uid: string;
   displayName: string;
   timestamp: number;
-  requestedPermission?: AccessPermission;
-}
-
-export interface MindmapAccessDoc {
-  ownerId?: string;
-  allowedUsers?: string[];
-  pendingRequests?: RequestUser[];
-  lastDecisions?: {
-    [uid: string]: {
-      status: 'approved' | 'rejected';
-      permission: AccessPermission;
-      decidedAt: number;
-    };
-  };
-  updatedAt?: number;
-  version?: number;
+  requestedPermission?: Permission;
 }
 
 interface UseMindmapAccessResult {
@@ -44,9 +17,10 @@ interface UseMindmapAccessResult {
   isOwner: boolean;
   pendingRequests: RequestUser[];
   requestStatus: RequestStatus;
-  requestAccess: (opts?: { requestedPermission?: AccessPermission }) => Promise<void>;
-  approveRequest: (uid: string, perm: AccessPermission) => Promise<void>;
+  requestAccess: (opts?: { requestedPermission?: Permission }) => Promise<void>;
+  approveRequest: (uid: string, perm: Permission) => Promise<void>;
   denyRequest: (uid: string) => Promise<void>;
+  refreshPermissions: () => void;
 }
 
 export const useMindmapAccess = (
@@ -57,163 +31,154 @@ export const useMindmapAccess = (
   const [requestStatus, setRequestStatus] = useState<RequestStatus>('none');
   const [pendingRequests, setPendingRequests] = useState<RequestUser[]>([]);
   const [isOwner, setIsOwner] = useState(false);
+  
+  // Dùng để trigger reload thủ công từ component cha (khi approve/deny xong)
+  const [refreshTrigger, setRefreshTrigger] = useState(0);
 
+  const refreshPermissions = useCallback(() => {
+    setRefreshTrigger(prev => prev + 1);
+  }, []);
+
+  const isGuest = !!mindmapId && mindmapId.startsWith('guest-');
+
+  // 1. Kiểm tra quyền truy cập (Permission Check)
   useEffect(() => {
+    let isMounted = true;
+
+    // Reset state khi đổi mindmap
     if (!mindmapId) {
       setPermission('allowed');
       return;
     }
 
-    // ✅ GUEST MODE: map local -> cấp quyền ngay, KHÔNG connect Firestore
-    if (mindmapId.startsWith('guest-')) {
+    // ✅ GUEST MODE: Luôn cho phép, không gọi API
+    if (isGuest) {
       setPermission('allowed');
-      setIsOwner(true);
+      setIsOwner(true); // Guest là chủ sở hữu bản local
       setRequestStatus('none');
       setPendingRequests([]);
       return;
     }
 
-    const uid: string | undefined = currentUser?.id || currentUser?.sub;
-    const docRef = doc(db, 'mindmapAccess', mindmapId);
+    // Nếu là User thật, gọi API để check quyền chuẩn xác
+    const checkAccess = async () => {
+      // Nếu chưa có user, vẫn thử gọi (trường hợp Public View)
+      // Editor.tsx sẽ lo việc redirect nếu API trả về 401/403
+      setPermission('loading');
 
-    const unsubscribe = onSnapshot(docRef, (docSnap: DocumentSnapshot<DocumentData>) => {
-      if (import.meta.env.MODE === 'development') {
-        console.debug('[useMindmapAccess] snapshot for', mindmapId, {
-          exists: docSnap.exists(),
-          data: docSnap.exists() ? docSnap.data() : null,
-        });
-      }
+      try {
+        const data = await mindmapsApi.get(mindmapId);
+        
+        if (!isMounted) return;
 
-      if (!docSnap.exists()) {
-        setPermission('denied');
-        setIsOwner(false);
-        setPendingRequests([]);
-        setRequestStatus('none');
-        return;
-      }
-
-      const data = docSnap.data() as MindmapAccessDoc;
-      const ownerId: string | undefined = data.ownerId;
-      const allowedUsers: string[] = data.allowedUsers || [];
-      const requests: RequestUser[] = data.pendingRequests || [];
-
-      setPendingRequests(requests);
-
-      if (!uid) {
-        setIsOwner(false);
-        setPermission('denied');
-        setRequestStatus('none');
-        return;
-      }
-
-      if (uid === ownerId) {
-        setIsOwner(true);
         setPermission('allowed');
+        
+        // Check Owner dựa trên ID trả về từ Server
+        const uid = currentUser?.sub || currentUser?.id;
+        if (uid && data.ownerId === uid) {
+          setIsOwner(true);
+        } else {
+          setIsOwner(false);
+        }
         setRequestStatus('none');
-        return;
+
+      } catch (error: any) {
+        if (!isMounted) return;
+        
+        const status = error?.response?.status;
+
+        // 403: Đã login nhưng không có quyền
+        if (status === 403) {
+          setPermission('denied');
+          setIsOwner(false);
+          // Giữ trạng thái pending nếu người dùng vừa bấm gửi request
+          setRequestStatus(prev => prev === 'pending' ? 'pending' : 'none');
+        } 
+        // 401: Token hết hạn hoặc chưa login
+        else if (status === 401) {
+           setPermission('denied');
+           setIsOwner(false);
+        }
+        else {
+           // Các lỗi khác (404, 500...)
+           console.error("[Access] Check access failed:", error);
+           setPermission('denied'); 
+        }
       }
-
-      if (allowedUsers.includes(uid)) {
-        setIsOwner(false);
-        setPermission('allowed');
-        setRequestStatus('none');
-        return;
-      }
-
-      const myReq = requests.find((r) => r.uid === uid);
-      const lastDecision = data.lastDecisions?.[uid];
-
-      if (lastDecision?.status === 'rejected') {
-        setIsOwner(false);
-        setPermission('denied');
-        setRequestStatus('rejected');
-        return;
-      }
-
-      setIsOwner(false);
-      setPermission('denied');
-      setRequestStatus(myReq ? 'pending' : 'none');
-    });
-
-    return () => unsubscribe();
-  }, [mindmapId, currentUser]);
-
-  const isGuest = !!mindmapId && mindmapId.startsWith('guest-');
-
-  // Xin quyền truy cập
-  const requestAccess = async (opts?: { requestedPermission?: AccessPermission }) => {
-    if (isGuest) return;
-
-    const uid: string | undefined = currentUser?.id || currentUser?.sub;
-    if (!mindmapId || !uid) return;
-
-    const requestedPermission: AccessPermission = opts?.requestedPermission ?? 'VIEWER';
-
-    const displayName =
-      currentUser?.username || currentUser?.email || currentUser?.name || 'Unknown User';
-
-    const docRef = doc(db, 'mindmapAccess', mindmapId);
-
-    const newRequest: RequestUser = {
-      uid,
-      displayName,
-      timestamp: Date.now(),
-      requestedPermission,
     };
 
-    await setDoc(
-      docRef,
-      {
-        pendingRequests: arrayUnion(newRequest),
-        updatedAt: Date.now(),
-      },
-      { merge: true },
-    );
+    checkAccess();
 
-    setRequestStatus('pending');
-  };
+    return () => { isMounted = false; };
+  }, [mindmapId, currentUser, refreshTrigger, isGuest]);
 
-  // Duyệt quyền (Owner)
-  const approveRequest = async (requesterId: string, perm: AccessPermission) => {
+  // 2. Polling lấy danh sách yêu cầu (Chỉ chạy nếu là Owner và không phải Guest)
+  useEffect(() => {
+    if (!isOwner || !mindmapId || isGuest) {
+        setPendingRequests([]);
+        return;
+    }
+
+    let isMounted = true;
+    const fetchRequests = async () => {
+        try {
+            // Gọi API lấy danh sách chờ duyệt từ MongoDB
+            const reqs = await mindmapsApi.getPendingRequests(mindmapId);
+            if (isMounted) {
+                // Convert DTO sang format UI cần
+                const mapped: RequestUser[] = reqs.map(r => ({
+                    uid: r.userId,
+                    displayName: r.requesterName || r.requesterEmail || 'Unknown',
+                    timestamp: new Date(r.createdAt).getTime(),
+                    requestedPermission: r.requestedPermission
+                }));
+                setPendingRequests(mapped);
+            }
+        } catch (e) {
+            // Lỗi quyền hoặc mạng, bỏ qua log để tránh spam console
+        }
+    };
+
+    fetchRequests(); // Gọi ngay lần đầu
+    const interval = setInterval(fetchRequests, 10000); // Poll mỗi 10s
+
+    return () => {
+        isMounted = false;
+        clearInterval(interval);
+    };
+  }, [isOwner, mindmapId, refreshTrigger, isGuest]);
+
+  // --- Actions (Gọi API Backend) ---
+
+  const requestAccess = async (opts?: { requestedPermission?: Permission }) => {
     if (isGuest) return;
-    if (!mindmapId) return;
-
-    const docRef = doc(db, 'mindmapAccess', mindmapId);
-    const reqToRemove = pendingRequests.find((r) => r.uid === requesterId);
-    if (!reqToRemove) return;
-
-    const effectivePerm: AccessPermission = perm || reqToRemove.requestedPermission || 'VIEWER';
-
-    await updateDoc(docRef, {
-      allowedUsers: arrayUnion(requesterId),
-      pendingRequests: arrayRemove(reqToRemove),
-      [`lastDecisions.${requesterId}`]: {
-        status: 'approved',
-        permission: effectivePerm,
-        decidedAt: Date.now(),
-      },
-      updatedAt: Date.now(),
-    });
+    try {
+        await mindmapsApi.requestAccess(mindmapId, opts?.requestedPermission || 'VIEWER');
+        setRequestStatus('pending');
+    } catch (e: any) {
+        // Nếu API trả về 409 (Conflict) nghĩa là đã request rồi -> vẫn set pending
+        const status = e?.response?.status;
+        if (status === 400 || status === 409) {
+            setRequestStatus('pending');
+        } else {
+            console.error("Request access failed", e);
+            throw e;
+        }
+    }
   };
 
-  // Từ chối yêu cầu (Owner)
+  const approveRequest = async (requesterId: string, perm: Permission) => {
+    if (isGuest) return;
+    // Cập nhật UI ngay lập tức (Optimistic update)
+    setPendingRequests(prev => prev.filter(r => r.uid !== requesterId));
+    // Trigger refresh để đảm bảo đồng bộ với server lần sau
+    setTimeout(refreshPermissions, 1000); 
+  };
+
   const denyRequest = async (requesterId: string) => {
     if (isGuest) return;
-    if (!mindmapId) return;
-
-    const docRef = doc(db, 'mindmapAccess', mindmapId);
-    const reqToRemove = pendingRequests.find((r) => r.uid === requesterId);
-    if (!reqToRemove) return;
-
-    await updateDoc(docRef, {
-      pendingRequests: arrayRemove(reqToRemove),
-      [`lastDecisions.${requesterId}`]: {
-        status: 'rejected',
-        permission: reqToRemove.requestedPermission || 'VIEWER',
-        decidedAt: Date.now(),
-      },
-      updatedAt: Date.now(),
-    });
+    setPendingRequests(prev => prev.filter(r => r.uid !== requesterId));
+    setTimeout(refreshPermissions, 1000);
   };
 
   return {
@@ -224,5 +189,6 @@ export const useMindmapAccess = (
     requestAccess,
     approveRequest,
     denyRequest,
+    refreshPermissions
   };
 };

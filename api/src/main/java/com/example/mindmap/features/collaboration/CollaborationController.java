@@ -137,4 +137,11 @@ public class CollaborationController {
         collaborationService.rejectRequest(mindmapId, userId);
         return ResponseEntity.ok().build();
     }
+
+        // [MỚI] API lấy danh sách yêu cầu đang chờ (để hiển thị icon chuông)
+    @GetMapping("/requests")
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<List<AccessRequest>> getPendingRequests(@PathVariable String mindmapId) {
+        return ResponseEntity.ok(collaborationService.getPendingRequests(mindmapId));
+    }
 }

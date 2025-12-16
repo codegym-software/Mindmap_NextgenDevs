@@ -18,7 +18,6 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.Optional;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
@@ -35,6 +34,9 @@ public class CollaborationService {
     private final UserService userService;
     private final AuthUtils authUtils;
 
+    // ✅ NEW: MongoDB queue for access requests
+    private final AccessRequestRepository accessRequestRepository;
+
     private static final Logger log = LoggerFactory.getLogger(CollaborationService.class);
 
     @Value("${app.frontend-base-url:http://localhost:3000}")
@@ -45,13 +47,15 @@ public class CollaborationService {
                                 MindmapRepository mindmapRepository,
                                 UserRepository userRepository,
                                 UserService userService,
-                                AuthUtils authUtils) {
+                                AuthUtils authUtils,
+                                AccessRequestRepository accessRequestRepository) {
         this.collaborationRepository = collaborationRepository;
         this.mindmapService = mindmapService;
         this.mindmapRepository = mindmapRepository;
         this.userRepository = userRepository;
         this.userService = userService;
         this.authUtils = authUtils;
+        this.accessRequestRepository = accessRequestRepository;
     }
 
     // ===================================================================
@@ -109,14 +113,14 @@ public class CollaborationService {
                 .orElseThrow(() -> new ResourceNotFoundException("Collaboration", "user_id", collaboratorId));
 
         collaboration.setPermission(request.permission());
-        
+
         // Nếu đang ở trạng thái Pending/Rejected mà Owner chủ động set quyền -> coi như Approve luôn
         if (collaboration.getStatus() != Collaboration.InviteStatus.ACCEPTED) {
             collaboration.setStatus(Collaboration.InviteStatus.ACCEPTED);
             collaboration.setDecidedBy(currentUserId);
             collaboration.setDecidedAt(Instant.now());
         }
-        
+
         collaborationRepository.save(collaboration);
 
         User user = userRepository.findById(collaboratorId)
@@ -160,12 +164,12 @@ public class CollaborationService {
         collaboration.setMindmapId(mindmapId);
         collaboration.setUserId(userToInvite.getId());
         collaboration.setPermission(request.permission());
-        
+
         // [QUAN TRỌNG] Owner mời trực tiếp -> Trạng thái là ACCEPTED (ACTIVE) luôn
         collaboration.setStatus(Collaboration.InviteStatus.ACCEPTED);
         collaboration.setType(Collaboration.InviteType.INVITE);
         collaboration.setInvitedBy(currentUserId);
-        
+
         // Reset thông tin duyệt cũ (nếu có)
         collaboration.setDecidedBy(currentUserId);
         collaboration.setDecidedAt(Instant.now());
@@ -214,7 +218,7 @@ public class CollaborationService {
         mindmapService.checkViewPermission(currentUserId, mindmap);
 
         List<Collaboration> collaborations = collaborationRepository.findByMindmapId(mindmapId);
-        
+
         List<String> userIds = collaborations.stream()
                 .map(Collaboration::getUserId)
                 .toList();
@@ -240,7 +244,7 @@ public class CollaborationService {
     }
 
     // ===================================================================
-    // 6. YÊU CẦU QUYỀN TRUY CẬP (REQUEST ACCESS) - [MỚI]
+    // 6. YÊU CẦU QUYỀN TRUY CẬP (REQUEST ACCESS) - ✅ DÙNG MONGODB QUEUE
     // ===================================================================
     @Transactional
     public void requestAccess(String mindmapId, Permission requestedPerm) {
@@ -248,50 +252,45 @@ public class CollaborationService {
         Mindmap mindmap = mindmapService.findMindmapById(mindmapId);
 
         // Owner không cần xin quyền
-        if (mindmap.getOwnerId().equals(currentUserId)) {
-            return;
+        if (mindmap.getOwnerId().equals(currentUserId)) return;
+
+        // 1) Đã là collaborator (ACCEPTED) thì thôi
+        collaborationRepository.findByMindmapIdAndUserId(mindmapId, currentUserId)
+                .ifPresent(collab -> {
+                    if (collab.getStatus() == Collaboration.InviteStatus.ACCEPTED) {
+                        // throw runtime để “thoát sớm” khỏi lambda
+                        throw new EarlyReturnRuntime();
+                    }
+                });
+        // Nếu đã EarlyReturn thì return
+        if (EarlyReturnRuntime.consumeIfThrown()) return;
+
+        // 2) Đã có request đang chờ duyệt?
+        if (accessRequestRepository.findByMindmapIdAndUserId(mindmapId, currentUserId).isPresent()) {
+            throw new IllegalArgumentException("Yêu cầu của bạn đang chờ duyệt.");
         }
 
-        Optional<Collaboration> existing = collaborationRepository.findByMindmapIdAndUserId(mindmapId, currentUserId);
+        // 3) Tạo request mới + cache info user để owner hiển thị list
+        User user = userRepository.findById(currentUserId)
+                .orElseThrow(() -> new ResourceNotFoundException("User", "id", currentUserId));
 
-        if (existing.isPresent()) {
-            Collaboration collab = existing.get();
-            if (collab.getStatus() == Collaboration.InviteStatus.ACCEPTED) {
-                return; // Đã có quyền rồi
-            }
-            if (collab.getStatus() == Collaboration.InviteStatus.PENDING) {
-                // Đã xin rồi, chờ duyệt
-                throw new IllegalArgumentException("You have already requested access. Please wait for approval.");
-            }
-            // Nếu từng bị từ chối (REJECTED), cho phép xin lại -> Update thành PENDING
-            collab.setStatus(Collaboration.InviteStatus.PENDING);
-            collab.setType(Collaboration.InviteType.REQUEST_ACCESS);
-            collab.setRequestedPermission(requestedPerm);
-            collab.setDecidedBy(null);
-            collab.setDecidedAt(null);
-            
-            collaborationRepository.save(collab);
-            return;
-        }
-
-        // Tạo Request mới
-        Collaboration newRequest = Collaboration.builder()
+        AccessRequest request = AccessRequest.builder()
                 .mindmapId(mindmapId)
                 .userId(currentUserId)
-                .permission(Permission.VIEWER) // Quyền mặc định khi tạo record (chưa có hiệu lực vì status=PENDING)
                 .requestedPermission(requestedPerm)
-                .status(Collaboration.InviteStatus.PENDING)
-                .type(Collaboration.InviteType.REQUEST_ACCESS)
+                .requesterEmail(user.getEmail())
+                .requesterName(user.getDisplayName())
+                .requesterAvatar(user.getAvatarUrl())
                 .build();
 
-        collaborationRepository.save(newRequest);
+        accessRequestRepository.save(request);
         log.info("User {} requested {} access to mindmap {}", currentUserId, requestedPerm, mindmapId);
-        
-        // TODO: Gửi Notification cho Owner (nếu có hệ thống thông báo)
+
+        // TODO: bắn websocket notify owner
     }
 
     // ===================================================================
-    // 7. DUYỆT YÊU CẦU (APPROVE) - [MỚI]
+    // 7. DUYỆT YÊU CẦU (APPROVE) - ✅ XOÁ REQUEST + UPSERT COLLAB ACCEPTED
     // ===================================================================
     @Transactional
     public void approveRequest(String mindmapId, String requesterId, Permission permissionToGrant) {
@@ -299,15 +298,22 @@ public class CollaborationService {
         Mindmap mindmap = mindmapService.findMindmapById(mindmapId);
 
         if (!mindmap.getOwnerId().equals(currentOwnerId)) {
-            throw new AccessDeniedException("Only owner can approve requests.");
+            throw new AccessDeniedException("Chỉ chủ sở hữu mới được duyệt.");
         }
 
+        // 1) Xoá request khỏi queue Mongo
+        accessRequestRepository.deleteByMindmapIdAndUserId(mindmapId, requesterId);
+
+        // 2) Upsert Collaboration -> ACCEPTED
         Collaboration collab = collaborationRepository.findByMindmapIdAndUserId(mindmapId, requesterId)
-                .orElseThrow(() -> new ResourceNotFoundException("Request not found for user", "id", requesterId));
+                .orElse(Collaboration.builder()
+                        .mindmapId(mindmapId)
+                        .userId(requesterId)
+                        .type(Collaboration.InviteType.REQUEST_ACCESS)
+                        .build());
 
         collab.setPermission(permissionToGrant);
-        collab.setStatus(Collaboration.InviteStatus.ACCEPTED); // -> ACTIVE
-        collab.setRequestedPermission(null); // Clear thông tin request
+        collab.setStatus(Collaboration.InviteStatus.ACCEPTED);
         collab.setDecidedBy(currentOwnerId);
         collab.setDecidedAt(Instant.now());
 
@@ -316,7 +322,7 @@ public class CollaborationService {
     }
 
     // ===================================================================
-    // 8. TỪ CHỐI YÊU CẦU (REJECT) - [MỚI]
+    // 8. TỪ CHỐI YÊU CẦU (REJECT) - ✅ CHỈ XOÁ REQUEST
     // ===================================================================
     @Transactional
     public void rejectRequest(String mindmapId, String requesterId) {
@@ -324,17 +330,44 @@ public class CollaborationService {
         Mindmap mindmap = mindmapService.findMindmapById(mindmapId);
 
         if (!mindmap.getOwnerId().equals(currentOwnerId)) {
-            throw new AccessDeniedException("Only owner can reject requests.");
+            throw new AccessDeniedException("Chỉ chủ sở hữu mới được từ chối.");
         }
 
-        Collaboration collab = collaborationRepository.findByMindmapIdAndUserId(mindmapId, requesterId)
-                .orElseThrow(() -> new ResourceNotFoundException("Request not found for user", "id", requesterId));
-
-        collab.setStatus(Collaboration.InviteStatus.REJECTED);
-        collab.setDecidedBy(currentOwnerId);
-        collab.setDecidedAt(Instant.now());
-
-        collaborationRepository.save(collab);
+        // Chỉ cần xoá request khỏi queue là coi như reject
+        accessRequestRepository.deleteByMindmapIdAndUserId(mindmapId, requesterId);
         log.info("Owner {} rejected access for {}", currentOwnerId, requesterId);
+    }
+
+    // ===================================================================
+    // 9. [MỚI] LẤY DANH SÁCH YÊU CẦU (CHO OWNER)
+    // ===================================================================
+    @Transactional(readOnly = true)
+    public List<AccessRequest> getPendingRequests(String mindmapId) {
+        String currentUserId = authUtils.getRequiredCurrentUserId();
+        Mindmap mindmap = mindmapService.findMindmapById(mindmapId);
+
+        if (!mindmap.getOwnerId().equals(currentUserId)) {
+            throw new AccessDeniedException("Bạn không có quyền xem danh sách yêu cầu.");
+        }
+
+        return accessRequestRepository.findByMindmapId(mindmapId);
+    }
+
+    /**
+     * Trick nhỏ để thoát sớm khỏi lambda ifPresent mà vẫn giữ code “ít đụng repo”.
+     * Bạn có thể thay bằng existsBy... nếu repo của bạn đã có method đó.
+     */
+    private static final class EarlyReturnRuntime extends RuntimeException {
+        private static final ThreadLocal<Boolean> thrown = ThreadLocal.withInitial(() -> false);
+
+        private EarlyReturnRuntime() {
+            thrown.set(true);
+        }
+
+        static boolean consumeIfThrown() {
+            boolean v = thrown.get();
+            thrown.set(false);
+            return v;
+        }
     }
 }

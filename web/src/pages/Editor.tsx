@@ -91,16 +91,18 @@ export default function Editor({ mode = 'edit' }: EditorProps) {
   const isGuest = !!id && id.startsWith('guest-');
   const isShareRoute = mode === 'share'; // /share => view-only UI
 
-  // --- Firestore Access Hook (collab, pending requests, ...) ---
+  // --- BE Access Hook (Không còn Firestore) ---
   const {
-    permission: fsAccessState,     // 'loading' | 'allowed' | 'denied' | ...
-    isOwner: isOwnerFromAccess,    // owner theo Firestore
+    permission: accessPermissionState, // 'loading' | 'allowed' | 'denied'
+    isOwner: isOwnerFromHook,
     pendingRequests,
     requestStatus,
     requestAccess,
     approveRequest,
     denyRequest,
+    refreshPermissions,
   } = useMindmapAccess(id || '', user);
+
 
   // Modal request list cho owner
   const [isRequestModalOpen, setRequestModalOpen] = useState(false);
@@ -180,20 +182,16 @@ export default function Editor({ mode = 'edit' }: EditorProps) {
   const activeTheme =
     colorThemes[activeColorThemeId as keyof typeof colorThemes];
 
-const computedIsOwner = useMemo(() => {
-  // ✅ Guest luôn là chủ sở hữu của map local
-  if (isGuest) return true;
+// --- Logic Owner: Kết hợp Guest + API Owner + Hook Owner ---
+  const isOwner = useMemo(() => {
+    if (isGuest) return true;
+    // Nếu API loadData trả về ownerId trùng user (Ưu tiên check cái này trước Hook)
+    if (user && ownerId && (user.sub === ownerId || (user as any).id === ownerId)) return true;
+    // Fallback hook (cho trường hợp mới tạo chưa sync kịp hoặc logic phụ)
+    if (isOwnerFromHook) return true;
+    return false;
+  }, [isGuest, isOwnerFromHook, user, ownerId]);
 
-  if (!user || !ownerId) return false;
-  // So sánh linh hoạt giữa Cognito `sub` và `id` cục bộ
-  return user.sub === ownerId || (user as any).id === ownerId;
-}, [user, ownerId, isGuest]);
-
-// Kết hợp hai nguồn: nếu BE nói owner thì ưu tiên, nếu không thì dùng Firestore
-const isOwner = useMemo(
-  () => (isGuest ? true : Boolean(computedIsOwner || isOwnerFromAccess)),
-  [isGuest, computedIsOwner, isOwnerFromAccess],
-);
   // --- isReadOnly: tuỳ theo route + quyền từ BE ---
 const isReadOnly = useMemo(() => {
   if (isShareRoute) return true;         // share route luôn view-only UI
@@ -300,6 +298,16 @@ const isReadOnly = useMemo(() => {
     }
     return sides;
   }, [edges, nodeMap, nodesWithChildren]);
+
+  // --- Logic Login Redirect (đặt trong Editor component) ---
+const handleLoginRequired = useCallback(() => {
+  sessionStorage.setItem(
+    'returnTo',
+    window.location.pathname + window.location.search,
+  );
+  login('login' as any);
+}, [login]);
+
 
   // =========================================================================
   // 2. VISIBILITY
@@ -719,36 +727,32 @@ const { sendPatch, sendCursor, isConnected } = useRealtime({
   isGuest,
   isDataLoaded,
   isOwner,
-  userInfo: {
-    name: myName,
-    color: myColor,
-  },
+  userInfo: { name: myName, color: myColor },
   onLayoutRequest: (keepCamera = false) => handleLayout(keepCamera),
   onSetRootCollapse: handleSetRootCollapse,
-  shouldConnect: !accessDenied && !!id && !isGuest, // ✅ chặn guest
+  shouldConnect: !!id && !isGuest && !accessDenied && isAuthed, // ✅ chỉ connect khi có token
 });
 
 
-  const handleRequestAccessFromScreen = useCallback(async () => {
-    if (!id) return;
+
+const handleRequestAccessFromScreen = useCallback(async () => {
+    if (!id || isGuest) return;
 
     if (!isAuthed) {
-      login('login' as any);
+      handleLoginRequired(); // Dùng hàm này để lưu lại URL trước khi redirect
       return;
     }
 
     try {
-      // 1) Gọi BE xin quyền VIEWER
-      await mindmapsApi.requestAccess(id, 'VIEWER');
-      // 2) Ghi vào Firestore queue
       await requestAccess({ requestedPermission: 'VIEWER' });
-
-      addToast('Đã gửi yêu cầu truy cập, vui lòng chờ chủ sở hữu duyệt.', 'success');
+      refreshPermissions(); // force hook re-check (optional nhưng hữu ích)
+      addToast('Đã gửi yêu cầu truy cập, vui lòng chờ duyệt.', 'success');
     } catch (e) {
       console.error('Request access failed:', e);
       addToast('Gửi yêu cầu thất bại, vui lòng thử lại.', 'error');
     }
-  }, [id, isAuthed, login, requestAccess, addToast]);
+  }, [id, isGuest, isAuthed, login, requestAccess, refreshPermissions, addToast]);
+
 
   // =========================================================================
   // 6. ZOOM & PAN
@@ -804,35 +808,104 @@ const { sendPatch, sendCursor, isConnected } = useRealtime({
   }, [handleResize]);
 
   // =========================================================================
-  // 7. AUTO RELOAD KHI FIRESTORE MỞ QUYỀN (SAU 403 BE)
+  // 7. RELOAD KHI QUYỀN TỪ HOOK CHUYỂN denied -> allowed
   // =========================================================================
+  const [reloadToken, setReloadToken] = useState(0);
 
   useEffect(() => {
-    // Chỉ chạy khi:
-    // - Có mindmapId
-    // - Backend đã trả 403 => backendAccess = 'denied'
-    // - Firestore đã ghi 'allowed' (owner đã approve)
-    if (!id) return;
-    if (backendAccess !== 'denied') return;
-    if (fsAccessState !== 'allowed') return;
+    if (!id || isGuest) return;
+    if (!accessDenied) return;
+    if (accessPermissionState !== 'allowed') return;
 
-    let cancelled = false;
+    setAccessDenied(false);
+    setReloadToken((t) => t + 1);
+  }, [id, isGuest, accessDenied, accessPermissionState]);
 
-    (async () => {
+  // =========================================================================
+  // 8. LOAD DATA (BE + GUEST + SESSION)
+  // =========================================================================
+  useEffect(() => {
+    let isMounted = true;
+
+    const loadData = async () => {
+      setIsDataLoaded(false);
+      setAccessDenied(false);
+
+      // 1) Không có id: tạo guest hoặc về dashboard
+      if (!id) {
+        if (isAuthed) {
+          navigate('/dashboard', { replace: true });
+          return;
+        }
+        const newGuest = createGuest();
+        if (isMounted) navigate(`/editor/${newGuest.id}`, { replace: true });
+        return;
+      }
+
       try {
-        console.log(
-          '[Editor] Firestore access allowed, retry loading from backend...',
-        );
-        const data = await mindmapsApi.get(id);
+        let data: FeMindmapDoc | null = null;
 
-        if (cancelled) return;
+        // 2) Ưu tiên sessionStorage (sau khi create redirect)
+        const tempGuestData = sessionStorage.getItem('temp_mindmap_guest');
+        const tempAuthedData = sessionStorage.getItem('temp_mindmap');
 
-        setBackendAccess('allowed');
-        setAccessDenied(false);
+        if (isGuest && tempGuestData) {
+          data = JSON.parse(tempGuestData) as FeMindmapDoc;
+          sessionStorage.removeItem('temp_mindmap_guest');
+        } else if (!isGuest && isAuthed && tempAuthedData) {
+          const beDoc: BeMindmapDoc = JSON.parse(tempAuthedData);
+          const feContent = normalizeContentBEtoFE(beDoc.content);
+          data = {
+            ...(beDoc as any),
+            ...feContent,
+            collaborators: (beDoc as any).collaborators || [],
+            accessSettings: (beDoc as any).accessSettings || {
+              isPublic: false,
+              publicAccessLevel: 'DISABLED',
+            },
+          } as FeMindmapDoc;
+          sessionStorage.removeItem('temp_mindmap');
+        }
 
+        // 3) Nếu vẫn chưa có: guest local hoặc BE
+        if (!data) {
+          if (isGuest) {
+            data = loadGuestDoc(id);
+            if (!data) throw new Error('Không tìm thấy Guest mindmap');
+          } else {
+            data = await mindmapsApi.get(id);
+          }
+        }
+
+        if (!isMounted || !data) return;
+
+        // 4) Set meta
         setName(data.name);
         setOwnerId(data.ownerId);
 
+        // 5) Xác định quyền user (OWNER/EDITOR/VIEWER)
+        if (isGuest) {
+          setUserPermission('OWNER');
+        } else {
+          const uid = user?.sub || (user as any)?.id;
+
+          if (uid && uid === data.ownerId) {
+            setUserPermission('OWNER');
+          } else {
+            const myCollab = (data.collaborators || []).find(
+              (c) => c.userId === uid,
+            );
+            if (myCollab) {
+              setUserPermission(myCollab.permission);
+            } else {
+              const publicAccessLevel = data.accessSettings?.publicAccessLevel;
+              if (publicAccessLevel === 'VIEW') setUserPermission('VIEWER');
+              else setUserPermission(null);
+            }
+          }
+        }
+
+        // 6) Apply store
         useEditorStore.setState({
           currentMindmapId: id,
           currentMindmapName: data.name,
@@ -854,170 +927,23 @@ const { sendPatch, sendCursor, isConnected } = useRealtime({
 
         setBackgroundColor(data.backgroundColor || '#FAFAFB');
         setSelectedNodeIds(['root']);
+
         setIsDataLoaded(true);
-
-        console.log('[Editor] Auto reload after approve success.');
-      } catch (error: any) {
-        if (cancelled) return;
-        console.error('[Editor] Auto reload after approve failed', error);
-        addToast(
-          'Quyền đang được cập nhật, vui lòng thử lại sau ít giây...',
-          'info',
-        );
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [
-    id,
-    backendAccess,
-    fsAccessState,
-    clearHistory,
-    setGraph,
-    setGlobalStore,
-    addToast,
-  ]);
-
-  // =========================================================================
-  // 8. LOAD DATA (BE + GUEST + SESSION) & QUYỀN TỪ BACKEND
-  // =========================================================================
-
-  useEffect(() => {
-    let isMounted = true;
-
-    const loadData = async () => {
-      setIsDataLoaded(false);
-      setAccessDenied(false);
-      setBackendAccess('unknown');
-
-      // 1. Không có id: tạo guest hoặc quay về dashboard
-      if (!id) {
-        if (isAuthed) {
-          navigate('/dashboard', { replace: true });
-          return;
-        }
-        const newGuest = createGuest();
-        if (isMounted) {
-          navigate(`/editor/${newGuest.id}`, { replace: true });
-        }
-        return;
-      }
-
-      try {
-        let data: FeMindmapDoc | null = null;
-
-        // 2. Ưu tiên lấy từ sessionStorage (mindmap mới tạo xong redirect)
-        const tempGuestData = sessionStorage.getItem('temp_mindmap_guest');
-        const tempAuthedData = sessionStorage.getItem('temp_mindmap');
-
-        if (isGuest && tempGuestData) {
-          data = JSON.parse(tempGuestData) as FeMindmapDoc;
-          sessionStorage.removeItem('temp_mindmap_guest');
-        } else if (isAuthed && tempAuthedData) {
-          const beDoc: BeMindmapDoc = JSON.parse(tempAuthedData);
-          const feContent = normalizeContentBEtoFE(beDoc.content);
-          data = { ...beDoc, ...feContent, collaborators: [] };
-          sessionStorage.removeItem('temp_mindmap');
-        }
-
-        // 3. Nếu vẫn chưa có: guest local hoặc API BE
-        if (!data) {
-          if (isGuest) {
-            data = loadGuestDoc(id);
-            if (!data) {
-              throw new Error('Không tìm thấy Guest mindmap');
-            }
-          } else {
-            data = await mindmapsApi.get(id);
-          }
-        }
-
-        // 4. Load thành công
-        if (isMounted && data) {
-          setName(data.name);
-          setOwnerId(data.ownerId);
-
-          // Quyền từ backend (OWNER/EDITOR/VIEWER/public view)
-          if (isGuest) {
-            // ✅ Guest luôn có quyền OWNER
-            setUserPermission('OWNER');
-          } else if (
-            user &&
-            (user.sub === data.ownerId || (user as any).id === data.ownerId)
-          ) {
-            setUserPermission('OWNER');
-          } else {
-            const myCollab = (data as any).collaborators?.find(
-              (c: any) =>
-                c.userId === user?.sub || c.userId === (user as any)?.id,
-            );
-            if (myCollab) {
-              setUserPermission(myCollab.permission);
-            } else {
-              const publicAccessLevel =
-                (data as any).accessSettings?.publicAccessLevel;
-              if (publicAccessLevel === 'VIEW') {
-                setUserPermission('VIEWER');
-              } else {
-                setUserPermission(null);
-              }
-            }
-          }
-
-
-          useEditorStore.setState({
-            currentMindmapId: id,
-            currentMindmapName: data.name,
-            isDirty: false,
-          });
-
-          clearHistory();
-          setGraph(data.nodes, data.edges);
-
-          setGlobalStore({
-            globalStructure: (data.layoutMode as GlobalStructure) || 'mindmap',
-            globalFont: data.fontFamily || fonts[0].value,
-            branchLineWidth: data.branchLineWidth || 2,
-            isColoredBranch: data.isColoredBranch ?? true,
-            globalBranchColor: data.globalBranchColor || '#94A3B8',
-            activeColorThemeId: data.activeColorThemeId || 'dawn',
-            backgroundColor: data.backgroundColor || '#FAFAFB',
-          });
-
-          setBackgroundColor(data.backgroundColor || '#FAFAFB');
-          setSelectedNodeIds(['root']);
-
-          setIsDataLoaded(true);
-          setBackendAccess('allowed');
-        }
       } catch (error: any) {
         if (!isMounted) return;
 
-        console.error('Load error detailed:', error);
         const status = error?.response?.status;
 
+        // 403/401 => bị deny
         if (status === 403 || status === 401) {
-          // Không đủ quyền BE -> chờ Firestore signal
-          console.log(
-            '⛔ Access Denied from backend. Waiting for Firestore to unlock after approve...',
-          );
-          setBackendAccess('denied');
           setAccessDenied(true);
           setIsDataLoaded(true);
-        } else if (status === 429) {
-          addToast(
-            'Hệ thống đang bận (429). Vui lòng đợi vài giây rồi tải lại.',
-            'error',
-          );
-        } else {
-          addToast(
-            'Không thể tải mindmap (Lỗi ' + (status || 'Unknown') + ')',
-            'error',
-          );
-          navigate('/dashboard', { replace: true });
+          return;
         }
+
+        console.error('[Editor] Load mindmap failed:', error);
+        addToast('Lỗi tải mindmap', 'error');
+        navigate('/dashboard', { replace: true });
       }
     };
 
@@ -1027,17 +953,18 @@ const { sendPatch, sendCursor, isConnected } = useRealtime({
     };
   }, [
     id,
+    reloadToken,
     isAuthed,
+    isGuest,
+    user,
     navigate,
     addToast,
+    createGuest,
     clearHistory,
     setGraph,
-    activeColorThemeId,
     setGlobalStore,
-    isGuest,
-    createGuest,
-    user,
   ]);
+
 
   // =========================================================================
   // 9. APPROVE / DENY REQUEST: BE + FIRESTORE
@@ -1882,26 +1809,55 @@ const { sendPatch, sendCursor, isConnected } = useRealtime({
   // 15. RENDER: LOADING & ACCESS DENIED
   // =========================================================================
 
-  // Đợi BE load xong + Firestore hook init
-if (!isDataLoaded || (!isGuest && fsAccessState === 'loading')) {
-  return (
-    <div className="w-screen h-screen bg-white flex items-center justify-center text-gray-800 gap-2">
-      <Spinner className="w-8 h-8 border-gray-400 border-t-gray-800" />
-      Đang tải...
-    </div>
-  );
-}
+  if (!isDataLoaded || (!isGuest && accessPermissionState === 'loading')) {
+    return (
+      <div className="w-screen h-screen bg-white flex items-center justify-center text-gray-800 gap-2">
+        <Spinner className="w-8 h-8 border-gray-400 border-t-gray-800" />
+        Đang tải...
+      </div>
+    );
+  }
+
 
 
   // BE đã từ chối (403) và chưa được mở khoá lại
-  if (accessDenied && !isGuest) {
+if (accessDenied && !isGuest) {
+  if (isShareRoute) {
     return (
-      <AccessDeniedScreen
-        onRequestAccess={handleRequestAccessFromScreen}
-        requestStatus={requestStatus}
-      />
+      <div className="h-screen flex flex-col items-center justify-center gap-4">
+        <h2 className="text-2xl font-bold">Mindmap này là riêng tư</h2>
+
+        {!isAuthed ? (
+          <button
+            onClick={handleLoginRequired}
+            className="text-blue-600 underline"
+          >
+            Đăng nhập để xem
+          </button>
+        ) : (
+          <p className="text-gray-600">Bạn không có quyền truy cập link này.</p>
+        )}
+
+        {isAuthed && (
+          <button
+            onClick={handleRequestAccessFromScreen}
+            className="px-4 py-2 rounded bg-gray-900 text-white"
+          >
+            Request access
+          </button>
+        )}
+      </div>
     );
   }
+
+  return (
+    <AccessDeniedScreen
+      onRequestAccess={handleRequestAccessFromScreen}
+      requestStatus={requestStatus}
+    />
+  );
+}
+
 
   // =========================================================================
   // 16. RENDER CHÍNH
@@ -1924,7 +1880,7 @@ if (!isDataLoaded || (!isGuest && fsAccessState === 'loading')) {
           onCommitName={() => {
             if (!isReadOnly) {
               debouncedPersistData();
-              sendPatch('MAP_NAME_CHANGE', { name });
+              if (!isGuest) sendPatch('MAP_NAME_CHANGE', { name });
             }
           }}
           onDashboard={() => navigate('/dashboard')}
@@ -1951,6 +1907,7 @@ if (!isDataLoaded || (!isGuest && fsAccessState === 'loading')) {
           pendingRequestsCount={pendingRequests?.length ?? 0}
           onShowRequests={() => setRequestModalOpen(true)}
         />
+
 
         <Sidebar />
 
@@ -2765,7 +2722,7 @@ if (!isDataLoaded || (!isGuest && fsAccessState === 'loading')) {
             onDenyRequest={handleDenyAccessRequest}
           />
 
-          {isOwner && (
+          {isOwner && !isGuest && (
             <AccessRequestModal
               isOpen={isRequestModalOpen}
               onClose={() => setRequestModalOpen(false)}

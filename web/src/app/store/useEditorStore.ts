@@ -1,5 +1,4 @@
 import { create } from "zustand";
-import { isEqual, differenceBy, intersectionBy } from "lodash";
 import { getBranchColorByDepth, getContrastingTextColor } from '../../utils/colorUtils';
 
 // =============================================================================
@@ -9,6 +8,28 @@ const DEFAULT_PALETTE = [
   '#EF4444', '#F97316', '#FACC15', '#22C55E', 
   '#06B6D4', '#3B82F6', '#8B5CF6', '#EC4899'
 ];
+
+function differenceById<T extends { id: string }>(a: T[], b: T[]): T[] {
+  const bIds = new Set(b.map(i => i.id));
+  return a.filter(i => !bIds.has(i.id));
+}
+
+function intersectionById<T extends { id: string }>(a: T[], b: T[]): T[] {
+  const bMap = new Map(b.map(i => [i.id, i]));
+  return a.filter(i => bMap.has(i.id));
+}
+
+function shallowNodeDiff(a: NodeData, b: NodeData): boolean {
+  return (
+    a.nodeText !== b.nodeText ||
+    a.x !== b.x ||
+    a.y !== b.y ||
+    a.color !== b.color ||
+    a.fontSize !== b.fontSize ||
+    a.fontFamily !== b.fontFamily ||
+    a.collapsed !== b.collapsed
+  );
+}
 
 export const fonts = [
   { name: "Roboto", value: "Roboto, sans-serif" },
@@ -284,23 +305,24 @@ export const useEditorStore = create<State>((set, get) => ({
     const { nodes: oldNodes, edges: oldEdges, history } = get();
     
     // --- Tính toán Diff Nodes ---
-    const addedNodes = differenceBy(newNodes, oldNodes, 'id');
-    const removedNodes = differenceBy(oldNodes, newNodes, 'id');
-    
-    const commonOldNodes = intersectionBy(oldNodes, newNodes, 'id');
-    const commonNewNodes = intersectionBy(newNodes, oldNodes, 'id');
+    const addedNodes = differenceById(newNodes, oldNodes);
+    const removedNodes = differenceById(oldNodes, newNodes);
+
+    const commonOldNodes = intersectionById(oldNodes, newNodes);
+    const commonNewNodes = intersectionById(newNodes, oldNodes);
+
     const updatedNodes: { id: string; from: Partial<NodeData>; to: Partial<NodeData> }[] = [];
     
     commonNewNodes.forEach(newNode => {
         const oldNode = commonOldNodes.find(n => n.id === newNode.id);
-        if (oldNode && !isEqual(oldNode, newNode)) {
-            updatedNodes.push({ id: newNode.id, from: oldNode, to: newNode });
+        if (oldNode && shallowNodeDiff(oldNode, newNode)) {
+          updatedNodes.push({ id: newNode.id, from: oldNode, to: newNode });
         }
     });
 
     // --- Tính toán Diff Edges ---
-    const addedEdges = differenceBy(newEdges, oldEdges, 'id');
-    const removedEdges = differenceBy(oldEdges, newEdges, 'id');
+    const addedEdges = differenceById(newEdges, oldEdges);
+    const removedEdges = differenceById(oldEdges, newEdges);
 
     if (addedNodes.length === 0 && removedNodes.length === 0 && updatedNodes.length === 0 && addedEdges.length === 0 && removedEdges.length === 0) {
         return; // Không có gì thay đổi
