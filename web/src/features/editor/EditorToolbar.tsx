@@ -16,11 +16,13 @@ import {
   BoxSelect,
   TextSelect,
   PlusSquare,
-  Bell, // ✅ THÊM: icon chuông
+  Bell, //  icon chuông
+  MessageSquare, // icon chat
 } from 'lucide-react';
 import UserAvatarMenu from '../auth/UserAvatarMenu';
 import { useEditorStore } from '../../app/store/useEditorStore';
 import { useMindmapsStore } from '../../app/store/useMindmapsStore';
+import { useChatStore } from '../../app/store/useChatStore';
 
 type EditorToolbarProps = {
   onCommitName: () => void;
@@ -110,6 +112,8 @@ const EditorToolbar: React.FC<EditorToolbarProps> = ({
 
   const name = useEditorStore((s) => s.currentMindmapName);
   const currentMindmapId = useEditorStore((s) => s.currentMindmapId);
+
+  const { toggleChat, unreadCount, isOpen } = useChatStore();
 
   const safeName = name ?? ''; // Tránh uncontrolled → controlled
 
@@ -364,6 +368,25 @@ const EditorToolbar: React.FC<EditorToolbarProps> = ({
         </button>
 
         <div className="w-px h-6 bg-gray-300 mx-2" />
+
+        {/* 💬 NÚT CHAT */}
+        <button
+          type="button"
+          onClick={toggleChat}
+          className={`relative p-2 rounded-md transition-colors ${
+            isOpen
+              ? 'bg-gray-200 text-blue-600'
+              : 'text-gray-700 hover:bg-gray-300/50'
+          }`}
+          title="Chat thảo luận"
+        >
+          <MessageSquare size={20} />
+          {unreadCount > 0 && (
+            <span className="absolute -top-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-red-500 text-[10px] text-white">
+              {unreadCount}
+            </span>
+          )}
+        </button>
 
         {/* ✅ NÚT CHUÔNG – chỉ hiện khi là Owner */}
         {isOwner && (

@@ -30,6 +30,7 @@ import CursorLayer from '../features/editor/CursorLayer';
 import ShareModal from '../features/collaboration/ShareModal';
 import AccessDeniedScreen from '../features/editor/AccessDeniedScreen';
 import AccessRequestModal from '../features/editor/AccessRequestModal';
+import ChatSidebar from '../features/chat/ChatSidebar';
 
 // --- Stores & Types ---
 import {
@@ -1910,6 +1911,14 @@ if (accessDenied && !isGuest) {
 
 
         <Sidebar />
+
+        {/* ✅ CHAT SIDEBAR */}
+        {isConnected && id && (
+          <ChatSidebar
+            mindmapId={id}
+            sendPatch={sendPatch}
+          />
+        )}
 
         {/* Banner cho /share */}
         {isShareRoute && (
