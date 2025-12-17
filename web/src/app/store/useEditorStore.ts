@@ -54,8 +54,8 @@ export const colorThemes: Record<string, ColorTheme> = {
     quickStyles: {
       'important-dark': { fill: "#90074dff", color:"#970074ff", stroke: "#97266D", textColor: "#ffffffff", fontWeight: "bold" },
       'important-light': { fill: "#df1a5fff", color:"#b60ac0ff", stroke: "#ED89A7", textColor: "#ffffffff" },
-      strikethrough: { fill: "#FFFFFF", color:"#ffffffff", stroke: "#CBD5E0", textColor: "#A0AEC0", textDecoration: "line-through" },
-      default: { fill: "#F0F9FF", color:"#F0F9FF", stroke: "#3B82F6", textColor: "#1E3A8A" },
+      'strikethrough': { fill: "#FFFFFF", color:"#ffffffff", stroke: "#CBD5E0", textColor: "#A0AEC0", textDecoration: "line-through" },
+      'default': { fill: "#F0F9FF", color:"#F0F9FF", stroke: "#3B82F6", textColor: "#1E3A8A" },
     },
     root: { fill: "transparent", stroke: "transparent", textColor: "#000000"},
   },
@@ -73,23 +73,15 @@ export type GlobalStructure = 'mindmap' | 'logic' | 'org';
 export type LocalStructure = 'default' | 'logic' | 'org';
 export type QuickStyleId = 'default' | 'important-dark' | 'important-light' | 'strikethrough';
 
-/**
- * [CẤU TRÚC NỘI BỘ FE - ĐÃ HỢP NHẤT (MERGED)]
- * Đây là cấu trúc dữ liệu "phẳng" (flat) mà useEditorStore và các
- * component (Editor, FormattingToolbar) sử dụng.
- *
- * - Đã lấy `styleLocked` từ feature/tt.
- * - Đã thêm lại `diamond` và `ellipse` vào `shape` (từ logic cũ của chúng ta).
- */
 export type NodeData = {
-  id: string;
-  nodeText: string; // FE dùng 'nodeText'
-  x: number;
-  y: number;
-  parentId?: string;
-  side?: 'left' | 'right';
-  collapsed?: boolean;
-  quickStyleId?: QuickStyleId;
+  id: string;
+  nodeText: string;
+  x: number;
+  y: number;
+  parentId?: string;
+  side?: 'left' | 'right';
+  collapsed?: boolean;
+  quickStyleId?: QuickStyleId;
 
   // Style thuộc tính
   shape?: 'rectangle' | 'roundedRect'; 
@@ -124,7 +116,7 @@ export type NodeData = {
   branchLineThickness?: 'thin' | 'normal' | 'thick';
   boundary?: boolean;
   
-  // Transition state (temporary flag for smooth node creation)
+  // Transition state
   isTransitioning?: boolean;
 };
 
@@ -136,7 +128,7 @@ export type RelationshipData = {
   from: string; // Node ID
   to: string;   // Node ID
   label?: string;
-  labelNodeId?: string; // Node ID cho label (có thể edit như node)
+  labelNodeId?: string; // Node ID cho label
   startMarker?: 'none' | 'arrow' | 'circle';
   endMarker?: 'none' | 'arrow' | 'circle';
   controlPoint1?: { x: number; y: number };
@@ -151,12 +143,34 @@ export type SummaryData = {
   startNodeId: string; // Node đầu tiên trong range
   endNodeId: string;   // Node cuối cùng trong range
   summaryText: string;
-  summaryNodeId?: string; // Node tóm tắt (tạo tự động)
+  summaryNodeId?: string; // Node tóm tắt
   braceStyle?: 'curly' | 'square';
   color?: string;
 };
 
-type Snapshot = { nodes: NodeData[]; edges: EdgeData[] };
+// History Command Types
+type NodeDiff = {
+    id: string;
+    from?: Partial<NodeData>;
+    to?: Partial<NodeData>;
+};
+
+type EdgeDiff = {
+    id: string;
+    from?: Partial<EdgeData>;
+    to?: Partial<EdgeData>;
+};
+
+type HistoryCommand = {
+    type: 'NODES_CHANGE';
+    added?: NodeData[];
+    removed?: NodeData[];
+    updated?: { id: string; from: Partial<NodeData>; to: Partial<NodeData> }[];
+    addedEdges?: EdgeData[];
+    removedEdges?: EdgeData[];
+};
+
+type Snapshot = { nodes: NodeData[]; edges: EdgeData[] }; // Legacy type, kept if needed
 
 const MAX_HISTORY = 100;
 
@@ -166,7 +180,7 @@ const MAX_HISTORY = 100;
 
 export const DEFAULT_NODE_STYLE: Partial<NodeData> = {
   shape: 'roundedRect',
-  color: '#F0F9FF', // Light blue - dễ nhìn và dễ chịu
+  color: '#F0F9FF',
   borderColor: '#3B82F6', 
   borderWidth: 2,
   borderStyle: 'solid',
@@ -176,7 +190,7 @@ export const DEFAULT_NODE_STYLE: Partial<NodeData> = {
   fontStyle: 'normal',
   textDecoration: 'none',
   textAlign: 'CENTER',
-  textColor: '#1E3A8A', // Dark blue text - tương phản tốt với nền sáng
+  textColor: '#1E3A8A',
   nodeLength: 150,
   branchColor: undefined,
   branchLineStyle: 'bezier',
@@ -204,22 +218,19 @@ export function getNodeComputedStyle(
 
   // 2. Áp dụng style theo Level (depth)
   if (node.id === 'root') {
-    // Level 0: Central Topic - Trong suốt, không viền, to và đậm
-    baseStyle.color = theme.root.fill; // Transparent - giống nền
-    baseStyle.textColor = theme.root.textColor; // Text đen
-    baseStyle.borderColor = theme.root.stroke; // Transparent
-    baseStyle.borderWidth = 0; // Không viền
-    baseStyle.fontSize = 40; // Font size lớn hơn
+    baseStyle.color = theme.root.fill;
+    baseStyle.textColor = theme.root.textColor;
+    baseStyle.borderColor = theme.root.stroke;
+    baseStyle.borderWidth = 0;
+    baseStyle.fontSize = 40;
     baseStyle.fontWeight = 'bold';
     baseStyle.shape = 'roundedRect';
-    baseStyle.nodeLength = 'fit'; // Root auto-expands to fit full text
+    baseStyle.nodeLength = 'fit';
   } else if (topology) {
-    // Nodes có parent - apply style theo depth/level
     const { depth, branchBaseColor } = topology;
     const smartColors = getBranchColorByDepth(branchBaseColor, depth);
     
     if (depth === 1) {
-      // Level 1: Main Topic
       baseStyle.color = smartColors.bg;
       baseStyle.borderColor = smartColors.border;
       baseStyle.textColor = getContrastingTextColor(smartColors.bg);
@@ -228,7 +239,6 @@ export function getNodeComputedStyle(
       baseStyle.fontWeight = 'normal';
       baseStyle.borderWidth = 2;
     } else if (depth === 2) {
-      // Level 2: Subtopic - Kế thừa màu cha nhưng nhạt hơn
       baseStyle.color = smartColors.bg;
       baseStyle.borderColor = smartColors.border;
       baseStyle.textColor = getContrastingTextColor(smartColors.bg);
@@ -237,14 +247,13 @@ export function getNodeComputedStyle(
       baseStyle.fontWeight = 'normal';
       baseStyle.borderWidth = 1;
     } else {
-      // Level 3+: Underline style - Không có fill, chỉ có underline
-      baseStyle.color = 'transparent'; // Transparent background
+      baseStyle.color = 'transparent';
       baseStyle.borderColor = smartColors.border;
-      baseStyle.textColor = '#2D3748'; // Text màu tối để đọc được trên nền trắng
-      baseStyle.shape = 'rectangle'; // Sẽ render đặc biệt
+      baseStyle.textColor = '#2D3748';
+      baseStyle.shape = 'rectangle';
       baseStyle.fontSize = 14;
       baseStyle.fontWeight = 'normal';
-      baseStyle.borderWidth = 0; // Không có border box
+      baseStyle.borderWidth = 0;
     }
   } else {
     const defaultStyle = theme.quickStyles.default;
@@ -253,11 +262,9 @@ export function getNodeComputedStyle(
     baseStyle.textColor = defaultStyle.textColor || '#21b9d3ff';
   }
 
-  // 3. [QUICK STYLE] - Override màu nếu node có quickStyleId
+  // 3. [QUICK STYLE]
   if (node.quickStyleId && node.quickStyleId !== 'default' && theme.quickStyles[node.quickStyleId]) {
     const qs = theme.quickStyles[node.quickStyleId];
-    
-    // Chỉ apply quick style nếu node không có override riêng
     if (node.color === undefined) {
       baseStyle.color = qs.fill;
       baseStyle.textColor = qs.textColor;
@@ -265,20 +272,10 @@ export function getNodeComputedStyle(
     if (node.borderColor === undefined) {
       baseStyle.borderColor = qs.stroke;
     }
-    
-    // Font styles từ quick style
-    if (qs.fontWeight && node.fontWeight === undefined) {
-      baseStyle.fontWeight = qs.fontWeight;
-    }
-    if (qs.textDecoration && node.textDecoration === undefined) {
-      baseStyle.textDecoration = qs.textDecoration;
-    }
-    if (qs.fontSize && node.fontSize === undefined) {
-      baseStyle.fontSize = qs.fontSize;
-    }
-    if (qs.textcase && node.textCase === undefined) {
-      baseStyle.textCase = qs.textcase;
-    }
+    if (qs.fontWeight && node.fontWeight === undefined) baseStyle.fontWeight = qs.fontWeight;
+    if (qs.textDecoration && node.textDecoration === undefined) baseStyle.textDecoration = qs.textDecoration;
+    if (qs.fontSize && node.fontSize === undefined) baseStyle.fontSize = qs.fontSize;
+    if (qs.textcase && node.textCase === undefined) baseStyle.textCase = qs.textcase;
   }
 
   // 4. [OVERRIDE]
@@ -292,14 +289,12 @@ export function getNodeComputedStyle(
     'imageUrl', 'imageWidth', 'imageHeight', 'hyperlink'
   ];
 
-  // Cho phép override tất cả thuộc tính, bao gồm cả root node
   OVERRIDABLE_KEYS.forEach(key => {
     if (node[key] !== undefined) {
       (computed as any)[key] = node[key];
     }
   });
 
-  // Force root to auto-fit its text regardless of stored overrides
   if (node.id === 'root') {
     computed.nodeLength = 'fit';
   }
@@ -317,13 +312,9 @@ export function getNodeComputedStyle(
   computed.collapsed = node.collapsed;
   computed.hyperlink = node.hyperlink;
   computed.styleLocked = node.styleLocked;
-  computed.quickStyleId = node.quickStyleId; // Giữ quickStyleId để biết node dùng style nào
-
-  // [ĐỒNG BỘ MÀU DÂY]
+  computed.quickStyleId = node.quickStyleId;
   computed.branchColor = node.branchColor ?? (topology ? topology.branchBaseColor : undefined);
 
-  // Font logic: Nếu node không có fontFamily override, dùng globalFont
-  // Nếu có fontFamily, giữ nguyên (đã được set ở bước OVERRIDE)
   if (computed.fontFamily === undefined) {
     computed.fontFamily = globalFont;
   }
@@ -332,10 +323,7 @@ export function getNodeComputedStyle(
 }
 
 export function applyNodeDefaults(node: NodeData, theme: ColorTheme): Partial<NodeData> {
-  const themeStyle = (node.id === 'root')
-    ? theme.root
-    : theme.quickStyles.default;
-  
+  const themeStyle = (node.id === 'root') ? theme.root : theme.quickStyles.default;
   return {
     ...DEFAULT_NODE_STYLE,
     ...(themeStyle as Partial<NodeData>),
@@ -368,15 +356,48 @@ export function applyNodeDefaults(node: NodeData, theme: ColorTheme): Partial<No
 }
 
 // =========
+// Helpers for Diff
+// =========
+function differenceById<T extends { id: string }>(arr1: T[], arr2: T[]): T[] {
+    const ids2 = new Set(arr2.map(x => x.id));
+    return arr1.filter(x => !ids2.has(x.id));
+}
+
+function intersectionById<T extends { id: string }>(arr1: T[], arr2: T[]): T[] {
+    const ids2 = new Set(arr2.map(x => x.id));
+    return arr1.filter(x => ids2.has(x.id));
+}
+
+// So sánh nông để tìm thay đổi
+function shallowNodeDiff(a: NodeData, b: NodeData): boolean {
+    const keys = new Set([...Object.keys(a), ...Object.keys(b)]) as Set<keyof NodeData>;
+    for (const key of keys) {
+        if (key === 'isTransitioning') continue; // Bỏ qua state tạm thời
+        if (!isEqual(a[key], b[key])) return true;
+    }
+    return false;
+}
+
+// =========
 // Định nghĩa State
 // =========
+export type PeerInfo = {
+  x: number;
+  y: number;
+  id: string;
+  name?: string;
+  color?: string;
+  lastSeen: number;
+};
+
 type State = {
   nodes: NodeData[];
   edges: EdgeData[];
   relationships: RelationshipData[];
   summaries: SummaryData[];
-  history: Snapshot[];
-  future: Snapshot[];
+  history: HistoryCommand[];
+  future: HistoryCommand[];
+  peers: Record<string, PeerInfo>;
 
   globalStructure: GlobalStructure;
   globalFont: string;
@@ -385,18 +406,31 @@ type State = {
   globalBranchColor: string; 
   backgroundColor: string; 
 
+  scale: number;
+  pos: { x: number; y: number };
   isDirty: boolean; 
   currentMindmapId: string | null; 
   currentMindmapName: string;
   hasManuallyRenamedMindmap: boolean; 
 
-  setGraph: (n: NodeData[], e: EdgeData[]) => void;
-  push: (n: NodeData[], e: EdgeData[]) => void;
-  undo: () => Snapshot | null;
-  redo: () => Snapshot | null;
-  clear: () => void;
+  // Actions
+  setScale: (v: number) => void;
+  setPos: (p: { x: number; y: number }) => void;
+  setIsDirty: (isDirty: boolean) => void; 
+  updatePeerCursor: (id: string, x: number, y: number) => void;
+  setPeerInfo: (id: string, info: { name: string; color: string }) => void;
+  removePeer: (id: string) => void;
   
+  // [QUAN TRỌNG] Hai hàm setGraph khác nhau
+  setGraph: (n: NodeData[], e: EdgeData[]) => void; // Dùng cho Realtime/Load (KHÔNG Undo)
+  applyUserAction: (n: NodeData[], e: EdgeData[]) => void; // Dùng cho User (CÓ Undo)
+  
+  undo: () => void;
+  redo: () => void;
+  clear: () => void;
   set: (p: Partial<State>) => void;
+  
+  // Feature Actions
   toggleNodeBoundary: (nodeId: string) => void;
   addRelationship: (from: string, to: string) => void;
   updateRelationship: (id: string, updates: Partial<RelationshipData>) => void;
@@ -414,6 +448,9 @@ export const useEditorStore = create<State>((set, get) => ({
   summaries: [],
   history: [],
   future: [],
+  peers: {},
+  scale: 1,
+  pos: { x: 0, y: 0 },
 
   globalStructure: 'mindmap',
   globalFont: fonts[0].value,
@@ -421,69 +458,175 @@ export const useEditorStore = create<State>((set, get) => ({
   activeColorThemeId: 'dawn',
   globalBranchColor: '#BFDBFE', 
   backgroundColor: '#FAFAFB', 
-
   isDirty: false,
   currentMindmapId: null,
   currentMindmapName: 'Đang tải...',
   hasManuallyRenamedMindmap: false,
 
-  setGraph: (n, e) => {
-    set({ nodes: n, edges: e });
-  },
+  setScale: (v) => set({ scale: v }),
+  setPos: (p) => set({ pos: p }),
+  setIsDirty: (status) => set({ isDirty: status }),
+  set: (p) => set(p),
 
-  push: (n, e) => {
-    const currentState: Snapshot = { nodes: n, edges: e };
-    const lastHistoryState = get().history.at(-1);
+  updatePeerCursor: (id, x, y) => set((state) => {
+    const peer = state.peers[id];
+    if (!peer) return state;
+    return { peers: { ...state.peers, [id]: { ...peer, x, y, lastSeen: Date.now() } } };
+  }),
+  setPeerInfo: (id, info) => set((state) => ({
+    peers: { ...state.peers, [id]: { ...(state.peers[id] || { x: 0, y: 0, lastSeen: Date.now() }), id, ...info } }
+  })),
+  removePeer: (id) => set((state) => {
+    const { [id]: _, ...rest } = state.peers;
+    return { peers: rest };
+  }),
 
-    if (!lastHistoryState || !isEqual(lastHistoryState, currentState)) {
-      const nextHistory = [...get().history, currentState].slice(-MAX_HISTORY);
-      set({ history: nextHistory, future: [] });
-    }
-  },
+  // 1. setGraph: Dùng khi nhận dữ liệu từ Server hoặc khi Load file
+  // Không ghi vào History để tránh Undo làm mất dữ liệu đồng bộ
+  setGraph: (n, e) => set({ nodes: n, edges: e, isDirty: true }),
 
-  undo: () => {
-    const h = get().history.slice();
-    if (h.length <= 1) return null;
+  // 2. applyUserAction: Dùng khi User thao tác (Kéo, Thêm, Sửa, Xóa)
+  // Tự động tính toán Diff và ghi vào History
+  applyUserAction: (newNodes, newEdges) => {
+    const { nodes: oldNodes, edges: oldEdges, history } = get();
+    
+    // --- Tính toán Diff Nodes ---
+    const addedNodes = differenceById(newNodes, oldNodes);
+    const removedNodes = differenceById(oldNodes, newNodes);
 
-    const current = h.pop()!;
-    const prev = h.at(-1)!;
+    const commonOldNodes = intersectionById(oldNodes, newNodes);
+    const commonNewNodes = intersectionById(newNodes, oldNodes);
 
-    set({
-      history: h,
-      future: [current, ...get().future],
-      nodes: prev.nodes,
-      edges: prev.edges,
-      isDirty: true, 
+    const updatedNodes: { id: string; from: Partial<NodeData>; to: Partial<NodeData> }[] = [];
+    
+    commonNewNodes.forEach(newNode => {
+        const oldNode = commonOldNodes.find(n => n.id === newNode.id);
+        if (oldNode && shallowNodeDiff(oldNode, newNode)) {
+          updatedNodes.push({ id: newNode.id, from: oldNode, to: newNode });
+        }
     });
-    return prev;
+
+    // --- Tính toán Diff Edges ---
+    const addedEdges = differenceById(newEdges, oldEdges);
+    const removedEdges = differenceById(oldEdges, newEdges);
+
+    if (addedNodes.length === 0 && removedNodes.length === 0 && updatedNodes.length === 0 && addedEdges.length === 0 && removedEdges.length === 0) {
+        return; // Không có gì thay đổi
+    }
+
+    // Tạo Command
+    const command: HistoryCommand = {
+        type: 'NODES_CHANGE',
+        added: addedNodes,
+        removed: removedNodes,
+        updated: updatedNodes,
+        addedEdges: addedEdges,
+        removedEdges: removedEdges
+    };
+
+    // Cập nhật Store + History một thể
+    set({
+        nodes: newNodes,
+        edges: newEdges,
+        history: [...history, command].slice(-MAX_HISTORY),
+        future: [],
+        isDirty: true
+    });
+  },
+
+  // --- Logic Undo thông minh (Chỉ đảo ngược thay đổi của User) ---
+  undo: () => {
+    const { history, future, nodes, edges } = get();
+    if (history.length === 0) return;
+
+    const cmd = history[history.length - 1];
+    const newHistory = history.slice(0, -1);
+    const newFuture = [cmd, ...future];
+
+    let currentNodes = [...nodes];
+    let currentEdges = [...edges];
+
+    // Đảo ngược Add -> Xóa
+    if (cmd.added && cmd.added.length > 0) {
+        const idsToRemove = new Set(cmd.added.map(n => n.id));
+        currentNodes = currentNodes.filter(n => !idsToRemove.has(n.id));
+    }
+    // Đảo ngược Remove -> Thêm lại
+    if (cmd.removed && cmd.removed.length > 0) {
+        currentNodes = [...currentNodes, ...cmd.removed];
+    }
+    // Đảo ngược Update -> Gán lại giá trị cũ (from)
+    if (cmd.updated && cmd.updated.length > 0) {
+        const updateMap = new Map(cmd.updated.map(u => [u.id, u.from]));
+        currentNodes = currentNodes.map(n => {
+            if (updateMap.has(n.id)) {
+                return { ...n, ...updateMap.get(n.id) };
+            }
+            return n;
+        });
+    }
+    // Edges tương tự
+    if (cmd.addedEdges && cmd.addedEdges.length > 0) {
+        const idsToRemove = new Set(cmd.addedEdges.map(e => e.id));
+        currentEdges = currentEdges.filter(e => !idsToRemove.has(e.id));
+    }
+    if (cmd.removedEdges && cmd.removedEdges.length > 0) {
+        currentEdges = [...currentEdges, ...cmd.removedEdges];
+    }
+
+    set({ nodes: currentNodes, edges: currentEdges, history: newHistory, future: newFuture, isDirty: true });
   },
 
   redo: () => {
-    const f = get().future.slice();
-    if (!f.length) return null;
+    const { history, future, nodes, edges } = get();
+    if (future.length === 0) return;
 
-    const next = f.shift()!;
-    set({
-      history: [...get().history, next],
-      future: f,
-      nodes: next.nodes,
-      edges: next.edges,
-      isDirty: true, 
-    });
-    return next;
+    const cmd = future[0];
+    const newFuture = future.slice(1);
+    const newHistory = [...history, cmd];
+
+    let currentNodes = [...nodes];
+    let currentEdges = [...edges];
+
+    // Redo Add -> Thêm
+    if (cmd.added && cmd.added.length > 0) {
+        currentNodes = [...currentNodes, ...cmd.added];
+    }
+    // Redo Remove -> Xóa
+    if (cmd.removed && cmd.removed.length > 0) {
+        const idsToRemove = new Set(cmd.removed.map(n => n.id));
+        currentNodes = currentNodes.filter(n => !idsToRemove.has(n.id));
+    }
+    // Redo Update -> Gán giá trị mới (to)
+    if (cmd.updated && cmd.updated.length > 0) {
+        const updateMap = new Map(cmd.updated.map(u => [u.id, u.to]));
+        currentNodes = currentNodes.map(n => {
+            if (updateMap.has(n.id)) {
+                return { ...n, ...updateMap.get(n.id) };
+            }
+            return n;
+        });
+    }
+    if (cmd.addedEdges && cmd.addedEdges.length > 0) {
+        currentEdges = [...currentEdges, ...cmd.addedEdges];
+    }
+    if (cmd.removedEdges && cmd.removedEdges.length > 0) {
+        const idsToRemove = new Set(cmd.removedEdges.map(e => e.id));
+        currentEdges = currentEdges.filter(e => !idsToRemove.has(e.id));
+    }
+
+    set({ nodes: currentNodes, edges: currentEdges, history: newHistory, future: newFuture, isDirty: true });
   },
 
   clear: () => set({ history: [], future: [] }),
-  
-  set: (p) => set(p),
 
   toggleNodeBoundary: (nodeId: string) => {
     const { nodes, edges } = get();
     const newNodes = nodes.map((n) =>
       n.id === nodeId ? { ...n, boundary: !n.boundary } : n
     );
-    set({ nodes: newNodes, isDirty: true });
-    get().push(newNodes, edges);
+    // Sử dụng applyUserAction thay vì push cũ
+    get().applyUserAction(newNodes, edges);
   },
 
   addRelationship: (from: string, to: string) => {
@@ -518,6 +661,8 @@ export const useEditorStore = create<State>((set, get) => ({
       color: '#3b82f6',
     };
     
+    // Lưu ý: Phần này đang dùng set trực tiếp, không qua Undo History (do applyUserAction chỉ track Nodes/Edges chính)
+    // Nếu muốn Undo được Relationship, cần mở rộng applyUserAction
     set({ 
       nodes: [...nodes, labelNode],
       relationships: [...relationships, newRelationship], 
@@ -553,12 +698,9 @@ export const useEditorStore = create<State>((set, get) => ({
     
     // Tính toán vị trí summary node dựa trên brace tip position
     const parentNode = nodes.find(n => n.id === parentId);
-    const siblings = nodes.filter(n => n.parentId === parentId);
     const startNode = nodes.find(n => n.id === startNodeId);
     const endNode = nodes.find(n => n.id === endNodeId);
     
-    // Calculate approximate position for summary node
-    // This will be refined by layout later, but gives a better initial position
     let summaryX = 0;
     let summaryY = 0;
     
@@ -570,9 +712,8 @@ export const useEditorStore = create<State>((set, get) => ({
       summaryY = (startNode.y + endNode.y) / 2;
       
       // Place summary node outward from the nodes
-      // Use a rough estimate - will be refined by layout
       const avgX = (startNode.x + endNode.x) / 2;
-      summaryX = avgX + (direction * 150); // 150px outward from average position
+      summaryX = avgX + (direction * 150); 
     }
     
     // Lấy màu của parent node để áp dụng cho summary
@@ -602,7 +743,7 @@ export const useEditorStore = create<State>((set, get) => ({
       summaryText: text || 'Summary',
       summaryNodeId,
       braceStyle: 'curly',
-      color: parentBorderColor, // Inherit parent border color for brace
+      color: parentBorderColor, 
     };
     
     // Tạo edge đặc biệt nối từ summary ID đến summary node

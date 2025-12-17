@@ -86,3 +86,19 @@ function hexToRgbSimple(hex: string) {
     b: parseInt(result[3], 16)
   } : { r: 0, g: 0, b: 0 };
 }
+
+const CURSOR_COLORS = [
+  '#FF6B6B', '#4ECDC4', '#45B7D1', '#FED766',
+  '#2AB7CA', '#F0B37E', '#8D6E63', '#EA526F',
+  '#2C5F2D', '#995D81', '#F4A261', '#E76F51'
+];
+
+export function getCursorColor(id: string): string {
+  let hash = 0;
+  for (let i = 0; i < id.length; i++) {
+    hash = id.charCodeAt(i) + ((hash << 5) - hash);
+    hash = hash & hash; 
+  }
+  const index = Math.abs(hash) % CURSOR_COLORS.length;
+  return CURSOR_COLORS[index];
+}

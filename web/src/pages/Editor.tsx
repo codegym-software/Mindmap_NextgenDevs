@@ -1,3 +1,24 @@
+/**
+ * Editor.tsx - MERGED VERSION
+ * 
+ * Merges UI/UX features from your version with collaboration features from friend's version:
+ * 
+ * YOUR UI/UX FEATURES (100% KEPT):
+ * - Boundaries, Relationships, Summaries
+ * - Image support
+ * - Better layout algorithms
+ * - Smooth animations
+ * - All your existing UI improvements
+ * 
+ * COLLABORATION FEATURES ADDED:
+ * - ShareModal for inviting collaborators
+ * - Real-time cursor tracking (CursorLayer)
+ * - Access control (owner/editor/viewer permissions)
+ * - Access request system
+ * - Permission-based read-only mode
+ * - Realtime WebSocket sync via useRealtime hook
+ */
+
 import React, {
   useEffect,
   useLayoutEffect,
@@ -27,6 +48,10 @@ import { useDebouncedCallback } from 'use-debounce';
 import EditorToolbar from '../features/editor/EditorToolbar';
 import Sidebar from '../components/layout/Sidebar';
 import FormattingToolbar from '../features/editor/FormattingToolbar';
+import CursorLayer from '../features/editor/CursorLayer';
+import ShareModal from '../features/collaboration/ShareModal';
+import AccessDeniedScreen from '../features/editor/AccessDeniedScreen';
+import AccessRequestModal from '../features/editor/AccessRequestModal';
 import {
   useEditorStore,
   NodeData,
@@ -42,13 +67,15 @@ import {
   NodeData as FeNodeData, 
   NodeTopology
 } from '../app/store/useEditorStore';
-import { mindmapsApi, FeMindmapDoc } from '../services/mindmapsApi';
+import { mindmapsApi, FeMindmapDoc, Permission } from '../services/mindmapsApi';
 import { useAuth } from '../hooks/useAuth';
 import { useToast } from '../hooks/useToast';
 import { useTheme } from '../hooks/useTheme';
 import Spinner from '../components/common/Spinner';
 import { useLocalMindmap } from '../hooks/useLocalMindmap';
 import { useMindmapsStore } from '../app/store/useMindmapsStore';
+import { useMindmapAccess } from '../hooks/useMindmapAccess';
+import { useRealtime } from '../hooks/useRealtime';
 import Boundary from '../features/editor/Boundary';
 import Relationship from '../features/editor/Relationship';
 import Summary from '../features/editor/Summary';
@@ -113,9 +140,25 @@ function getContrastColor(hex: string) {
   return lum > 0.6 ? '#000000' : '#FFFFFF';
 }
 
+function getCursorColor(seed: string): string {
+  const colors = [
+    '#FF6B6B', '#4ECDC4', '#45B7D1', '#FFA07A', '#98D8C8',
+    '#F7DC6F', '#BB8FCE', '#85C1E2', '#F8B739', '#52B788'
+  ];
+  let hash = 0;
+  for (let i = 0; i < seed.length; i++) {
+    hash = seed.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  return colors[Math.abs(hash) % colors.length];
+}
+
 // =================================================================================
 // Component
 // =================================================================================
+
+interface EditorProps {
+  mode?: 'edit' | 'share';
+}
 
 export function loadGuestDoc(id: string): FeMindmapDoc | null {
   try {
@@ -133,6 +176,11 @@ export function loadGuestDoc(id: string): FeMindmapDoc | null {
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
       version: 0,
+      collaborators: [],
+      accessSettings: {
+        isPublic: false,
+        publicAccessLevel: 'DISABLED',
+      },
     };
   } catch (e) {
     console.error('Error loading guest doc:', e);
@@ -310,22 +358,34 @@ function calculateNodeBox(node: NodeData, style: NodeData) {
 //   return <KonvaImage image={image} x={x} y={y} width={width} height={height} cornerRadius={4} />;
 // };
 
-export default function Editor() {
+export default function Editor({ mode = 'edit' }: EditorProps = {}) {
   const { id } = useParams<{ id?: string }>();
   const navigate = useNavigate();
   const { addToast } = useToast();
   const { toggleTheme } = useTheme();
-  const { isAuthed, login, getAccessToken } = useAuth();
+  const { isAuthed, login, getAccessToken, user } = useAuth();
   const { createGuest } = useLocalMindmap();
   const isGuest = !!id && id.startsWith('guest-');
   const summaryLayoutLevelsRef = useRef<Map<string, number>>(new Map());
+
+  // --- Collaboration: Access Control Hook ---
+  const {
+    permission: accessPermissionState,
+    isOwner: isOwnerFromHook,
+    pendingRequests,
+    requestStatus,
+    requestAccess,
+    approveRequest,
+    denyRequest,
+    refreshPermissions,
+  } = useMindmapAccess(id || '', user);
 
   // State từ store 
   const {
     nodes,
     edges,
     setGraph,
-    push: pushHistory,
+    applyUserAction,
     undo,
     redo,
     clear: clearHistory,
@@ -347,6 +407,11 @@ export default function Editor() {
     relationships,
     summaries,
   } = useEditorStore();
+
+  // Helper wrapper for manual history push (used in specific cases)
+  const pushHistory = useCallback((newNodes: NodeData[], newEdges: EdgeData[]) => {
+    applyUserAction(newNodes, newEdges);
+  }, [applyUserAction]);
 
   const handleToggleBoundary = () => {
     if (selectedNodeIds.length === 1) {
@@ -401,14 +466,12 @@ export default function Editor() {
     
     removeRelationship(id);
     setSelectedRelationshipId(null);
-    debouncedPushHistory();
     debouncedPersistData();
   };
 
   const handleDeleteSummary = (id: string) => {
     removeSummary(id);
     setSelectedSummaryId(null);
-    debouncedPushHistory();
     debouncedPersistData();
   };
 
@@ -418,7 +481,6 @@ export default function Editor() {
     );
     setGraph(newNodes, edges);
     setSelectedBoundaryId(null);
-    debouncedPushHistory();
     debouncedPersistData();
   };
 
@@ -433,6 +495,13 @@ export default function Editor() {
   const [isReadyToShow, setIsReadyToShow] = useState(false);
   const [isFormattingToolbarOpen, setFormattingToolbarOpen] = useState(false); // UI Mới
   const [presentationMode, setPresentationMode] = useState(false);
+  
+  // --- Collaboration: Permission & Modal States ---
+  const [ownerId, setOwnerId] = useState<string | null>(null);
+  const [userPermission, setUserPermission] = useState<Permission | null>(null);
+  const [accessDenied, setAccessDenied] = useState(false);
+  const [isShareModalOpen, setIsShareModalOpen] = useState(false);
+  const [isRequestModalOpen, setRequestModalOpen] = useState(false);
   const [dimensions, setDimensions] = useState({
     width: window.innerWidth,
     height: window.innerHeight - 48,
@@ -493,6 +562,35 @@ export default function Editor() {
 
   const activeTheme =
   colorThemes[activeColorThemeId as keyof typeof colorThemes];
+  
+  // --- Collaboration: Ownership Logic ---
+  const isOwner = useMemo(() => {
+    if (isGuest) return true;
+    if (user && ownerId && (user.sub === ownerId || (user as any).id === ownerId)) return true;
+    if (isOwnerFromHook) return true;
+    return false;
+  }, [isGuest, isOwnerFromHook, user, ownerId]);
+
+  // --- Collaboration: Read-Only Logic ---
+  const isReadOnly = useMemo(() => {
+    if (mode === 'share') return true; // Share mode is always read-only
+    if (isGuest) return false;
+    if (isOwner) return false;
+    if (userPermission === 'EDITOR') return false;
+    return true;
+  }, [mode, isGuest, isOwner, userPermission]);
+
+  // --- Collaboration: User Info for Realtime ---
+  const myName = useMemo(() => {
+    if (!user) return 'Guest';
+    return user.displayName || user.email?.split('@')[0] || 'User';
+  }, [user]);
+
+  const myColor = useMemo(() => {
+    const seed = user?.sub || (user as any)?.id || 'guest';
+    return getCursorColor(seed);
+  }, [user]);
+
   const nodeTopology = useMemo(() => {
     const topology = new Map<string, NodeTopology>();
     const nodeDataMap = new Map(nodes.map(n => [n.id, n]));
@@ -695,13 +793,10 @@ export default function Editor() {
   // [MERGE GĐ 7] CẤY GHÉP LOGIC DEBOUNCE (Undo/Save)
   // ==========================================================
 
-  // 1. Luồng Undo/Redo (0.5s)
-  const debouncedPushHistory = useDebouncedCallback(() => {
-    const { nodes, edges } = useEditorStore.getState();
-    pushHistory(useEditorStore.getState().nodes, useEditorStore.getState().edges);
-  }, 500);
+  // NOTE: History is automatically tracked via applyUserAction
+  // No separate push needed - applyUserAction handles it
 
-  // 2. Luồng Lưu trữ (5s)
+  // Luồng Lưu trữ (5s)
   const debouncedPersistData = useDebouncedCallback(() => {
     if (!isDataLoaded || !id) return;
     const { nodes: currentNodes, edges: currentEdges, relationships, summaries } =
@@ -727,6 +822,105 @@ export default function Editor() {
     }
   }, 5000, {
   });
+
+  // --- Collaboration: Toggle Root Collapse Handler ---
+  const handleSetRootCollapse = useCallback(
+    (side: 'left' | 'right') => {
+      setRootCollapse((prev) => ({ ...prev, [side]: !prev[side] }));
+    },
+    [],
+  );
+
+  // --- Collaboration: Realtime Hook ---
+  const { sendPatch, sendCursor, isConnected } = useRealtime({
+    mindmapId: id,
+    isGuest,
+    isDataLoaded,
+    isOwner,
+    userInfo: { name: myName, color: myColor },
+    onLayoutRequest: (keepCamera = false) => handleLayout(),
+    onSetRootCollapse: handleSetRootCollapse,
+    shouldConnect: !!id && !isGuest && !accessDenied && isAuthed,
+  });
+
+  // --- Collaboration: Access Request Handlers ---
+  const handleLoginRequired = useCallback(() => {
+    sessionStorage.setItem(
+      'returnTo',
+      window.location.pathname + window.location.search,
+    );
+    login('login' as any);
+  }, [login]);
+
+  const handleRequestAccessFromScreen = useCallback(async () => {
+    if (!id || isGuest) return;
+
+    if (!isAuthed) {
+      handleLoginRequired();
+      return;
+    }
+
+    try {
+      await requestAccess({ requestedPermission: 'VIEWER' });
+      refreshPermissions();
+      addToast('Đã gửi yêu cầu truy cập, vui lòng chờ duyệt.', 'success');
+    } catch (e) {
+      console.error('Request access failed:', e);
+      addToast('Gửi yêu cầu thất bại, vui lòng thử lại.', 'error');
+    }
+  }, [id, isGuest, isAuthed, requestAccess, refreshPermissions, addToast, handleLoginRequired]);
+
+  const handleDenyAccessRequest = useCallback(
+    async (requesterId: string) => {
+      if (!id) return;
+      try {
+        await mindmapsApi.rejectAccessRequest(id, requesterId);
+        await denyRequest(requesterId);
+        addToast('Đã từ chối yêu cầu truy cập', 'info');
+      } catch (error) {
+        console.error('Deny access request failed', error);
+        addToast('Không thể từ chối yêu cầu', 'error');
+      }
+    },
+    [id, denyRequest, addToast],
+  );
+
+  const handleApproveAccessRequest = useCallback(
+    async (requesterId: string, perm: Permission) => {
+      if (!id) return;
+
+      try {
+        await mindmapsApi.approveAccessRequest(id, requesterId, perm);
+        const firestorePerm = perm === 'EDITOR' ? 'EDITOR' : 'VIEWER';
+        await approveRequest(requesterId, firestorePerm);
+        addToast('Đã duyệt yêu cầu truy cập', 'success');
+      } catch (error) {
+        console.error('Approve access request failed', error);
+        addToast('Không thể duyệt yêu cầu truy cập', 'error');
+      }
+    },
+    [id, approveRequest, addToast],
+  );
+
+  // --- Collaboration: Prompt Upgrade Permission ---
+  const promptUpgradeToEditorIfNeeded = useCallback(() => {
+    if (!isReadOnly) return true;
+
+    if (userPermission === 'VIEWER') {
+      const ok = window.confirm(
+        'Bạn hiện chỉ có quyền xem. Bạn có muốn gửi yêu cầu quyền chỉnh sửa không?',
+      );
+      if (ok && id) {
+        mindmapsApi.requestAccess(id, 'EDITOR').catch(console.error);
+        requestAccess({ requestedPermission: 'EDITOR' }).catch(console.error);
+        addToast('Đã gửi yêu cầu quyền chỉnh sửa', 'info');
+      }
+    } else {
+      addToast('Bạn không có quyền chỉnh sửa mindmap này.', 'error');
+    }
+
+    return false;
+  }, [isReadOnly, userPermission, id, requestAccess, addToast]);
 
   // [RESIZE OBSERVER] Update canvas dimensions accounting for panel width
   // [OPTIMIZATION] Debounce resize để tránh layout liên tục (theo spec: 100-200ms)
@@ -782,7 +976,11 @@ export default function Editor() {
         } else if (isAuthed && tempAuthedData) {
           const beDoc: BeMindmapDoc = JSON.parse(tempAuthedData);
           const feContent = normalizeContentBEtoFE(beDoc.content);
-          data = { ...beDoc, ...feContent };
+          data = { 
+            ...beDoc, 
+            ...feContent,
+            collaborators: [],
+          };
           sessionStorage.removeItem('temp_mindmap');
         } else {
           if (isGuest) {
@@ -795,7 +993,30 @@ export default function Editor() {
           }
         }
 
-        if (isMounted) {
+        if (isMounted && data) {
+          // --- Collaboration: Set Ownership & Permissions ---
+          setOwnerId(data.ownerId);
+          
+          if (isGuest) {
+            setUserPermission('OWNER');
+          } else {
+            const uid = user?.sub || (user as any)?.id;
+            if (uid && uid === data.ownerId) {
+              setUserPermission('OWNER');
+            } else {
+              const myCollab = (data.collaborators || []).find(
+                (c) => c.userId === uid,
+              );
+              if (myCollab) {
+                setUserPermission(myCollab.permission);
+              } else {
+                const publicAccessLevel = data.accessSettings?.publicAccessLevel;
+                if (publicAccessLevel === 'VIEW') setUserPermission('VIEWER');
+                else setUserPermission(null);
+              }
+            }
+          }
+          
           useEditorStore.setState({ 
             currentMindmapId: id, 
             currentMindmapName: data.name, 
@@ -903,11 +1124,21 @@ export default function Editor() {
           }
           setIsDataLoaded(true);
         }
-      } catch (error) {
-        if (isMounted) {
-          addToast('Không thể tải mindmap!', 'error');
-          navigate('/dashboard', { replace: true });
+      } catch (error: any) {
+        if (!isMounted) return;
+
+        const status = error?.response?.status;
+
+        // 403/401 => bị deny
+        if (status === 403 || status === 401) {
+          setAccessDenied(true);
+          setIsDataLoaded(true);
+          return;
         }
+
+        console.error('[Editor] Load mindmap failed:', error);
+        addToast('Lỗi tải mindmap', 'error');
+        navigate('/dashboard', { replace: true });
       }
     };
     loadData();
@@ -917,35 +1148,54 @@ export default function Editor() {
   }, [
     id, isAuthed, navigate, addToast, clearHistory,
     setGraph, pushHistory, activeColorThemeId, setGlobalStore,
-    isGuest, createGuest,
+    isGuest, createGuest, user,
   ]);
+
+  // --- Collaboration: Reload when access changes from denied to allowed ---
+  const [reloadToken, setReloadToken] = useState(0);
+  
+  useEffect(() => {
+    if (!id || isGuest) return;
+    if (!accessDenied) return;
+    if (accessPermissionState !== 'allowed') return;
+
+    setAccessDenied(false);
+    setReloadToken((t) => t + 1);
+  }, [id, isGuest, accessDenied, accessPermissionState]);
 
   const handleSave = () => {
     if (!isAuthed) {
       addToast('Vui lòng đăng nhập để lưu mindmap.', 'info');
       login();
     } else if (id) {
-      // [FIX] Phải gửi đầy đủ nodes, edges, relationships, summaries
-      const content = { 
-        nodes: nodes, 
-        edges,
-        relationships: relationships || [],
-        summaries: summaries || []
-      };
-      mindmapsApi
-        .update(id, { name, content })
-        .then(() => {
-          addToast('Đã lưu mindmap!', 'success');
-          useEditorStore.setState({ isDirty: false });
-          const newItems = mindmapItems.map(item => 
-             item.id === id ? { ...item, name: name } : item
-          );
-          setMindmapsStore({ items: newItems });
-        })
-        .catch((e) => {
-          console.error('Save failed:', e);
-          addToast('Lưu thất bại', 'error');
-        });
+      if (isOwner) {
+        // [FIX] Phải gửi đầy đủ nodes, edges, relationships, summaries
+        const content = { 
+          nodes: nodes, 
+          edges,
+          relationships: relationships || [],
+          summaries: summaries || []
+        };
+        mindmapsApi
+          .update(id, { name, content })
+          .then(() => {
+            addToast('Đã lưu mindmap!', 'success');
+            useEditorStore.setState({ isDirty: false });
+            const newItems = mindmapItems.map(item => 
+               item.id === id ? { ...item, name: name } : item
+            );
+            setMindmapsStore({ items: newItems });
+          })
+          .catch((e) => {
+            console.error('Save failed:', e);
+            addToast('Lưu thất bại', 'error');
+          });
+      } else {
+        addToast(
+          'Bạn đang ở chế độ Sandbox (Chỉ xem). Thay đổi không được lưu vào bản gốc.',
+          'info',
+        );
+      }
     }
   };
 
@@ -1042,200 +1292,10 @@ export default function Editor() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isDirty, handleSave, nodes]);
 
-  // 1. Hàm Gửi Patch
-  const sendPatch = useCallback((type: string, payload: any) => {
-    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-      try {
-        wsRef.current.send(JSON.stringify({ type, payload }));
-      } catch (e) {
-        console.error('Lỗi khi gửi WebSocket patch:', e);
-      }
-    }
-  }, []);
-
-  // 2. Hook Kết nối và Nhận Patch
-  useEffect(() => {
-    if (!id || !isAuthed || isGuest || !isDataLoaded) {
-      return; 
-    }
-
-    let isConnecting = true;
-    let isMounted = true; 
-
-    const connect = async () => {
-      try {
-        const token = await getAccessToken();
-        if (!token || !isMounted) return;
-
-        const wsUrl = `ws://localhost:8081/ws/mindmap/${id}?token=${token}`;
-        
-        const ws = new WebSocket(wsUrl);
-        wsRef.current = ws;
-        isConnecting = false;
-
-        ws.onopen = () => console.log(`WebSocket connected to mindmap: ${id}`);
-        ws.onclose = () => {
-          console.log(`WebSocket disconnected from mindmap: ${id}`);
-          wsRef.current = null;
-        };
-        ws.onerror = (err) => console.error('WebSocket error:', err);
-
-        // === LOGIC NHẬN PATCH ===
-        ws.onmessage = (event) => {
-          try {
-            const message: BroadcastPatch = JSON.parse(event.data);
-            const { type, payload } = message;
-
-            // Lấy state MỚI NHẤT từ store
-            const { nodes: currentNodes, edges: currentEdges } =
-              useEditorStore.getState();
-            switch (type) {
-              case 'USER_JOINED':
-                addToast(`User ${payload.userId.substring(0, 6)}... đã tham gia.`, 'info');
-                break;
-              case 'USER_LEFT':
-                addToast(`User ${payload.userId.substring(0, 6)}... đã rời đi.`, 'info');
-                break;
-              case 'NODE_MOVE': {
-                const { id: nodeId, x, y } = payload;
-                const newNodes = currentNodes.map((n) =>
-                   n.id === nodeId ? { ...n, x, y } : n
-                );
-                setGraph(newNodes, currentEdges);
-                setTimeout(() => handleLayout(), 0);
-                break;
-              }
-              case 'NODE_TEXT_CHANGE': {
-                const { id: nodeId, text } = payload;
-                const newNodes = currentNodes.map((n) =>
-                  n.id === nodeId ? { ...n, nodeText: text } : n
-                );
-                setGraph(newNodes, currentEdges);
-                setTimeout(() => handleLayout(), 0);
-                break;
-              }
-              case 'NODE_CREATE': {
-                const { node: feNode, edge: feEdge } = payload;
-                setGraph([...currentNodes, feNode], [...currentEdges, feEdge]);
-                setTimeout(() => handleLayout(), 0);
-                break;
-              }
-              case 'NODE_DELETE': {
-                const { nodeIds } = payload;
-                const set = new Set(nodeIds as string[]);
-                const newNodes = currentNodes.filter((n) => !set.has(n.id));
-                const newEdges = currentEdges.filter(
-                  (e) => !set.has(e.from) && !set.has(e.to)
-                );
-                setGraph(newNodes, newEdges);
-                setTimeout(() => handleLayout(), 0);
-                break;
-              }
-              case 'NODE_REPARENT': {
-                const { nodeId, newParentId, x, y, side } = payload;
-                const newNodes = currentNodes.map((n) =>
-                  n.id === nodeId
-                    ? { ...n, parentId: newParentId, x, y, side }
-                    : n
-                );
-                const oldEdge = currentEdges.find((e) => e.to === nodeId);
-                let newEdges: EdgeData[];
-                if (oldEdge) {
-                  newEdges = currentEdges.map((e) =>
-                    e.id === oldEdge.id ? { ...e, from: newParentId } : e
-                  );
-                } else {
-                  newEdges = [
-                    ...currentEdges,
-                    { id: `e-${nodeId}`, from: newParentId, to: nodeId },
-                  ];
-                }
-                setGraph(newNodes, newEdges);
-               setTimeout(() => handleLayout(), 0);
-                break;
-              }
-              case 'NODE_STYLE_UPDATE': {
-                const { id: nodeId, updates } = payload;
-                const newNodes = currentNodes.map((n) =>
-                  n.id === nodeId ? { ...n, ...updates } : n
-                );
-                setGraph(newNodes, currentEdges);
-                if (updates.nodeLength) setTimeout(() => handleLayout(), 0);
-                break;
-              }
-              case 'NODE_QUICK_STYLE_APPLY': {
-              const { id: nodeId, styleId, resetStyle } = payload;
-                const newNodes = currentNodes.map((n) =>
-                  n.id === nodeId
-                    ? { ...n, ...resetStyle, quickStyleId: styleId }
-                    : n
-                );
-                setGraph(newNodes, currentEdges);
-                setTimeout(() => handleLayout(), 0);
-                break;
-              }
-              case 'NODE_STYLE_PASTE': {
-               const { id: nodeId, style } = payload;
-                const newNodes = currentNodes.map((n) =>
-                  n.id === nodeId ? { ...n, ...style } : n
-                );
-                setGraph(newNodes, currentEdges);
-               setTimeout(() => handleLayout(), 0);
-                break;
-              }
-              case 'NODE_STYLE_RESET': {
-                const { id: nodeId, resetStyle } = payload;
-                const newNodes = currentNodes.map((n) =>
-                  n.id === nodeId ? { ...n, ...resetStyle } : n
-                );
-                setGraph(newNodes, currentEdges);
-                setTimeout(() => handleLayout(), 0);
-                break;
-              }
-              case 'NODE_TOGGLE_COLLAPSE': {
-                const { id: nodeId } = payload;
-                const newNodes = currentNodes.map(n => 
-                  n.id === nodeId ? { ...n, collapsed: !n.collapsed } : n
-                );
-                setGraph(newNodes, currentEdges);
-               break;
-              }
-              case 'ROOT_TOGGLE_COLLAPSE': {
-                const { side } = payload;
-                if (side === 'left' || side === 'right') {
-               setRootCollapse(prev => ({ ...prev, [side as 'left' | 'right']: !prev[side as 'left' | 'right'] }));
-                } else {
-                  console.warn(`Invalid side received in ROOT_TOGGLE_COLLAPSE: ${side}`);
-                }
-                break;
-              }
-              default:
-                console.warn('Unknown WebSocket patch type:', type);
-            }
-          } catch (e) {
-            console.error('Lỗi khi xử lý tin nhắn WebSocket:', e);
-         }
-        };
-      } catch (err) {
-        console.error("Không thể lấy access token cho WebSocket:", err);
-        addToast("Lỗi xác thực WebSocket.", "error");
-      }
-    };
-    connect();
-    // Hàm cleanup
-    return () => {
-      isMounted = false;
-      if (wsRef.current && !isConnecting) {
-       console.log('Closing WebSocket connection...');
-        wsRef.current.close();
-      }
-      wsRef.current = null;
-    };
-  }, [id, isAuthed, isGuest, isDataLoaded, getAccessToken, addToast, setGraph]);
-
   // ================================================
   // Style & Layout Logic
   // ================================================
+  // NOTE: Old WebSocket code removed - now using useRealtime hook
 
 const deepEqualNodes = (nodes1: NodeData[], nodes2: NodeData[]): boolean => {
   if (nodes1.length !== nodes2.length) return false;
@@ -2091,6 +2151,9 @@ const handleFitToScreen = useCallback(() => {
 
 
   const startEditing = useCallback((nodeId: string) => {
+    // --- Collaboration: Permission Check ---
+    if (!promptUpgradeToEditorIfNeeded()) return;
+    
     setSelectedNodeIds([nodeId]);
     setEditingNodeId(nodeId);
     // Giữ camera cố định theo yêu cầu
@@ -2098,7 +2161,7 @@ const handleFitToScreen = useCallback(() => {
       editingInputRef.current?.focus();
       editingInputRef.current?.select();
     }, 50);
-  }, []);
+  }, [promptUpgradeToEditorIfNeeded]);
 
   const justStoppedEditingRef = useRef(false);
 
@@ -2155,18 +2218,20 @@ const handleFitToScreen = useCallback(() => {
         // Không cần trigger thủ công ở đây vì text change sẽ update nodeVisuals
         // và handleLayout đã có dependency vào nodeVisuals
         
-        debouncedPushHistory();
         debouncedPersistData();
         sendPatch('NODE_TEXT_CHANGE', { id: editingNodeId, text: newText }); 
       }
     },
     [
       editingNodeId, nodes, edges, setGraph, 
-      debouncedPushHistory, debouncedPersistData, sendPatch, 
+      debouncedPersistData, sendPatch, 
     ]
   );
 
   const handleAddChild = useCallback((parentId: string) => {
+    // --- Collaboration: Permission Check ---
+    if (!promptUpgradeToEditorIfNeeded()) return;
+    
     // Track renders for this action
     startRenderTracking('addChild');
     const parentNode = nodeMap.get(parentId); 
@@ -2317,6 +2382,9 @@ const handleFitToScreen = useCallback(() => {
   }, [nodes, edges, pushHistory, setGraph, nodeMap, nodeVisuals, startEditing, handleLayout, startNodeBirthAnimation]);
 
   const handleAddSibling = useCallback((nodeId: string) => {
+    // --- Collaboration: Permission Check ---
+    if (!promptUpgradeToEditorIfNeeded()) return;
+    
     // Track renders for this action
     startRenderTracking('addSibling');
     if (nodeId === 'root') { 
@@ -2327,7 +2395,7 @@ const handleFitToScreen = useCallback(() => {
     const siblingNode = nodeMap.get(nodeId); 
     const parentId = siblingNode?.parentId;
 
-    if (!parentId || !siblingNode) return; 
+    if (!parentId || !siblingNode) return;
 
     const parentVisual = nodeVisuals.get(parentId);
     if (!parentVisual) return;
@@ -2425,7 +2493,10 @@ const handleFitToScreen = useCallback(() => {
   }, [nodes, edges, pushHistory, setGraph, nodeMap, nodeVisuals, startEditing, handleLayout, handleAddChild, startNodeBirthAnimation]);
 
   const handleDeleteNode = useCallback(
-    () => { 
+    () => {
+      // --- Collaboration: Permission Check ---
+      if (!promptUpgradeToEditorIfNeeded()) return;
+      
       if (selectedNodeIds.length === 0) return;
 
       const idsToDelete = selectedNodeIds.filter(id => id !== 'root');
@@ -2454,13 +2525,12 @@ const handleFitToScreen = useCallback(() => {
       setGraph(newNodes, newEdges);
       setSelectedNodeIds([]);
       setTimeout(() => handleLayout(), 50);
-      debouncedPushHistory();
       debouncedPersistData();
       sendPatch('NODE_DELETE', { nodeIds: Array.from(nodesToDelete) });
     },
     [
       nodes, edges, setGraph, selectedNodeIds, handleLayout, 
-      debouncedPushHistory, debouncedPersistData, sendPatch,
+      debouncedPersistData, sendPatch, promptUpgradeToEditorIfNeeded,
     ]
   );
 
@@ -2508,8 +2578,6 @@ const handleFitToScreen = useCallback(() => {
     if (needsLayout) {
       setTimeout(() => handleLayout(), 50);
     }
-    
-    debouncedPushHistory();
     
     // Lưu ngay lập tức khi thay đổi style node
     if (id) {
@@ -3200,7 +3268,6 @@ const handleFitToScreen = useCallback(() => {
     
     setGraph(newNodes, edges);
     setTimeout(() => handleLayout(), 50);
-    debouncedPushHistory();
     
     // Lưu ngay lập tức
     if (id) {
@@ -3252,8 +3319,6 @@ const handleFitToScreen = useCallback(() => {
       setTimeout(() => handleLayout(), 50);
     }
     
-    debouncedPushHistory();
-    
     // Lưu ngay lập tức
     if (id) {
       const { relationships, summaries } = useEditorStore.getState();
@@ -3288,8 +3353,6 @@ const handleFitToScreen = useCallback(() => {
     if (needsLayout) {
       setTimeout(() => handleLayout(), 50);
     }
-    
-    debouncedPushHistory();
     
     // Lưu ngay lập tức
     if (id) {
@@ -3418,7 +3481,6 @@ const handleFitToScreen = useCallback(() => {
           }, 60); // Đợi layout hoàn tất
         }
         
-        debouncedPushHistory();
         debouncedPersistData();
         sendPatch('NODE_TOGGLE_COLLAPSE', { id: nodeId }); 
         setTimeout(() => handleLayout(), 0);
@@ -3427,7 +3489,7 @@ const handleFitToScreen = useCallback(() => {
     [
       nodes, edges, setGraph, nodeMap, nodeVisuals, scale, pos, 
       selectedNodeIds, isFormattingToolbarOpen, PANEL_WIDTH,
-      debouncedPushHistory, debouncedPersistData, sendPatch, 
+      debouncedPersistData, sendPatch, 
     ]
   );
 
@@ -3603,6 +3665,25 @@ const handleFitToScreen = useCallback(() => {
   // Render 
   // ================================================
 
+  if (!isDataLoaded || (!isGuest && accessPermissionState === 'loading')) {
+    return (
+      <div className="w-screen h-screen bg-white flex items-center justify-center text-gray-800 gap-2">
+        <Spinner className="w-8 h-8 border-gray-400 border-t-gray-800" />
+        Đang tải...
+      </div>
+    );
+  }
+
+  // --- Collaboration: Access Denied Screen ---
+  if (accessDenied && !isGuest) {
+    return (
+      <AccessDeniedScreen
+        onRequestAccess={handleRequestAccessFromScreen}
+        requestStatus={requestStatus}
+      />
+    );
+  }
+
   if (!isReadyToShow) { 
     return (
       <div className="w-screen h-screen bg-white flex items-center justify-center text-gray-800 gap-2">
@@ -3643,10 +3724,11 @@ const handleFitToScreen = useCallback(() => {
           onDashboard={() => navigate('/dashboard')}
           onUndo={undo}
           onRedo={redo}
-          onShare={() => {
-            navigator.clipboard.writeText(window.location.href);
-            addToast('Đã sao chép link chia sẻ!', 'success');
-          }}
+          onShare={() => setIsShareModalOpen(true)}
+          readOnly={isReadOnly}
+          isOwner={isOwner}
+          pendingRequestsCount={pendingRequests?.length ?? 0}
+          onShowRequests={() => setRequestModalOpen(true)}
           onTheme={toggleTheme} 
           onSave={handleSave}
           isDirty={isDirty}
@@ -3974,6 +4056,17 @@ const handleFitToScreen = useCallback(() => {
                   height: Math.abs(start.y - currentUnscaledPos.y),
                });
               }
+
+              // --- Collaboration: Send Cursor Position ---
+              const stage = e.target.getStage();
+              if (stage) {
+                const pointer = stage.getPointerPosition();
+                if (pointer) {
+                  const worldX = (pointer.x - stage.x()) / stage.scaleX();
+                  const worldY = (pointer.y - stage.y()) / stage.scaleY();
+                  sendCursor(worldX, worldY);
+                }
+              }
             }}
             onMouseLeave={() => {
               // Khi chuột rời khỏi canvas, kết thúc selection nhưng vẫn select nodes trong vùng
@@ -4025,7 +4118,6 @@ const handleFitToScreen = useCallback(() => {
               const newNodes = [...nodes, newNodeData];
               setGraph(newNodes, edges);
               startEditing(newId);
-              debouncedPushHistory();
               debouncedPersistData();
               sendPatch('NODE_CREATE', { node: newNodeData, edge: null });
             }}
@@ -4511,6 +4603,9 @@ const handleFitToScreen = useCallback(() => {
                 visible={selectionRect.visible}
               />
             </Layer>
+
+            {/* --- Collaboration: Cursor Layer --- */}
+            <CursorLayer />
             </Stage>
           </div>
 
@@ -4636,6 +4731,50 @@ const handleFitToScreen = useCallback(() => {
             )}
           </div>
         </div>
+
+        {/* --- Collaboration: Connection Indicator --- */}
+        {!isConnected && isAuthed && !isGuest && (
+          <div className="absolute top-4 left-1/2 transform -translate-x-1/2 z-50 bg-red-500 text-white px-4 py-2 rounded-full shadow-lg flex items-center gap-2 animate-pulse">
+            <svg
+              className="w-4 h-4"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
+              />
+            </svg>
+            <span className="text-sm font-medium">
+              Mất kết nối máy chủ. Đang thử lại...
+            </span>
+          </div>
+        )}
+
+        {/* --- Collaboration: Share Modal --- */}
+        <ShareModal
+          isOpen={isShareModalOpen}
+          onClose={() => setIsShareModalOpen(false)}
+          mindmapId={id!}
+          isOwner={isOwner}
+          pendingRequests={pendingRequests}
+          onApproveRequest={handleApproveAccessRequest}
+          onDenyRequest={handleDenyAccessRequest}
+        />
+
+        {/* --- Collaboration: Access Request Modal (for owner) --- */}
+        {isOwner && !isGuest && (
+          <AccessRequestModal
+            isOpen={isRequestModalOpen}
+            onClose={() => setRequestModalOpen(false)}
+            requests={pendingRequests || []}
+            onApprove={handleApproveAccessRequest}
+            onDeny={handleDenyAccessRequest}
+          />
+        )}
       </div>
     </>
   );

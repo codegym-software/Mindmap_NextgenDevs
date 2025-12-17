@@ -7,6 +7,8 @@ import {
   Spline,
   BracesIcon,
   Presentation,
+  Bell, // Icon chuông
+  PlusSquare // Icon cho Hyperlink (fallback)
 } from 'lucide-react';
 import UserAvatarMenu from '../auth/UserAvatarMenu';
 import { useEditorStore, NodeData } from '../../app/store/useEditorStore'; 
@@ -19,14 +21,14 @@ import HyperlinkModal from './modals/HyperlinkModal';
 import ImageModal from './modals/ImageModal';
 
 type EditorToolbarProps = {
-  onCommitName: () => void; 
+  onCommitName: () => void;
   onDashboard: () => void;
   onUndo: () => void;
   onRedo: () => void;
   onShare: () => void;
   onTheme: () => void;
   onSave: () => void;
-  isDirty: boolean; 
+  isDirty: boolean;
   onToggleFormattingToolbar: () => void;
   presentationMode: boolean;
   onSetPresentationMode: (mode: boolean) => void;
@@ -38,34 +40,41 @@ type EditorToolbarProps = {
   selectedNodeIds: string[];
   onAddChild: () => void;
   onAddSibling: () => void;
-  onSetHyperlink?: () => void; // Đánh dấu optional vì đã có logic mới
+  onSetHyperlink?: () => void;
   onToggleBoundary: () => void;
   onAddRelationship: () => void;
   onAddSummary: () => void;
-  onUpdateNode: (updates: Partial<NodeData>) => void; // [MỚI]
-  stageRef?: any; // [MỚI] Thêm stageRef cho export PNG
+  onUpdateNode: (updates: Partial<NodeData>) => void;
+  stageRef?: any;
+
+  // [MỚI - Từ nhánh release]
+  readOnly?: boolean;
+  pendingRequestsCount?: number;
+  onShowRequests?: () => void;
+  isOwner?: boolean;
 };
 
-const ToolbarButton = ({
+type ToolbarButtonProps = {
+  onClick: () => void;
+  disabled?: boolean;
+  title: string;
+  children: React.ReactNode;
+  className?: string;
+};
+
+const ToolbarButton: React.FC<ToolbarButtonProps> = ({
   onClick,
   disabled,
   title,
   children,
-  className = ""
-}: {
-  onClick: () => void;
-  disabled: boolean;
-  title: string;
-  children: React.ReactNode;
-  className?: string;
+  className = '',
 }) => (
   <button
+    type="button"
     onClick={onClick}
     disabled={disabled}
     className={`p-2 rounded-md text-gray-700 ${className} ${
-      disabled 
-        ? 'opacity-40 cursor-not-allowed' 
-        : 'hover:bg-gray-300/50'
+      disabled ? 'opacity-40 cursor-not-allowed' : 'hover:bg-gray-300/50'
     }`}
     title={title}
   >
@@ -73,8 +82,7 @@ const ToolbarButton = ({
   </button>
 );
 
-
-export default function EditorToolbar({
+const EditorToolbar: React.FC<EditorToolbarProps> = ({
   onCommitName,
   onDashboard, onUndo, onRedo, onShare, onTheme, onSave, isDirty, onToggleFormattingToolbar,
   presentationMode, onSetPresentationMode,
@@ -87,8 +95,13 @@ export default function EditorToolbar({
   onAddRelationship,
   onAddSummary,
   onUpdateNode,
-  stageRef
-}: EditorToolbarProps) {
+  stageRef,
+  // Props mới
+  readOnly = false,
+  pendingRequestsCount = 0,
+  onShowRequests,
+  isOwner = false,
+}) => {
   
   const setMindmapsItems = useMindmapsStore(s => s.set);
   const mindmapItems = useMindmapsStore(s => s.items);
@@ -97,7 +110,7 @@ export default function EditorToolbar({
   const currentMindmapId = useEditorStore(s => s.currentMindmapId); 
   const { nodes } = useEditorStore();
 
-  // [MỚI] State cho Modals
+  // State cho Modals
   const [isLinkModalOpen, setIsLinkModalOpen] = useState(false);
   const [isImageModalOpen, setIsImageModalOpen] = useState(false);
   const [showAiModal, setShowAiModal] = useState(false);
@@ -106,20 +119,23 @@ export default function EditorToolbar({
   const setName = (newName: string) => useEditorStore.setState({ 
     currentMindmapName: newName, 
     isDirty: true,
-    hasManuallyRenamedMindmap: true // Mark that user has manually renamed
+    hasManuallyRenamedMindmap: true
   });
 
+  const safeName = name ?? '';
+
   const handleCommitName = () => {
-    onCommitName(); 
+    if (readOnly) return;
+    onCommitName();
     if (currentMindmapId) {
-        const newItems = mindmapItems.map(item => 
-            item.id === currentMindmapId ? { ...item, name: name } : item
-        );
-        setMindmapsItems({ items: newItems });
+      const newItems = mindmapItems.map(item => 
+        item.id === currentMindmapId ? { ...item, name: safeName } : item
+      );
+      setMindmapsItems({ items: newItems });
     }
   };
 
-  // Logic Zoom
+  // Zoom logic
   const zoomLevels: number[] = [];
   for (let i = 50; i <= 400; i += 50) {
     zoomLevels.push(i);
@@ -132,8 +148,10 @@ export default function EditorToolbar({
 
   const handleZoomSelect = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const value = e.target.value;
-    if (value === "fit") {
+    if (value === 'fit') {
       onFitToScreen();
+    } else if (value === 'custom') {
+      // no-op
     } else {
       onSetZoom(Number(value) / 100);
     }
@@ -152,7 +170,7 @@ export default function EditorToolbar({
     onUpdateNode({ imageUrl: url });
   };
 
-  // Presentation mode: hide toolbars and focus canvas
+  // Presentation mode effect
   React.useEffect(() => {
     if (presentationMode) {
       document.body.classList.add('presentation-mode');
@@ -165,91 +183,103 @@ export default function EditorToolbar({
   return (
     <>
     {!presentationMode && (
-      <div className="fixed top-0 left-0 right-0 h-12 bg-[#F5F5F5] border-b border-gray-200 flex items-center px-4 z-40" style={{ fontFamily: 'NeverMind' }}>
+      <div className="fixed top-0 left-0 right-0 h-12 bg-[#F5F5F5] border-b border-gray-200 flex items-center px-4 z-40" style={{ fontFamily: 'Arial' }}>
 
+        {/* 1. PHẦN TRÁI: Logo + Tên Mindmap */}
         <div className="flex items-center gap-2 flex-shrink-0" style={{ minWidth: '300px' }}>
           <a href="/dashboard" title="Về Dashboard" className="flex items-center justify-center rounded-lg hover:bg-gray-300/60 transition-colors ml-9">
             <img src="/icons/logo.png" alt="Logo" className="w-8 h-8 rounded-md object-cover" />
           </a>
           <div className="w-px h-6 bg-gray-300 mx-2" />
           <input
-            value={name}
+            value={safeName}
             onChange={(e) => setName(e.target.value)} 
             onKeyDown={(e) => e.key === "Enter" && (e.target as HTMLInputElement).blur()}
             onBlur={handleCommitName}
-            className="px-3 py-1.5 rounded-md bg-transparent text-black outline-none ring-1 ring-transparent hover:bg-gray-300/50 focus:bg-white focus:ring-aurora-500 w-64 transition-all"
-            placeholder="Đặt tên mindmap…"
+            disabled={readOnly}
+            className={`px-3 py-1.5 rounded-md bg-transparent text-black outline-none transition-all w-64 ${
+              readOnly
+                ? 'opacity-70 cursor-not-allowed'
+                : 'ring-1 ring-transparent hover:bg-gray-300/50 focus:bg-white focus:ring-aurora-500'
+            }`}
+            placeholder={readOnly ? 'Mindmap (chỉ xem)' : 'Đặt tên mindmap…'}
+            title={readOnly ? 'Bạn đang ở chế độ chỉ xem' : 'Nhấn Enter để lưu tên'}
           />
         </div>
 
-        <div className="flex-grow flex items-center justify-center gap-2">
-          <ToolbarButton
-            onClick={onAddChild}
-            disabled={!isSingleNodeFocused} 
-            title="Thêm Node con (Tab)"
-          >
-            <AlignHorizontalJustifyCenter size={20} />
-          </ToolbarButton>
+        {/* 2. PHẦN GIỮA: Các nút thao tác (ẨN HOÀN TOÀN khi readOnly) */}
+        {!readOnly && (
+          <div className="flex-grow flex items-center justify-center gap-2">
+            <ToolbarButton
+              onClick={onAddChild}
+              disabled={!isSingleNodeFocused}
+              title="Thêm Node con (Tab)"
+            >
+              <AlignHorizontalJustifyCenter size={20} />
+            </ToolbarButton>
 
-          <ToolbarButton
-            onClick={onAddSibling}
-            disabled={!isNotRootAndSingle} 
-            title="Thêm Node anh em (Enter)"
-          >
-            <AlignStartVertical size={20} />
-          </ToolbarButton>
-          
-          <div className="w-px h-6 bg-gray-300 mx-2" />
+            <ToolbarButton
+              onClick={onAddSibling}
+              disabled={!isNotRootAndSingle}
+              title="Thêm Node anh em (Enter)"
+            >
+              <AlignStartVertical size={20} />
+            </ToolbarButton>
 
-          <ToolbarButton
-            onClick={onToggleBoundary}
-            disabled={!isSingleNodeFocused}
-            title="Tạo hoặc xóa đường viền"
-            className={selectedNode?.boundary ? 'bg-gray-300/80' : ''}
-          >
-            <BoxSelect size={20} />
-          </ToolbarButton>
-          
-          <ToolbarButton
-            onClick={onAddRelationship}
-            disabled={!isSingleNodeFocused}
-            title="Tạo mối quan hệ (Relationship)"
-          >
-            <Spline size={20} />
-          </ToolbarButton>
-          
-          <ToolbarButton
-            onClick={onAddSummary}
-            disabled={!isSingleNodeFocused}
-            title="Tạo tóm tắt (Summary)"
-          >
-            <BracesIcon size={20} />
-          </ToolbarButton>
-          
-          <div className="w-px h-6 bg-gray-300 mx-2" />
-          
-          <InsertDropdown 
-            disabled={!isSingleNodeFocused}
-            onInsertLink={() => setIsLinkModalOpen(true)}
-            onInsertImage={() => setIsImageModalOpen(true)}
-          />
-          
-          {/* <div className="w-px h-6 bg-gray-300 mx-2" />
+            <div className="w-px h-6 bg-gray-300 mx-2" />
 
-          <button
-            onClick={() => setShowAiModal(true)}
-            className="px-3 py-1.5 rounded-lg text-sm font-semibold text-white bg-gradient-to-r from-aurora-500 via-blush-500 to-amber-500 shadow-sm hover:shadow-md active:scale-95 transition-all"
-            title="Magic AI"
-          >
-            Magic AI
-          </button> */}
-        </div>
+            <ToolbarButton
+              onClick={onToggleBoundary}
+              disabled={!isSingleNodeFocused}
+              title="Tạo hoặc xóa đường viền"
+              className={selectedNode?.boundary ? 'bg-gray-300/80' : ''}
+            >
+              <BoxSelect size={20} />
+            </ToolbarButton>
+            
+            <ToolbarButton
+              onClick={onAddRelationship}
+              disabled={!isSingleNodeFocused}
+              title="Tạo mối quan hệ (Relationship)"
+            >
+              <Spline size={20} />
+            </ToolbarButton>
+            
+            <ToolbarButton
+              onClick={onAddSummary}
+              disabled={!isSingleNodeFocused}
+              title="Tạo tóm tắt (Summary)"
+            >
+              <BracesIcon size={20} />
+            </ToolbarButton>
+            
+            <div className="w-px h-6 bg-gray-300 mx-2" />
+            
+            <InsertDropdown 
+              disabled={!isSingleNodeFocused}
+              onInsertLink={() => setIsLinkModalOpen(true)}
+              onInsertImage={() => setIsImageModalOpen(true)}
+            />
 
+            {/* AI Button Placeholder */}
+            {/* <div className="w-px h-6 bg-gray-300 mx-2" />
+            <button onClick={() => setShowAiModal(true)} ... >Magic AI</button> */}
+          </div>
+        )}
+
+        {/* 3. PHẦN PHẢI: Zoom, Undo, Save, Chuông, Share... */}
         <div className="flex items-center gap-2 flex-shrink-0">
-          <button onClick={onUndo} className="p-2 rounded-md hover:bg-gray-300/50 text-gray-700" title="Hoàn tác (Ctrl+Z)"><Undo size={20} /></button>
-          <button onClick={onRedo} className="p-2 rounded-md hover:bg-gray-300/50 text-gray-700" title="Làm lại (Ctrl+Y)"><Redo size={20} /></button>
-          <div className="w-px h-6 bg-gray-300 mx-2" />
+          
+          {/* Undo/Redo - Ẩn khi readOnly */}
+          {!readOnly && (
+            <>
+              <button onClick={onUndo} className="p-2 rounded-md hover:bg-gray-300/50 text-gray-700" title="Hoàn tác (Ctrl+Z)"><Undo size={20} /></button>
+              <button onClick={onRedo} className="p-2 rounded-md hover:bg-gray-300/50 text-gray-700" title="Làm lại (Ctrl+Y)"><Redo size={20} /></button>
+              <div className="w-px h-6 bg-gray-300 mx-2" />
+            </>
+          )}
 
+          {/* Zoom Controls */}
           <button onClick={onZoomOut} className="p-2 rounded-md hover:bg-gray-300/50 text-gray-700" title="Thu nhỏ (Ctrl + Scroll)">
             <ZoomOut size={20} />
           </button>
@@ -275,36 +305,70 @@ export default function EditorToolbar({
 
           <div className="w-px h-6 bg-gray-300 mx-2" />
 
+          {/* Save Button */}
           <button 
             onClick={onSave}
-            disabled={!isDirty}
-            title={isDirty ? "Lưu thay đổi (Ctrl+S)" : "Chưa có gì thay đổi"}
+            disabled={!isDirty || readOnly}
+            className={`p-2 rounded-md transition-all ${
+              !isDirty || readOnly
+                ? 'opacity-40 cursor-not-allowed'
+                : 'hover:bg-gray-300/50 text-gray-700'
+            }`}
+            title={readOnly ? "Chế độ chỉ xem" : isDirty ? "Lưu thay đổi (Ctrl+S)" : "Đã lưu"}
           >
             <Save size={20} />
           </button>
 
-          
+          <div className="w-px h-6 bg-gray-300 mx-2" />
 
-        <button onClick={onShare} className="p-2 rounded-md hover:bg-gray-300/50 text-gray-700" title="Chia sẻ"><Share2 size={20} /></button>
-        
-        <ExportButton 
-          nodes={useEditorStore.getState().nodes}
-          edges={useEditorStore.getState().edges}
-          stageRef={stageRef}
-          mindmapName={name || 'mindmap'}
-        />
-        
-        <button
+          {/* ✅ NÚT CHUÔNG – chỉ hiện khi là Owner */}
+          {isOwner && (
+            <button
+              type="button"
+              onClick={() => onShowRequests && onShowRequests()}
+              className={`relative p-2 rounded-md transition-colors ${
+                pendingRequestsCount > 0
+                  ? 'bg-red-50 text-red-600 hover:bg-red-100'
+                  : 'text-gray-700 hover:bg-gray-300/50'
+              }`}
+              title={
+                pendingRequestsCount > 0
+                  ? `Bạn có ${pendingRequestsCount} yêu cầu truy cập đang chờ`
+                  : 'Yêu cầu truy cập'
+              }
+            >
+              <Bell className="w-5 h-5" />
+              {pendingRequestsCount > 0 && (
+                <span className="absolute top-1 right-1 w-2.5 h-2.5 bg-red-600 rounded-full border-2 border-white"></span>
+              )}
+            </button>
+          )}
+
+          <button onClick={onShare} className="p-2 rounded-md hover:bg-gray-300/50 text-gray-700" title="Chia sẻ"><Share2 size={20} /></button>
+          
+          <ExportButton 
+            nodes={useEditorStore.getState().nodes}
+            edges={useEditorStore.getState().edges}
+            stageRef={stageRef}
+            mindmapName={name || 'mindmap'}
+          />
+          
+          <button
             onClick={() => onSetPresentationMode(true)}
             className="p-2 rounded-md hover:bg-gray-300/50 text-gray-700"
             title="Trình chiếu"
           >
             <Presentation size={20} />
-        </button>
+          </button>
 
-        <button onClick={onToggleFormattingToolbar} className="p-2 rounded-md hover:bg-gray-300/50 text-gray-700" title="Bật/tắt thanh định dạng"><PanelRight size={20} /></button>
+          {/* Formatting Toolbar Toggle - Ẩn khi readOnly */}
+          {!readOnly && (
+            <button onClick={onToggleFormattingToolbar} className="p-2 rounded-md hover:bg-gray-300/50 text-gray-700" title="Bật/tắt thanh định dạng">
+              <PanelRight size={20} />
+            </button>
+          )}
 
-        <div className="w-px h-6 bg-gray-300 mx-2" />
+          <div className="w-px h-6 bg-gray-300 mx-2" />
           <UserAvatarMenu />
         </div>
       </div>
@@ -365,4 +429,6 @@ export default function EditorToolbar({
     />
     </>
   );
-}
+};
+
+export default EditorToolbar;

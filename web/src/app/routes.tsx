@@ -7,8 +7,14 @@ import Logout from "../pages/Logout";
 export const router = createBrowserRouter([
   { path: "/", element: <Dashboard /> },
   { path: "/dashboard", element: <Dashboard /> },
-  { path: "/editor", element: <Editor /> },        // guest editor
-  { path: "/editor/:id", element: <Editor /> },    // authed editor
+  
+  // Editor chính (Có thể sửa nếu có quyền)
+  { path: "/editor", element: <Editor /> },        
+  { path: "/editor/:id", element: <Editor /> },    
+  
+  // [MỚI] Route Share (Luôn luôn Read-only)
+  { path: "/share/:id", element: <Editor mode="share" /> }, 
+
   { path: "/callback", element: <Callback /> },
   { path: "/logout", element: <Logout /> },
 ]);

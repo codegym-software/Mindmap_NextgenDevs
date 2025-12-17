@@ -2,6 +2,7 @@
 
 package com.example.mindmap.features.mindmap.content;
 
+import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonFormat;
 
 public class NodeStyle {

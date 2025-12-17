@@ -94,7 +94,7 @@ export default function FormattingToolbar({
   }, [isDisabled]); 
 
   return (
-    <div className="fixed top-12 right-0 h-[calc(100vh-3rem)] bg-white border-l border-gray-200 shadow-sm z-30 flex flex-col text-gray-700" style={{ width: '280px', fontFamily: 'NeverMind' }}> 
+    <div className="fixed top-12 right-0 h-[calc(100vh-3rem)] bg-white border-l border-gray-200 shadow-sm z-30 flex flex-col text-gray-700" style={{ width: '280px', fontFamily: 'Arial' }}> 
       {/* 1. Header (Tabs) */}
       <TabHeader activeTab={activeTab} setActiveTab={setActiveTab} isDisabled={isDisabled} />
 
@@ -140,6 +140,7 @@ type TabHeaderProps = {
   setActiveTab: (tab: 'style' | 'map') => void;
   isDisabled: boolean;
 };
+
 function TabHeader({ activeTab, setActiveTab, isDisabled }: TabHeaderProps) {
   return (
     <div className="flex border-b border-gray-200 bg-gray-50">
@@ -174,6 +175,7 @@ type MapPanelProps = {
   onSetGlobalBranchColor: (color: string) => void;
   onLayoutAll?: () => void; 
 };
+
 function MapPanel({
   globalStructure,
   onApplyLayout,
@@ -184,14 +186,12 @@ function MapPanel({
   onSetGlobalFont,
   onSetBranchLineWidth,
   onToggleColoredBranch,
-  // [SỬA] Nhận prop
   onSetGlobalBranchColor,
   onLayoutAll,
 }: MapPanelProps) {
   const currentFont = useEditorStore((s) => s.globalFont);
   const currentLineWidth = useEditorStore((s) => s.branchLineWidth);
   const globalBranchColor = useEditorStore((s) => s.globalBranchColor);
-  const activeTheme = colorThemes[activeColorThemeId];
 
   return (
     <div className="p-4 space-y-4">
@@ -234,10 +234,7 @@ function MapPanel({
 
       {/* 4. Phông chữ toàn cục */}
       <RowItem label="Phông chữ">
-        <CustomSelect
-          value={currentFont}
-          onChange={onSetGlobalFont}
-        >
+        <CustomSelect value={currentFont} onChange={onSetGlobalFont}>
           {fonts.map((font) => (
             <Option key={font.value} value={font.value}>
               <span style={{ fontFamily: font.value }}>{font.name}</span>
@@ -263,7 +260,6 @@ function MapPanel({
           </CustomSelect>
         </div>
       </ColorItem>
-  
     </div>
   );
 }
@@ -281,6 +277,7 @@ type NodeStylePanelProps = {
   onPasteStyle: () => void;
   onResetStyle: () => void;
 };
+
 function NodeStylePanel({
   selectedIds,
   currentNode,
@@ -433,17 +430,19 @@ function NodeStylePanel({
                 handleUpdate({ nodeLength: val });
               }}
               onChange={(e) => {
-                const val = e.target.value.replace(/[^0-9]/g, '');
-                setLocalLength(val === '' ? 'fit' : Number(val));
+                const raw = e.target.value.replace(/[^0-9]/g, '');
+                setLocalLength(raw === '' ? 'fit' : Number(raw));
               }}
               className={`w-full flex-1 p-1.5 ${INPUT_BG} rounded text-sm outline-none border border-transparent focus:border-blue-500 focus:ring-1 focus:ring-blue-500`}
             />
             <button
               onClick={() => {
                 setLocalLength('fit');
-                handleUpdate({ nodeLength: 'fit' });
+                handleUpdate({ nodeLength: 'fit' as any });
               }}
-              className={`p-1.5 rounded text-sm ${style.nodeLength === 'fit' ? BUTTON_ACTIVE_BG : BUTTON_BG}`}
+              className={`p-1.5 rounded text-sm ${
+                style.nodeLength === 'fit' ? BUTTON_ACTIVE_BG : BUTTON_BG
+              }`}
             >
               Fit
             </button>
@@ -482,12 +481,20 @@ function NodeStylePanel({
           <TextFormatButton
             icon={<Bold size={16} />}
             isActive={style.fontWeight === 'bold'}
-            onClick={() => handleUpdate({ fontWeight: style.fontWeight === 'bold' ? 'normal' : 'bold' })}
+            onClick={() =>
+              handleUpdate({
+                fontWeight: style.fontWeight === 'bold' ? 'normal' : 'bold',
+              })
+            }
           />
           <TextFormatButton
             icon={<Italic size={16} />}
             isActive={style.fontStyle === 'italic'}
-            onClick={() => handleUpdate({ fontStyle: style.fontStyle === 'italic' ? 'normal' : 'italic' })}
+            onClick={() =>
+              handleUpdate({
+                fontStyle: style.fontStyle === 'italic' ? 'normal' : 'italic',
+              })
+            }
           />
           <TextFormatButton
             icon={<Underline size={16} />}
@@ -536,7 +543,12 @@ function NodeStylePanel({
             }
             isActive={style.textCase !== 'normal'}
             onClick={() => {
-              const nextCase = style.textCase === 'normal' ? 'uppercase' : (style.textCase === 'uppercase' ? 'lowercase' : 'normal');
+              const nextCase =
+                style.textCase === 'normal'
+                  ? 'uppercase'
+                  : style.textCase === 'uppercase'
+                  ? 'lowercase'
+                  : 'normal';
               handleUpdate({ textCase: nextCase as NodeData['textCase'] });
             }}
           />
@@ -584,7 +596,7 @@ function NodeStylePanel({
           </div>
         </ColorItem>
       </CollapsiblePanel>
-      
+
       {/* 6. Thao tác nhanh */}
       <CollapsiblePanel label="Thao tác" defaultOpen>
         <div className="grid grid-cols-3 gap-1">
@@ -597,24 +609,23 @@ function NodeStylePanel({
   );
 }
 
-
 // =================================================================================
 // Components con (Helpers)
 // =================================================================================
 
-// Nút Tab
 type TabButtonProps = {
   label: string;
   isActive: boolean;
   onClick: () => void;
   disabled?: boolean;
 };
+
 function TabButton({ label, isActive, onClick, disabled }: TabButtonProps) {
   return (
     <button
       onClick={onClick}
       disabled={disabled}
-      className={`flex-1 flex items-center justify-center gap-2 px-4 py-3 text-sm font-medium outline-none
+      className={`flex-1 flex items-center justify_center gap-2 px-4 py-3 text-sm font-medium outline-none
         ${isActive ? 'border-b-2 border-blue-500 text-blue-600' : 'text-gray-500 hover:bg-gray-100'}
         ${disabled ? 'opacity-50 cursor-not-allowed' : ''}
       `}
@@ -624,12 +635,12 @@ function TabButton({ label, isActive, onClick, disabled }: TabButtonProps) {
   );
 }
 
-// Nút chọn cấu trúc
 type StructureButtonProps = {
   label: React.ReactNode;
   isActive: boolean;
   onClick: () => void;
 };
+
 function StructureButton({ label, isActive, onClick }: StructureButtonProps) {
   return (
     <button
@@ -653,29 +664,27 @@ function RowItem({ label, children }: { label: string, children: React.ReactNode
   );
 }
 
-
-// Mục chọn màu
 type ColorItemProps = {
   label: string;
   color: string;
   onChange: (color: string) => void;
   children?: React.ReactNode;
 };
+
 function ColorItem({ label, color, onChange, children }: ColorItemProps) {
   const [showPicker, setShowPicker] = useState(false);
   const pickerRef = useRef<HTMLDivElement>(null);
 
-  // Đóng khi click ra ngoài
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
       if (pickerRef.current && !pickerRef.current.contains(event.target as Node)) {
         setShowPicker(false);
       }
     }
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [pickerRef]);
-  
+
   const simpleColors = [
     '#FFFFFF', '#E2E8F0', '#94A3B8', '#475569', '#1E293B', '#000000',
     '#FECACA', '#F87171', '#DC2626', '#991B1B',
@@ -697,9 +706,12 @@ function ColorItem({ label, color, onChange, children }: ColorItemProps) {
         />
       </div>
       {showPicker && (
-        <div ref={pickerRef} className="absolute right-0 top-full mt-1 w-48 bg-white shadow-lg rounded-md border border-gray-300 p-2 z-10">
+        <div
+          ref={pickerRef}
+          className="absolute right-0 top-full mt-1 w-48 bg-white shadow-lg rounded-md border border-gray-300 p-2 z-10"
+        >
           <div className="grid grid-cols-6 gap-1">
-            {simpleColors.map(c => (
+            {simpleColors.map((c) => (
               <button
                 key={c}
                 className="w-6 h-6 rounded-sm border border-gray-200 hover:scale-110 hover:shadow-md transition-transform"
@@ -717,16 +729,16 @@ function ColorItem({ label, color, onChange, children }: ColorItemProps) {
   );
 }
 
-// Nút Kiểu Nhanh
 type QuickStyleButtonProps = {
   label: string;
   styleId: QuickStyleId;
   activeTheme: ColorTheme;
   onClick: () => void;
 };
+
 function QuickStyleButton({ label, styleId, activeTheme, onClick }: QuickStyleButtonProps) {
   const style = getNodeComputedStyle({ quickStyleId: styleId } as NodeData, activeTheme, '');
-  
+
   const computedFill = style?.color || '#FFFFFF';
   const computedStroke = style?.borderColor || '#CCCCCC';
   const computedTextColor = style.textColor || '#333333';
@@ -748,12 +760,12 @@ function QuickStyleButton({ label, styleId, activeTheme, onClick }: QuickStyleBu
   );
 }
 
-// Nút Format Text
 type TextFormatButtonProps = {
   icon: React.ReactNode;
   isActive?: boolean;
   onClick: () => void;
 };
+
 function TextFormatButton({ icon, isActive, onClick }: TextFormatButtonProps) {
   return (
     <button
@@ -765,29 +777,28 @@ function TextFormatButton({ icon, isActive, onClick }: TextFormatButtonProps) {
   );
 }
 
-// Select Đa năng
 type CustomSelectProps = {
   value: string | number | undefined;
   onChange: (value: string) => void;
   children: React.ReactNode;
 };
+
 function CustomSelect({ value, onChange, children }: CustomSelectProps) {
   const [isOpen, setIsOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
-  
+
   const selectedChild = React.Children.toArray(children).find(
     (child) => (child as React.ReactElement).props.value === value
   ) as React.ReactElement;
 
-  // Đóng khi click ra ngoài
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
       if (ref.current && !ref.current.contains(event.target as Node)) {
         setIsOpen(false);
       }
     }
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [ref]);
 
   return (
@@ -825,6 +836,7 @@ type OptionProps = {
   onClick?: () => void;
   isActive?: boolean;
 };
+
 function Option({ value, children, onClick, isActive }: OptionProps) {
   return (
     <div
@@ -839,12 +851,12 @@ function Option({ value, children, onClick, isActive }: OptionProps) {
   );
 }
 
-// Khung có thể thu gọn
 type CollapsiblePanelProps = {
   label: string;
   children: React.ReactNode;
   defaultOpen?: boolean;
 };
+
 function CollapsiblePanel({ label, children, defaultOpen = true }: CollapsiblePanelProps) {
   const [isOpen, setIsOpen] = useState(defaultOpen);
   return (
@@ -856,11 +868,7 @@ function CollapsiblePanel({ label, children, defaultOpen = true }: CollapsiblePa
         {label}
         {isOpen ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
       </button>
-      {isOpen && (
-        <div className="pt-2 space-y-3">
-          {children}
-        </div>
-      )}
+      {isOpen && <div className="pt-2 space-y-3">{children}</div>}
     </div>
   );
 }

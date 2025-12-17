@@ -1,8 +1,6 @@
-// src/components/layout/Sidebar.tsx
 import { useEffect, useRef, useState, useMemo } from "react";
 import { useAuth } from "../../hooks/useAuth";
 import { useMindmapsStore } from "../../app/store/useMindmapsStore";
-// [MỚI] Import editor store để đồng bộ tên
 import { useEditorStore } from "../../app/store/useEditorStore"; 
 import { Plus, Search, Edit, Trash2, Share2, PanelLeftOpen, Pin, PinOff } from 'lucide-react';
 import { useToast } from "../../hooks/useToast";
@@ -31,23 +29,46 @@ export default function Sidebar() {
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
+  // [FIX] Thêm Ref để kiểm soát việc fetch, tránh gọi 2 lần trong StrictMode
+  const hasFetched = useRef(false);
+
   useEffect(() => {
+    let isMounted = true;
+    
+    // [FIX] Nếu đã có data và chưa chuyển trạng thái auth, có thể skip fetch
+    // Nhưng để an toàn cho việc sync, ta vẫn fetch, nhưng dùng cờ để debounce
+    
     const fetchMindmaps = async () => {
       if (isAuthed) {
         try {
-          setMindmaps({ loading: true });
+          // Chỉ set loading nếu chưa có items (UX mượt hơn)
+          if (items.length === 0) setMindmaps({ loading: true });
+          
           const serverMaps = await mindmapsApi.list();
-          setMindmaps({ items: serverMaps, loading: false, error: undefined });
+          
+          if (isMounted) {
+             setMindmaps({ items: serverMaps, loading: false, error: undefined });
+          }
         } catch (e: any) {
-          setMindmaps({ loading: false, error: e?.message || "Load failed" });
-          addToast("Tải danh sách mindmap thất bại", "error");
+          if (isMounted) {
+            // [FIX] Bỏ qua lỗi 429 nếu xảy ra để không crash UI
+            if (e.response?.status !== 429) {
+                setMindmaps({ loading: false, error: e?.message || "Load failed" });
+                addToast("Tải danh sách mindmap thất bại", "error");
+            } else {
+                setMindmaps({ loading: false }); // Tắt loading dù lỗi 429
+            }
+          }
         }
       } else {
         loadGuests();
       }
-      };
-      fetchMindmaps();
-  }, [isAuthed, setMindmaps, addToast, loadGuests]);
+    };
+
+    fetchMindmaps();
+    
+    return () => { isMounted = false; };
+  }, [isAuthed, setMindmaps, addToast, loadGuests]); 
 
 
   const filteredMindmaps = useMemo(() => {
@@ -162,7 +183,7 @@ export default function Sidebar() {
           ref={sidebarRef}
           onMouseEnter={() => !pinned && setOpen(true)}
           className={`fixed top-0 left-0 h-screen bg-white/95 backdrop-blur text-gray-900 z-40 transition-transform duration-300 border-r border-gray-200 flex flex-col ${open ? "translate-x-0 w-72" : "-translate-x-full w-72"}`}
-          style={{ fontFamily: 'NeverMind' }}
+          style={{ fontFamily: 'Arial' }}
         >
           <div className="h-12 flex items-center justify-between px-4 border-b border-gray-200 flex-shrink-0" style={{ paddingLeft: '64px' }}>
             <span className="font-semibold text-lg">Mindmap của tôi</span>

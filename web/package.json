@@ -16,10 +16,10 @@
     "axios": "^1.7.2",
     "dagre": "^0.8.5",
     "html2canvas": "^1.4.1",
+    "firebase": "^12.6.0",
     "js-cookie": "^3.0.5",
     "jspdf": "^3.0.3",
     "konva": "^9.3.16",
-    "lodash": "^4.17.21",
     "lucide-react": "^0.545.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
@@ -32,7 +32,6 @@
     "zustand": "^5.0.8"
   },
   "devDependencies": {
-    "@types/lodash": "^4.17.20",
     "@types/react": "^18.3.3",
     "@types/react-dom": "^18.3.0",
     "@vitejs/plugin-react": "^5.0.3",

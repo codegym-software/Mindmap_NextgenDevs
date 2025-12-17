@@ -13,10 +13,7 @@ import RegisterForm from './RegisterForm';
 import ConfirmForm from './ConfirmForm';
 import ForgotForm from './ForgotForm';
 import ResetForm from './ResetForm';
-
-// [MERGE] Sử dụng phiên bản "light mode" từ feature/tt
-// Logic bên trong (handleLogin, handleRegister, v.v.)
-// đã khớp với logic GĐ 1-10 của chúng ta.
+import api from '../../services/api'; // Import API để gọi sync
 
 type Props = {
   isOpen: boolean;
@@ -88,14 +85,28 @@ const AuthModal: React.FC<Props> = ({ isOpen, onClose, initialMode = 'login' }) 
     setErrors({});
     
     try {
+        // 1. Login bằng SDK Cognito
         const session = await cognitoDirect.signIn(formData.email, formData.password);
+        
         const tokens: Tokens = {
             id_token: session.getIdToken().getJwtToken(),
             access_token: session.getAccessToken().getJwtToken(),
             refresh_token: session.getRefreshToken().getToken(),
             expires_at: session.getIdToken().getExpiration(), 
         };
+        
+        // 2. Lưu token (Lúc này API Interceptor đã có token để dùng)
         setAuthTokens(tokens);
+
+        // 3. [QUAN TRỌNG] Gọi sync user ngay
+        try {
+            await api.post("/users/sync-cognito");
+            console.log("Synced user successfully");
+        } catch (syncErr) {
+            console.error("Sync user warning:", syncErr);
+            // Không block login nếu sync lỗi, nhưng nên log để debug
+        }
+
         onClose();
         
         // [FIX] Chuyển hướng về dashboard sau khi login thành công
@@ -158,7 +169,7 @@ const AuthModal: React.FC<Props> = ({ isOpen, onClose, initialMode = 'login' }) 
         await cognitoDirect.confirmSignUp(usernameForConfirm, confirmCode);
         setInfoMessage('Xác nhận thành công! Bây giờ bạn có thể đăng nhập.');
         setMode('login');
-        setUsernameForConfirm(''); 
+        // Không xóa usernameForConfirm ngay để user đỡ phải gõ lại email nếu muốn login ngay
     } catch (err: any) {
         let message = 'Mã xác nhận không hợp lệ.';
         if (err.name === 'CodeMismatchException') {

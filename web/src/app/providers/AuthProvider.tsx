@@ -1,11 +1,11 @@
 // src/app/providers/AuthProvider.tsx
 import React, { createContext, useCallback, useEffect, useMemo, useState } from "react";
 import { 
-  loadTokens, 
-  saveTokens, 
-  clearTokens, 
-  isExpired, // [MỚI] Import isExpired
-  type Tokens 
+loadTokens, 
+saveTokens, 
+clearTokens, 
+isExpired, // [MỚI] Import isExpired
+type Tokens 
 } from "../../services/authStorage";
 import { signOut } from "../../auth/cognitoDirect"; // Chỉ import signOut
 import AuthModal from "../../features/auth/AuthModal";
@@ -116,29 +116,29 @@ const logout = useCallback(() => {
 }, []);
 
 /**
- * [ĐÃ CẬP NHẬT] Logic làm mới Token (Fix Lỗi Gốc)
- * * Thay thế `getCurrentUserSession()` (gây lỗi domain conflict)
- * bằng `refreshToken()` (gọi /oauth2/token).
- */
+* [ĐÃ CẬP NHẬT] Logic làm mới Token (Fix Lỗi Gốc)
+* * Thay thế `getCurrentUserSession()` (gây lỗi domain conflict)
+* bằng `refreshToken()` (gọi /oauth2/token).
+*/
 const ensureFreshAccessToken = useCallback(async () => {
-  // 1. Lấy token hiện tại từ state (quan trọng, không phải localStorage)
-  const currentTokens = tokens; 
+// 1. Lấy token hiện tại từ state (quan trọng, không phải localStorage)
+const currentTokens = tokens; 
 
-  if (!currentTokens?.access_token) {
-    throw new Error("No access token found.");
-  }
+if (!currentTokens?.access_token) {
+throw new Error("No access token found.");
+}
 
-  // 2. Kiểm tra xem token có SẮP hết hạn không
-  // (isExpired check 30s trước khi hết hạn)
-  if (!isExpired(currentTokens, 30)) {
-    // 2a. Token vẫn còn tốt, trả về
-    return currentTokens.access_token;
-  }
+// 2. Kiểm tra xem token có SẮP hết hạn không
+// (isExpired check 30s trước khi hết hạn)
+if (!isExpired(currentTokens, 30)) {
+// 2a. Token vẫn còn tốt, trả về
+return currentTokens.access_token;
+}
 
-  // 2b. Token đã hết hạn, cần làm mới
-  if (!currentTokens.refresh_token) {
-    throw new Error("No refresh token available.");
-  }
+// 2b. Token đã hết hạn, cần làm mới
+if (!currentTokens.refresh_token) {
+throw new Error("No refresh token available.");
+}
 
   console.log("Access token expired, attempting refresh...");
 
