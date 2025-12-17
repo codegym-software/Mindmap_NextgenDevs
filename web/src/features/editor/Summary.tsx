@@ -1,0 +1,321 @@
+import React, { useState } from 'react';
+import { Path, Rect, Circle as KonvaCircle, Text as KonvaText, Group } from 'react-konva';
+import { SummaryData, NodeData } from '../../app/store/useEditorStore';
+
+type SummaryProps = {
+  summary: SummaryData;
+  nodes: NodeData[];
+  nodeVisuals: Map<string, { style: any; box: any }>;
+  isSelected?: boolean;
+  onUpdateRange?: (summaryId: string, newStartNodeId: string, newEndNodeId: string) => void;
+  onClick?: () => void;
+  onDelete?: () => void;
+  level?: number; // [MỚI] Nhận level từ Editor để đẩy brace ra xa
+};
+
+const Summary: React.FC<SummaryProps> = ({ 
+  summary, 
+  nodes, 
+  nodeVisuals, 
+  isSelected = false,
+  onUpdateRange,
+  onClick,
+  onDelete,
+  level = 0 // [MỚI] Mặc định là 0 (sát nhất)
+}) => {
+  const startVisual = nodeVisuals.get(summary.startNodeId);
+  const endVisual = nodeVisuals.get(summary.endNodeId);
+  
+  if (!startVisual || !endVisual) return null;
+
+  const { style: startStyle } = startVisual;
+
+  // Lấy tất cả nodes con của parent
+  // Find parent and its direct children (siblings) — keep them sorted by visual Y to avoid repeated sorts
+  const parentNode = nodes.find(n => n.id === summary.parentId);
+  if (!parentNode) return null;
+  
+  const siblings = nodes.filter(n => n.parentId === summary.parentId);
+  const siblingsSorted = siblings.slice().sort((a, b) => {
+    const aV = nodeVisuals.get(a.id)?.style?.y ?? 0;
+    const bV = nodeVisuals.get(b.id)?.style?.y ?? 0;
+    return aV - bV;
+  });
+  
+  // Xác định side (left/right)
+  const side = startStyle.side || 'right';
+  const isLeft = side === 'left';
+
+  // Local state cho dragging resize handles
+  const [localStartNodeId, setLocalStartNodeId] = useState(summary.startNodeId);
+  const [localEndNodeId, setLocalEndNodeId] = useState(summary.endNodeId);
+
+  const currentStartVisual = nodeVisuals.get(localStartNodeId);
+  const currentEndVisual = nodeVisuals.get(localEndNodeId);
+
+  if (!currentStartVisual || !currentEndVisual) return null;
+
+  // Nếu node bị collapse, dùng chính node đó
+  const getLeafNodesInRange = () => {
+    // Use siblingsSorted to find range indices
+    const startIdx = siblingsSorted.findIndex(n => n.id === localStartNodeId);
+    const endIdx = siblingsSorted.findIndex(n => n.id === localEndNodeId);
+    const [minIdx, maxIdx] = [Math.min(startIdx, endIdx), Math.max(startIdx, endIdx)];
+
+    // Collect visible leaf nodes under a node (respect collapsed flag)
+    const collectLeafNodes = (nodeId: string): string[] => {
+      const node = nodes.find(n => n.id === nodeId);
+      if (!node) return [];
+      if (node.collapsed) return [nodeId];
+      const children = nodes.filter(n => n.parentId === nodeId);
+      if (children.length === 0) return [nodeId];
+      return children.flatMap(child => collectLeafNodes(child.id));
+    };
+
+    const leafNodes: string[] = [];
+    for (let i = minIdx; i <= maxIdx; i++) {
+      const sibling = siblingsSorted[i];
+      if (sibling) leafNodes.push(...collectLeafNodes(sibling.id));
+    }
+    return leafNodes;
+  };
+
+  const leafNodeIds = getLeafNodesInRange();
+  
+  // Tính toán vị trí X ngoài cùng của leaf nodes
+  let braceX = isLeft ? Infinity : -Infinity;
+  let startY = Infinity;
+  let endY = -Infinity;
+
+  leafNodeIds.forEach(leafId => {
+    const visual = nodeVisuals.get(leafId);
+    if (visual) {
+      const { style, box } = visual;
+      const nodeLeft = style.x - box.w / 2;
+      const nodeRight = style.x + box.w / 2;
+      const nodeTop = style.y - box.h / 2;
+      const nodeBottom = style.y + box.h / 2;
+
+      if (isLeft) {
+        braceX = Math.min(braceX, nodeLeft);
+      } else {
+        braceX = Math.max(braceX, nodeRight);
+      }
+
+      startY = Math.min(startY, nodeTop);
+      endY = Math.max(endY, nodeBottom);
+    }
+  });
+
+  // Determine position for brace and add level offset to avoid overlap when multiple summaries exist
+  const braceWidth = 15;
+  const basePadding = 20;
+  const levelOffset = level * 20; // pixels per nesting level
+
+  // Fallback if braceX not computed
+  if (!isFinite(braceX)) braceX = (currentStartVisual.style.x + currentEndVisual.style.x) / 2;
+
+  const startX = isLeft ? braceX - basePadding - levelOffset : braceX + basePadding + levelOffset;
+
+  const height = endY - startY;
+  const midY = (startY + endY) / 2;
+
+  // Tạo curly brace path
+  const createCurlyBracePath = () => {
+    const direction = isLeft ? -1 : 1;
+    const x1 = startX;
+    const x2 = startX + (braceWidth * direction);
+    const xMid = startX + (braceWidth * direction * 1.5);
+
+    if (summary.braceStyle === 'square') {
+      return `M ${x1} ${startY} L ${x2} ${startY} L ${x2} ${endY} L ${x1} ${endY}`;
+    } else {
+      const controlY1 = startY + height * 0.3;
+      const controlY2 = endY - height * 0.3;
+
+      return `M ${x1} ${startY} Q ${x2} ${startY} ${x2} ${controlY1} Q ${x2} ${midY - 5} ${xMid} ${midY} Q ${x2} ${midY + 5} ${x2} ${controlY2} Q ${x2} ${endY} ${x1} ${endY}`;
+    }
+  };
+
+  const getSelectionBox = () => {
+    const startIdx = siblings.findIndex(n => n.id === localStartNodeId);
+    const endIdx = siblings.findIndex(n => n.id === localEndNodeId);
+    const [minIdx, maxIdx] = [Math.min(startIdx, endIdx), Math.max(startIdx, endIdx)];
+
+    const collectDescendants = (nodeId: string): string[] => {
+      const children = nodes.filter(n => n.parentId === nodeId).map(n => n.id);
+      return [nodeId, ...children.flatMap(collectDescendants)];
+    };
+
+    const allNodeIds = new Set<string>();
+    for (let i = minIdx; i <= maxIdx; i++) {
+      collectDescendants(siblings[i].id).forEach(id => allNodeIds.add(id));
+    }
+
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    allNodeIds.forEach(id => {
+      const visual = nodeVisuals.get(id);
+      if (visual) {
+        const { style, box } = visual;
+        const x1 = style.x - box.w / 2;
+        const y1 = style.y - box.h / 2;
+        const x2 = style.x + box.w / 2;
+        const y2 = style.y + box.h / 2;
+        minX = Math.min(minX, x1);
+        minY = Math.min(minY, y1);
+        maxX = Math.max(maxX, x2);
+        maxY = Math.max(maxY, y2);
+      }
+    });
+
+    return { x: minX - 10, y: minY - 10, width: maxX - minX + 20, height: maxY - minY + 20 };
+  };
+
+  const selectionBox = isSelected ? getSelectionBox() : null;
+
+  // Handle resize
+  const handleTopHandleDrag = (e: any) => {
+    const newY = e.target.y();
+    // Tìm sibling node gần nhất phía trên
+    const sortedSiblings = siblings.sort((a, b) => {
+      const aVisual = nodeVisuals.get(a.id);
+      const bVisual = nodeVisuals.get(b.id);
+      return (aVisual?.style.y || 0) - (bVisual?.style.y || 0);
+    });
+
+    let closestNode = localStartNodeId;
+    let minDist = Infinity;
+    sortedSiblings.forEach(sib => {
+      const visual = nodeVisuals.get(sib.id);
+      if (visual) {
+        const dist = Math.abs(visual.style.y - newY);
+        if (dist < minDist) {
+          minDist = dist;
+          closestNode = sib.id;
+        }
+      }
+    });
+    setLocalStartNodeId(closestNode);
+  };
+
+  const handleBottomHandleDrag = (e: any) => {
+    const newY = e.target.y();
+    const sortedSiblings = siblings.sort((a, b) => {
+      const aVisual = nodeVisuals.get(a.id);
+      const bVisual = nodeVisuals.get(b.id);
+      return (aVisual?.style.y || 0) - (bVisual?.style.y || 0);
+    });
+
+    let closestNode = localEndNodeId;
+    let minDist = Infinity;
+    sortedSiblings.forEach(sib => {
+      const visual = nodeVisuals.get(sib.id);
+      if (visual) {
+        const dist = Math.abs(visual.style.y - newY);
+        if (dist < minDist) {
+          minDist = dist;
+          closestNode = sib.id;
+        }
+      }
+    });
+    setLocalEndNodeId(closestNode);
+  };
+
+  const handleTopHandleDragEnd = () => {
+    if (onUpdateRange) {
+      onUpdateRange(summary.id, localStartNodeId, localEndNodeId);
+    }
+  };
+
+  const handleBottomHandleDragEnd = () => {
+    if (onUpdateRange) {
+      onUpdateRange(summary.id, localStartNodeId, localEndNodeId);
+    }
+  };
+
+  return (
+    <>
+      {isSelected && selectionBox && (
+        <Rect
+          x={selectionBox.x}
+          y={selectionBox.y}
+          width={selectionBox.width}
+          height={selectionBox.height}
+          stroke="#3b82f6"
+          strokeWidth={2}
+          dash={[5, 5]}
+          fill="transparent"
+        />
+      )}
+
+      <Path
+        data={createCurlyBracePath()}
+        stroke={summary.color || '#000000'}
+        strokeWidth={2}
+        lineCap="round"
+        lineJoin="round"
+        fill="transparent"
+        onClick={(e) => {
+          e.cancelBubble = true;
+          if (onClick) onClick();
+        }}
+        onMouseEnter={(e) => {
+          const container = e.target.getStage()?.container();
+          if (container) container.style.cursor = 'pointer';
+        }}
+        onMouseLeave={(e) => {
+          const container = e.target.getStage()?.container();
+          if (container) container.style.cursor = 'default';
+        }}
+      />
+
+      {summary.summaryText && !summary.summaryNodeId && (
+        <KonvaText
+          x={isLeft ? startX - braceWidth - 60 : startX + braceWidth + 10}
+          y={midY - 10}
+          text={summary.summaryText}
+          fontSize={14}
+          fill={summary.color || '#000000'}
+          fontStyle="bold"
+          width={80}
+          align={isLeft ? 'right' : 'left'}
+        />
+      )}
+
+      {isSelected && (
+        <>
+          <KonvaCircle
+            x={startX}
+            y={startY}
+            radius={6}
+            fill="#fff"
+            stroke="#3b82f6"
+            strokeWidth={2}
+            draggable
+            onMouseDown={(e) => { e.cancelBubble = true; }}
+            onDragStart={(e) => { e.cancelBubble = true; }}
+            onDragMove={(e) => { e.cancelBubble = true; handleTopHandleDrag(e); }}
+            onDragEnd={(e) => { e.cancelBubble = true; handleTopHandleDragEnd(); }}
+            dragBoundFunc={(pos) => ({ x: startX, y: pos.y })}
+          />
+          <KonvaCircle
+            x={startX}
+            y={endY}
+            radius={6}
+            fill="#fff"
+            stroke="#3b82f6"
+            strokeWidth={2}
+            draggable
+            onMouseDown={(e) => { e.cancelBubble = true; }}
+            onDragStart={(e) => { e.cancelBubble = true; }}
+            onDragMove={(e) => { e.cancelBubble = true; handleBottomHandleDrag(e); }}
+            onDragEnd={(e) => { e.cancelBubble = true; handleBottomHandleDragEnd(); }}
+            dragBoundFunc={(pos) => ({ x: startX, y: pos.y })}
+          />
+        </>
+      )}
+    </>
+  );
+};
+
+export default Summary;

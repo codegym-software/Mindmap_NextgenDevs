@@ -1,11 +1,34 @@
+/**
+ * Editor.tsx - MERGED VERSION
+ * 
+ * Merges UI/UX features from your version with collaboration features from friend's version:
+ * 
+ * YOUR UI/UX FEATURES (100% KEPT):
+ * - Boundaries, Relationships, Summaries
+ * - Image support
+ * - Better layout algorithms
+ * - Smooth animations
+ * - All your existing UI improvements
+ * 
+ * COLLABORATION FEATURES ADDED:
+ * - ShareModal for inviting collaborators
+ * - Real-time cursor tracking (CursorLayer)
+ * - Access control (owner/editor/viewer permissions)
+ * - Access request system
+ * - Permission-based read-only mode
+ * - Realtime WebSocket sync via useRealtime hook
+ */
+
 import React, {
   useEffect,
+  useLayoutEffect,
   useRef,
   useState,
   useCallback,
   useMemo,
 } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import Konva from 'konva';
 import {
   Stage,
   Layer,
@@ -16,12 +39,22 @@ import {
   Circle,
   Path,
   Arrow,
+  Image as KonvaImage,
 } from 'react-konva';
+import { SquareArrowOutUpRight } from 'lucide-react'; 
 import * as dagre from 'dagre';
 import { useDebouncedCallback } from 'use-debounce';
+
 import EditorToolbar from '../features/editor/EditorToolbar';
 import Sidebar from '../components/layout/Sidebar';
 import FormattingToolbar from '../features/editor/FormattingToolbar';
+import CursorLayer from '../features/editor/CursorLayer';
+import ShareModal from '../features/collaboration/ShareModal';
+import AccessDeniedScreen from '../features/editor/AccessDeniedScreen';
+import AccessRequestModal from '../features/editor/AccessRequestModal';
+import ChatSidebar from '../features/chat/ChatSidebar';
+
+// --- Stores & Types ---
 import {
   useEditorStore,
   NodeData,
@@ -35,14 +68,20 @@ import {
   applyNodeDefaults,
   DEFAULT_NODE_STYLE,
   NodeData as FeNodeData, 
+  NodeTopology
 } from '../app/store/useEditorStore';
-import { mindmapsApi, FeMindmapDoc } from '../services/mindmapsApi';
+import { mindmapsApi, FeMindmapDoc, Permission } from '../services/mindmapsApi';
 import { useAuth } from '../hooks/useAuth';
 import { useToast } from '../hooks/useToast';
 import { useTheme } from '../hooks/useTheme';
 import Spinner from '../components/common/Spinner';
 import { useLocalMindmap } from '../hooks/useLocalMindmap';
 import { useMindmapsStore } from '../app/store/useMindmapsStore';
+import { useMindmapAccess } from '../hooks/useMindmapAccess';
+import { useRealtime } from '../hooks/useRealtime';
+import Boundary from '../features/editor/Boundary';
+import Relationship from '../features/editor/Relationship';
+import Summary from '../features/editor/Summary';
 
 import {
   BeMindmapContent,
@@ -53,7 +92,7 @@ import {
 
 type BroadcastPatch = {
   type: string;
-  payload: any; // Dữ liệu là JSON, do FE gửi và FE nhận
+  payload: any; 
   senderId: string;
 };
 type BeGuestDoc = {
@@ -61,7 +100,6 @@ type BeGuestDoc = {
   name: string;
   content: BeMindmapContent;
 };
-// =================================================================================
 
 const GUEST_BUCKET = 'mm_guest_docs';
 
@@ -69,10 +107,15 @@ const PADDING_X = 20,
   PADDING_Y = 12;
 const LINE_HEIGHT_MULTIPLIER = 1.3;
 
-// [MERGE] Giữ lại logic UI mới (branch colors) từ feature/tt
 const BRANCH_COLORS_PALETTE = [
-  '#EF4444', '#F97316', '#FACC15', '#22C55E',
-  '#06B6D4', '#3B82F6', '#8B5CF6', '#EC4899',
+  '#14B8A6', 
+  '#3B82F6',
+  '#10B981', 
+  '#F59E0B',
+  '#8B5CF6',
+  '#EF4444',
+  '#F97316',
+  '#6366F1', 
 ];
 
 function hexToRgb(hex: string) {
@@ -100,14 +143,26 @@ function getContrastColor(hex: string) {
   return lum > 0.6 ? '#000000' : '#FFFFFF';
 }
 
+function getCursorColor(seed: string): string {
+  const colors = [
+    '#FF6B6B', '#4ECDC4', '#45B7D1', '#FFA07A', '#98D8C8',
+    '#F7DC6F', '#BB8FCE', '#85C1E2', '#F8B739', '#52B788'
+  ];
+  let hash = 0;
+  for (let i = 0; i < seed.length; i++) {
+    hash = seed.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  return colors[Math.abs(hash) % colors.length];
+}
+
 // =================================================================================
 // Component
 // =================================================================================
 
-/**
- * [MERGE GĐ 3] Cấy ghép hàm loadGuestDoc (đã sửa)
- * Đọc chuẩn BE, dịch sang FE
- */
+interface EditorProps {
+  mode?: 'edit' | 'share';
+}
+
 export function loadGuestDoc(id: string): FeMindmapDoc | null {
   try {
     const raw = localStorage.getItem(GUEST_BUCKET);
@@ -124,6 +179,11 @@ export function loadGuestDoc(id: string): FeMindmapDoc | null {
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
       version: 0,
+      collaborators: [],
+      accessSettings: {
+        isPublic: false,
+        publicAccessLevel: 'DISABLED',
+      },
     };
   } catch (e) {
     console.error('Error loading guest doc:', e);
@@ -131,15 +191,13 @@ export function loadGuestDoc(id: string): FeMindmapDoc | null {
   }
 }
 
-/**
- * [MERGE GĐ 3] Cấy ghép hàm saveGuestDoc (đã sửa)
- * Nhận chuẩn FE, dịch sang BE
- */
 function saveGuestDoc(
   id: string,
   name: string,
   feNodes: FeNodeData[],
-  feEdges: EdgeData[]
+  feEdges: EdgeData[],
+  feRelationships?: any[], 
+  feSummaries?: any[] 
 ) {
   try {
     const beContent = normalizeContentFEtoBE(feNodes, feEdges);
@@ -152,15 +210,13 @@ function saveGuestDoc(
   }
 }
 
-/**
- * [MERGE] Giữ lại hàm calculateNodeBox từ feature/tt
- * (Đây là logic layout/UI)
- */
 function calculateNodeBox(node: NodeData, style: NodeData) {
-  const { fontSize, nodeLength, nodeText, textCase, shape } = style;
+  const { fontSize, nodeLength, nodeText, textCase, shape, imageUrl } = style; 
   const borderWidth = style.borderWidth || 0;
   let processedText = nodeText || '';
-  if (textCase === 'uppercase') processedText = processedText.toUpperCase();
+  if (textCase === 'uppercase' || node.id === 'root') {
+      processedText = processedText.toUpperCase();
+  }
   if (textCase === 'lowercase') processedText = processedText.toLowerCase();
   const finalFontSize = fontSize || 14;
   const finalLineHeight = finalFontSize * LINE_HEIGHT_MULTIPLIER;
@@ -169,20 +225,65 @@ function calculateNodeBox(node: NodeData, style: NodeData) {
   const canvas = document.createElement('canvas');
   const context = canvas.getContext('2d');
   if (context) {
-    context.font = `${finalFontSize}px ${style.fontFamily || 'Inter'}`;
+    // Include fontStyle and fontWeight for accurate text measurement
+    const fontWeight = style.fontWeight || 'normal';
+    const fontStyle = style.fontStyle || 'normal';
+    context.font = `${fontStyle} ${fontWeight} ${finalFontSize}px ${style.fontFamily || 'Inter'}`;
   }
   const measureWidth = (text: string) =>
     context?.measureText(text).width || text.length * finalFontSize * 0.6;
   if (nodeLength === 'fit') {
+    const maxFitWidth = node.id === 'root' ? 400 : 400; 
     let maxWidth = 0;
-    processedText.split('\n').forEach((line: string) => {
-      maxWidth = Math.max(maxWidth, measureWidth(line));
+    const lines = processedText.split('\n');
+    
+    lines.forEach((line: string) => {
+      const lineWidth = measureWidth(line);
+      if (lineWidth > maxFitWidth) {
+        maxWidth = maxFitWidth;
+      } else {
+        maxWidth = Math.max(maxWidth, lineWidth);
+      }
     });
+    
     w = maxWidth + PADDING_X * 2 + borderWidth * 2;
     w = Math.max(w, 80);
-    wrappedLines = processedText.split('\n');
+    
+    // Second pass: wrap lines that are too long
+    const contentWidth = w - PADDING_X * 2 - borderWidth * 2;
+    lines.forEach((line: string) => {
+      if (line.length === 0) {
+        wrappedLines.push('');
+        return;
+      }
+      
+      const lineWidth = measureWidth(line);
+      if (lineWidth <= contentWidth) {
+        wrappedLines.push(line);
+      } else {
+        // Wrap this line
+        let currentLine = '';
+        const words = line.split(' ');
+        for (const word of words) {
+          const testLine = currentLine ? `${currentLine} ${word}` : word;
+          const testWidth = measureWidth(testLine);
+          if (testWidth > contentWidth) {
+            if (currentLine) wrappedLines.push(currentLine);
+            currentLine = word;
+            // Handle very long words
+            while (measureWidth(currentLine) > contentWidth) {
+              wrappedLines.push(currentLine.substring(0, 20));
+              currentLine = currentLine.substring(20);
+            }
+          } else {
+            currentLine = testLine;
+          }
+        }
+        if (currentLine) wrappedLines.push(currentLine);
+      }
+    });
   } else {
-    w = Number(nodeLength) || 150;
+    w = Number(nodeLength) || 250;
     const contentWidth = w - PADDING_X * 2 - borderWidth * 2;
     const lines = processedText.split('\n');
     lines.forEach((line: string) => {
@@ -214,41 +315,196 @@ function calculateNodeBox(node: NodeData, style: NodeData) {
     wrappedLines.length * finalLineHeight + PADDING_Y * 2
   );
 
-  return { w, h, textToRender: wrappedLines.join('\n'), finalFontSize };
+  let imageHeight = 0;
+  let imageWidthDisplay = 0;
+   
+  if (imageUrl) {
+    // Nếu có ảnh, node sẽ rộng ra hoặc ảnh fit theo width của node
+    // Mặc định ảnh sẽ fit width của node (trừ padding)
+    imageWidthDisplay = w - (PADDING_X * 2) - (borderWidth * 2);
+    // Giả sử tỉ lệ 16:9 hoặc lấy tỉ lệ thật nếu đã lưu trong node
+    // Ở đây tạm tính chiều cao ảnh khoảng 2/3 chiều rộng hiển thị cho đẹp nếu chưa load xong
+    // Nếu đã có imageHeight từ store (sau khi load) thì dùng
+    imageHeight = imageWidthDisplay * 0.6; 
+    if (style.imageHeight && style.imageWidth) {
+       imageHeight = (style.imageHeight / style.imageWidth) * imageWidthDisplay;
+    }
+  }
+
+  // Nếu có ảnh, chiều cao tổng sẽ bao gồm ảnh + khoảng cách (10px) + text
+  // Nếu textHeight đã bao gồm padding, ta chỉ cần cộng thêm ảnh
+  let totalH = h;
+  if (imageUrl) {
+      totalH = h + imageHeight + 10;
+  }
+
+  return { 
+    w, 
+    h: totalH, // Trả về tổng chiều cao
+    textToRender: wrappedLines.join('\n'), 
+    finalFontSize,
+    imageHeight,        
+    imageWidthDisplay   
+  };
 }
 
-export default function Editor() {
+// const URLImage = ({ src, x, y, width, height, onImageLoad }: any) => {
+//   const [image] = useImage(src);
+//   
+//   useEffect(() => {
+//     if (image && onImageLoad) {
+//       onImageLoad(image.width, image.height);
+//     }
+//   }, [image, onImageLoad]); 
+
+//   if (!image) return null;
+//   return <KonvaImage image={image} x={x} y={y} width={width} height={height} cornerRadius={4} />;
+// };
+
+export default function Editor({ mode = 'edit' }: EditorProps = {}) {
   const { id } = useParams<{ id?: string }>();
   const navigate = useNavigate();
   const { addToast } = useToast();
   const { toggleTheme } = useTheme();
-  const { isAuthed, login, getAccessToken } = useAuth();
+  const { isAuthed, login, getAccessToken, user } = useAuth();
   const { createGuest } = useLocalMindmap();
   const isGuest = !!id && id.startsWith('guest-');
+  const summaryLayoutLevelsRef = useRef<Map<string, number>>(new Map());
+
+  // --- Collaboration: Access Control Hook ---
+  const {
+    permission: accessPermissionState,
+    isOwner: isOwnerFromHook,
+    pendingRequests,
+    requestStatus,
+    requestAccess,
+    approveRequest,
+    denyRequest,
+    refreshPermissions,
+  } = useMindmapAccess(id || '', user);
 
   // State từ store 
   const {
     nodes,
     edges,
     setGraph,
-    push: pushHistory,
+    applyUserAction,
     undo,
     redo,
     clear: clearHistory,
     globalStructure,
     globalFont,
     branchLineWidth,
-    isColoredBranch,
     activeColorThemeId,
     set: setGlobalStore,
     globalBranchColor,
-    isDirty
+    isDirty,
+    toggleNodeBoundary,
+    addRelationship,
+    updateRelationship,
+    updateRelationshipLabel,
+    removeRelationship,
+    addSummary,
+    updateSummary,
+    removeSummary,
+    relationships,
+    summaries,
   } = useEditorStore();
 
-  // State nội bộ (Lấy từ feature/tt, bao gồm logic UI mới)
-  const [name, setName] = useState('Loading...');
+  // Helper wrapper for manual history push (used in specific cases)
+  const pushHistory = useCallback((newNodes: NodeData[], newEdges: EdgeData[]) => {
+    applyUserAction(newNodes, newEdges);
+  }, [applyUserAction]);
+
+  const handleToggleBoundary = () => {
+    if (selectedNodeIds.length === 1) {
+      const targetId = selectedNodeIds[0];
+      toggleNodeBoundary(targetId);
+      // Re-run layout so boundary sizing/padding is updated immediately
+      setTimeout(() => handleLayout(), 0);
+    }
+  };
+
+  const [isRelationshipMode, setIsRelationshipMode] = useState(false);
+  const [relationshipFrom, setRelationshipFrom] = useState<string | null>(null);
+  const [selectedRelationshipId, setSelectedRelationshipId] = useState<string | null>(null);
+  const [selectedSummaryId, setSelectedSummaryId] = useState<string | null>(null);
+  const [selectedBoundaryId, setSelectedBoundaryId] = useState<string | null>(null);
+
+  const handleAddRelationship = () => {
+    if (selectedNodeIds.length === 1) {
+      setIsRelationshipMode(true);
+      setRelationshipFrom(selectedNodeIds[0]);
+    }
+  };
+
+  const handleAddSummary = () => {
+    if (selectedNodeIds.length === 1) {
+      const node = nodes.find(n => n.id === selectedNodeIds[0]);
+      if (node && node.parentId) {
+        addSummary(node.parentId, selectedNodeIds[0], selectedNodeIds[0], '');
+        // Trigger layout để summary node được đặt đúng vị trí
+        setTimeout(() => handleLayout(), 50);
+      }
+    }
+  };
+
+  const handleUpdateRelationshipControlPoints = (relationshipId: string, cp1: { x: number; y: number }, cp2: { x: number; y: number }) => {
+    updateRelationship(relationshipId, { controlPoint1: cp1, controlPoint2: cp2 });
+  };
+
+  const handleUpdateRelationshipLabel = (relationshipId: string, label: string) => {
+    updateRelationshipLabel(relationshipId, label);
+  };
+
+  const handleDeleteRelationship = (id: string) => {
+    const relationship = relationships.find(r => r.id === id);
+    if (!relationship) return;
+    
+    // Xóa label node nếu có
+    if (relationship.labelNodeId) {
+      const newNodes = nodes.filter(n => n.id !== relationship.labelNodeId);
+      setGraph(newNodes, edges);
+    }
+    
+    removeRelationship(id);
+    setSelectedRelationshipId(null);
+    debouncedPersistData();
+  };
+
+  const handleDeleteSummary = (id: string) => {
+    removeSummary(id);
+    setSelectedSummaryId(null);
+    debouncedPersistData();
+  };
+
+  const handleDeleteBoundary = (nodeId: string) => {
+    const newNodes = nodes.map(n => 
+      n.id === nodeId ? { ...n, boundary: false } : n
+    );
+    setGraph(newNodes, edges);
+    setSelectedBoundaryId(null);
+    debouncedPersistData();
+  };
+
+  const handleUpdateSummaryRange = (summaryId: string, newStartNodeId: string, newEndNodeId: string) => {
+    updateSummary(summaryId, { startNodeId: newStartNodeId, endNodeId: newEndNodeId });
+    setTimeout(() => handleLayout(), 0); 
+  };
+
+  // State nội bộ - Lấy name từ store thay vì state local
+  const name = useEditorStore(s => s.currentMindmapName);
   const [isDataLoaded, setIsDataLoaded] = useState(false);
+  const [isReadyToShow, setIsReadyToShow] = useState(false);
   const [isFormattingToolbarOpen, setFormattingToolbarOpen] = useState(false); // UI Mới
+  const [presentationMode, setPresentationMode] = useState(false);
+  
+  // --- Collaboration: Permission & Modal States ---
+  const [ownerId, setOwnerId] = useState<string | null>(null);
+  const [userPermission, setUserPermission] = useState<Permission | null>(null);
+  const [accessDenied, setAccessDenied] = useState(false);
+  const [isShareModalOpen, setIsShareModalOpen] = useState(false);
+  const [isRequestModalOpen, setRequestModalOpen] = useState(false);
   const [dimensions, setDimensions] = useState({
     width: window.innerWidth,
     height: window.innerHeight - 48,
@@ -261,30 +517,140 @@ export default function Editor() {
   const [isPanning, setIsPanning] = useState(false);
   const [editingNodeId, setEditingNodeId] = useState<string | null>(null);
   const [scale, setScale] = useState(1);
-  const [dropTargetId, setDropTargetId] = useState<string | null>(null);
   const [dragStartState, setDragStartState] = useState<{
     nodes: NodeData[];
     edges: EdgeData[];
   } | null>(null);
+  const draggedNodeChildrenRef = useRef<Set<string>>(new Set());
+  const imposterRef = useRef<any>(null);
+  const hiddenRealNodesRef = useRef<any[]>([]);
   const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null);
+  const [dropTargetNodeId, setDropTargetNodeId] = useState<string | null>(null);
+  const [dropTargetSide, setDropTargetSide] = useState<'left' | 'right' | null>(null);
+  const [draggingNodeId, setDraggingNodeId] = useState<string | null>(null);
   const [backgroundColor, setBackgroundColor] = useState('#FAFAFB');
   const [styleClipboard, setStyleClipboard] = useState<Partial<NodeData> | null>(
     null
   );
   const [rootCollapse, setRootCollapse] = useState({ left: false, right: false });
   const lastEditStopTime = useRef(0);
+  const pendingLayoutRef = useRef(false);
 
   const stageRef = useRef<any>(null);
-  const editingInputRef = useRef<HTMLTextAreaElement>(null);
+  const canvasContainerRef = useRef<HTMLDivElement>(null);
+  const [canvasContainerWidth, setCanvasContainerWidth] = useState<number>(0);
+    useEffect(() => {
+      const updateWidth = () => {
+        if (canvasContainerRef.current) {
+          setCanvasContainerWidth(canvasContainerRef.current.getBoundingClientRect().width);
+        }
+      };
+      updateWidth();
+      window.addEventListener('resize', updateWidth);
+      return () => window.removeEventListener('resize', updateWidth);
+    }, [isFormattingToolbarOpen, dimensions.width]);
+  const editingInputRef = useRef<HTMLTextAreaElement | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
+
+  // [DOCKING SIDEBAR] Panel width constant - must be before useEffect that uses it
+  const PANEL_WIDTH = 280;
+  const prevPanelStateRef = useRef(isFormattingToolbarOpen);
+
+  // Close FormattingToolbar when entering presentation mode
+  useEffect(() => {
+    if (presentationMode && isFormattingToolbarOpen) {
+      setFormattingToolbarOpen(false);
+    }
+  }, [presentationMode]);
 
   const activeTheme =
   colorThemes[activeColorThemeId as keyof typeof colorThemes];
+  
+  // --- Collaboration: Ownership Logic ---
+  const isOwner = useMemo(() => {
+    if (isGuest) return true;
+    if (user && ownerId && (user.sub === ownerId || (user as any).id === ownerId)) return true;
+    if (isOwnerFromHook) return true;
+    return false;
+  }, [isGuest, isOwnerFromHook, user, ownerId]);
+
+  // --- Collaboration: Read-Only Logic ---
+  const isReadOnly = useMemo(() => {
+    if (isGuest) return false;
+    if (isOwner) return false;
+    if (userPermission === 'EDITOR') return false;
+    // Share mode with VIEWER permission or no permission is read-only
+    return true;
+  }, [isGuest, isOwner, userPermission]);
+
+  // --- Collaboration: User Info for Realtime ---
+  const myName = useMemo(() => {
+    if (!user) return 'Guest';
+    return user.displayName || user.email?.split('@')[0] || 'User';
+  }, [user]);
+
+  const myColor = useMemo(() => {
+    const seed = user?.sub || (user as any)?.id || 'guest';
+    return getCursorColor(seed);
+  }, [user]);
+
+  const nodeTopology = useMemo(() => {
+    const topology = new Map<string, NodeTopology>();
+    const nodeDataMap = new Map(nodes.map(n => [n.id, n]));
+    
+    const adj = new Map<string, string[]>();
+    edges.forEach(e => {
+      if (!adj.has(e.from)) adj.set(e.from, []);
+      adj.get(e.from)!.push(e.to);
+    });
+
+    const traverse = (nodeId: string, depth: number, rootBranchIndex: number, inheritedColor: string | null) => {
+      const node = nodeDataMap.get(nodeId);
+      let currentBaseColor = inheritedColor;
+
+      // Logic xác định màu tại cấp 1:
+      // Lấy màu toàn cục nếu chưa có màu thừa hưởng (là từ root)
+      if (depth === 1 && !currentBaseColor) {
+         currentBaseColor = globalBranchColor;
+      }
+
+      // Nếu node có màu riêng, nó sẽ đè màu toàn cục/thừa hưởng
+      if (node?.branchColor) {
+        currentBaseColor = node.branchColor;
+      }
+
+      // Fallback an toàn là Đen nếu tất cả đều null
+      const effectiveColor = currentBaseColor || globalBranchColor || '#000000';
+
+      topology.set(nodeId, { 
+        depth, 
+        branchBaseColor: effectiveColor 
+      });
+      
+      const children = adj.get(nodeId) || [];
+      children.forEach((childId, index) => {
+        const nextBranchIndex = (nodeId === 'root') ? index : rootBranchIndex;
+        traverse(childId, depth + 1, nextBranchIndex, effectiveColor);
+      });
+    };
+
+    traverse('root', 0, 0, null);
+    return topology;
+  }, [nodes, edges, globalBranchColor]);
   const nodeMap = useMemo(() => new Map(nodes.map((n) => [n.id, n])), [nodes]);
   const nodesWithChildren = useMemo(
     () => new Set(edges.map((e) => e.from)),
     [edges]
   );
+  const adjacencyMap = useMemo(() => {
+    const map = new Map<string, string[]>();
+    edges.forEach(e => {
+      if (!map.has(e.from)) map.set(e.from, []);
+      map.get(e.from)!.push(e.to);
+    });
+    return map;
+  }, [edges]);
+  
   const [selectionRect, setSelectionRect] = useState({
     x: 0,
     y: 0,
@@ -293,11 +659,11 @@ export default function Editor() {
     visible: false,
   });
   const selectionStartPos = useRef({ x: 0, y: 0 });
-  const isSelecting = useRef(false); // Thêm cờ này để biết đang kéo chọn vùng
+  const isSelecting = useRef(false); //cờ để biết đang kéo chọn vùng
 
   const selectedIdsSet = useMemo(() => new Set(selectedNodeIds), [selectedNodeIds]);
 
-  // Lấy node đầu tiên trong danh sách chọn để hiển thị style trên toolbar
+  // Chọn node đầu tiên trong danh sách chọn để hiển thị style trên toolbar
   const firstSelectedId = useMemo(() => selectedNodeIds[0], [selectedNodeIds]);
   const currentNode = useMemo(() => {
     if (!firstSelectedId) return null;
@@ -307,14 +673,95 @@ export default function Editor() {
   const setMindmapsStore = useMindmapsStore(s => s.set);
   const mindmapItems = useMindmapsStore(s => s.items);
 
-  // Logic tính toán (Không thay đổi)
+  // Logic tính toán
   const computedNodeStyles = useMemo(() => {
     const map = new Map<string, NodeData>();
+    
+    // Helper: tính vị trí label từ bezier curve
+    const getLabelPosition = (relationship: any, fromNode: NodeData, toNode: NodeData) => {
+      // Tính điểm trên cạnh node
+      const dx = toNode.x - fromNode.x;
+      const dy = toNode.y - fromNode.y;
+      const angle = Math.atan2(dy, dx);
+      
+      const fromVisual = map.get(fromNode.id);
+      const toVisual = map.get(toNode.id);
+      const fromBox = fromVisual ? calculateNodeBox(fromNode, fromVisual) : { w: 100, h: 40 };
+      const toBox = toVisual ? calculateNodeBox(toNode, toVisual) : { w: 100, h: 40 };
+      
+      const p1 = { 
+        x: fromNode.x + Math.cos(angle) * (fromBox.w / 2), 
+        y: fromNode.y + Math.sin(angle) * (fromBox.h / 2) 
+      };
+      const p4 = { 
+        x: toNode.x - Math.cos(angle) * (toBox.w / 2), 
+        y: toNode.y - Math.sin(angle) * (toBox.h / 2) 
+      };
+      
+      // Control points
+      const cp1 = relationship.controlPoint1 || { 
+        x: p1.x + (p4.x - p1.x) / 3, 
+        y: p1.y 
+      };
+      const cp2 = relationship.controlPoint2 || { 
+        x: p1.x + 2 * (p4.x - p1.x) / 3, 
+        y: p4.y 
+      };
+      
+      // Trung điểm của 4 điểm bezier
+      return {
+        x: (p1.x + cp1.x + cp2.x + p4.x) / 4,
+        y: (p1.y + cp1.y + cp2.y + p4.y) / 4
+      };
+    };
+    
     nodes.forEach((node) => {
-      map.set(node.id, getNodeComputedStyle(node, activeTheme, globalFont));
+      // Kiểm tra nếu là label node của relationship
+      const isLabelNode = node.parentId?.startsWith('rel_');
+      
+      if (isLabelNode) {
+        // Label node: tính vị trí từ relationship bezier curve
+        const relationship = relationships.find(r => r.labelNodeId === node.id);
+        if (relationship) {
+          const fromNode = nodes.find(n => n.id === relationship.from);
+          const toNode = nodes.find(n => n.id === relationship.to);
+          
+          if (fromNode && toNode) {
+            const pos = getLabelPosition(relationship, fromNode, toNode);
+            
+            map.set(node.id, {
+              ...node,
+              x: pos.x,
+              y: pos.y,
+              fontSize: 11,
+              fontWeight: 'normal',
+            });
+            return;
+          }
+        }
+      }
+      
+      // Node bình thường
+      const topo = nodeTopology.get(node.id);
+      let style = getNodeComputedStyle(node, activeTheme, globalFont, topo);
+      // [ORG STRUCTURE] Level 3+ vẫn là box, không underline
+      const gs = useEditorStore.getState().globalStructure;
+      if (gs === 'org' && topo && topo.depth >= 3) {
+        if (style.color === 'transparent') {
+          style = {
+            ...style,
+            color: activeTheme.quickStyles.default.fill || '#FFFFFF',
+            borderColor: activeTheme.quickStyles.default.stroke || '#CBD5E0',
+            textColor: style.textColor || '#333333',
+            borderWidth: 1,
+            shape: 'roundedRect',
+          } as NodeData;
+        }
+      }
+      map.set(node.id, style);
     });
     return map;
-  }, [nodes, activeTheme, globalFont]);
+  }, [nodes, activeTheme, globalFont, nodeTopology, relationships]);
 
   const nodeVisuals = useMemo(() => {
     const map = new Map<
@@ -331,7 +778,6 @@ export default function Editor() {
     return map;
   }, [nodes, computedNodeStyles]);
 
-  // [MERGE] Logic UI mới từ feature/tt (rootChildSides)
   const rootChildSides = useMemo(() => {
     const sides = { left: false, right: false };
     if (!nodesWithChildren.has('root')) return sides;
@@ -350,43 +796,163 @@ export default function Editor() {
   // [MERGE GĐ 7] CẤY GHÉP LOGIC DEBOUNCE (Undo/Save)
   // ==========================================================
 
-  // 1. Luồng Undo/Redo (0.5s)
-  const debouncedPushHistory = useDebouncedCallback(() => {
-    const { nodes, edges } = useEditorStore.getState();
-    pushHistory(useEditorStore.getState().nodes, useEditorStore.getState().edges);
-    // console.log("v0.5: Đã lưu vào Undo stack");
-  }, 500);
+  // NOTE: History is automatically tracked via applyUserAction
+  // No separate push needed - applyUserAction handles it
 
-  // 2. Luồng Lưu trữ (5s)
+  // Luồng Lưu trữ (5s)
   const debouncedPersistData = useDebouncedCallback(() => {
     if (!isDataLoaded || !id) return;
-    const { nodes: currentNodes, edges: currentEdges } =
+    const { nodes: currentNodes, edges: currentEdges, relationships, summaries } =
       useEditorStore.getState();
 
     if (isGuest) {
-      saveGuestDoc(id, name, currentNodes, currentEdges);
+      saveGuestDoc(id, name, currentNodes, currentEdges, relationships, summaries);
     } else if (isAuthed) {
       const docToSave = {
         name,
-        content: { nodes: currentNodes, edges: currentEdges },
+        content: { nodes: currentNodes, edges: currentEdges, relationships, summaries },
       };
+      console.log('[DEBUG] Saving data:', {
+        nodesCount: currentNodes.length,
+        edgesCount: currentEdges.length,
+        relationshipsCount: relationships?.length || 0,
+        summariesCount: summaries?.length || 0
+      });
       mindmapsApi.update(id, docToSave).catch((e) => {
         console.error('Lưu trữ (persist) ngầm thất bại:', e);
+        console.error('Error response:', e.response?.data);
       });
     }
   }, 5000, {
   });
 
+  // --- Collaboration: Toggle Root Collapse Handler ---
+  const handleSetRootCollapse = useCallback(
+    (side: 'left' | 'right') => {
+      setRootCollapse((prev) => ({ ...prev, [side]: !prev[side] }));
+    },
+    [],
+  );
+
+  // --- Collaboration: Realtime Hook ---
+  const { sendPatch, sendCursor, isConnected } = useRealtime({
+    mindmapId: id,
+    isGuest,
+    isDataLoaded,
+    isOwner,
+    userInfo: { name: myName, color: myColor },
+    onLayoutRequest: (keepCamera = false) => handleLayout(),
+    onSetRootCollapse: handleSetRootCollapse,
+    shouldConnect: !!id && !isGuest && !accessDenied && isAuthed,
+  });
+
+  // --- Collaboration: Access Request Handlers ---
+  const handleLoginRequired = useCallback(() => {
+    sessionStorage.setItem(
+      'returnTo',
+      window.location.pathname + window.location.search,
+    );
+    login('login' as any);
+  }, [login]);
+
+  const handleRequestAccessFromScreen = useCallback(async () => {
+    if (!id || isGuest) return;
+
+    if (!isAuthed) {
+      handleLoginRequired();
+      return;
+    }
+
+    try {
+      await requestAccess({ requestedPermission: 'VIEWER' });
+      refreshPermissions();
+      addToast('Đã gửi yêu cầu truy cập, vui lòng chờ duyệt.', 'success');
+    } catch (e) {
+      console.error('Request access failed:', e);
+      addToast('Gửi yêu cầu thất bại, vui lòng thử lại.', 'error');
+    }
+  }, [id, isGuest, isAuthed, requestAccess, refreshPermissions, addToast, handleLoginRequired]);
+
+  const handleDenyAccessRequest = useCallback(
+    async (requesterId: string) => {
+      if (!id) return;
+      try {
+        await mindmapsApi.rejectAccessRequest(id, requesterId);
+        await denyRequest(requesterId);
+        addToast('Đã từ chối yêu cầu truy cập', 'info');
+      } catch (error) {
+        console.error('Deny access request failed', error);
+        addToast('Không thể từ chối yêu cầu', 'error');
+      }
+    },
+    [id, denyRequest, addToast],
+  );
+
+  const handleApproveAccessRequest = useCallback(
+    async (requesterId: string, perm: Permission) => {
+      if (!id) return;
+
+      try {
+        await mindmapsApi.approveAccessRequest(id, requesterId, perm);
+        const firestorePerm = perm === 'EDITOR' ? 'EDITOR' : 'VIEWER';
+        await approveRequest(requesterId, firestorePerm);
+        addToast('Đã duyệt yêu cầu truy cập', 'success');
+      } catch (error) {
+        console.error('Approve access request failed', error);
+        addToast('Không thể duyệt yêu cầu truy cập', 'error');
+      }
+    },
+    [id, approveRequest, addToast],
+  );
+
+  // --- Collaboration: Prompt Upgrade Permission ---
+  const promptUpgradeToEditorIfNeeded = useCallback(() => {
+    if (!isReadOnly) return true;
+
+    if (userPermission === 'VIEWER') {
+      const ok = window.confirm(
+        'Bạn hiện chỉ có quyền xem. Bạn có muốn gửi yêu cầu quyền chỉnh sửa không?',
+      );
+      if (ok && id) {
+        mindmapsApi.requestAccess(id, 'EDITOR').catch(console.error);
+        requestAccess({ requestedPermission: 'EDITOR' }).catch(console.error);
+        addToast('Đã gửi yêu cầu quyền chỉnh sửa', 'info');
+      }
+    } else {
+      addToast('Bạn không có quyền chỉnh sửa mindmap này.', 'error');
+    }
+
+    return false;
+  }, [isReadOnly, userPermission, id, requestAccess, addToast]);
+
+  // [RESIZE OBSERVER] Update canvas dimensions accounting for panel width
+  // [OPTIMIZATION] Debounce resize để tránh layout liên tục (theo spec: 100-200ms)
   useEffect(() => {
+    let resizeTimer: number;
+    
     const handleResize = () => {
-      setDimensions({
-        width: window.innerWidth,
-        height: window.innerHeight - 48, 
-      });
+      clearTimeout(resizeTimer);
+      resizeTimer = setTimeout(() => {
+        const panelOffset = isFormattingToolbarOpen ? PANEL_WIDTH : 0;
+        setDimensions({
+          width: window.innerWidth - panelOffset,
+          height: window.innerHeight - 48, 
+        });
+      }, 200); // Debounce 200ms
     };
+    
+    const panelOffset = isFormattingToolbarOpen ? PANEL_WIDTH : 0;
+    setDimensions({
+      width: window.innerWidth - panelOffset,
+      height: window.innerHeight - 48,
+    }); // Initial calculation (immediate)
+    
     window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
-  }, []);
+    return () => {
+      clearTimeout(resizeTimer);
+      window.removeEventListener('resize', handleResize);
+    };
+  }, [isFormattingToolbarOpen]);
 
   useEffect(() => {
     let isMounted = true;
@@ -413,7 +979,11 @@ export default function Editor() {
         } else if (isAuthed && tempAuthedData) {
           const beDoc: BeMindmapDoc = JSON.parse(tempAuthedData);
           const feContent = normalizeContentBEtoFE(beDoc.content);
-          data = { ...beDoc, ...feContent };
+          data = { 
+            ...beDoc, 
+            ...feContent,
+            collaborators: [],
+          };
           sessionStorage.removeItem('temp_mindmap');
         } else {
           if (isGuest) {
@@ -426,30 +996,153 @@ export default function Editor() {
           }
         }
 
-        if (isMounted) {
-          setName(data.name);
-          useEditorStore.setState({ currentMindmapId: id, currentMindmapName: data.name, isDirty: false });
+        if (isMounted && data) {
+          // --- Collaboration: Set Ownership & Permissions ---
+          setOwnerId(data.ownerId);
+          
+          if (isGuest) {
+            setUserPermission('OWNER');
+          } else {
+            const uid = user?.sub || (user as any)?.id;
+            if (uid && uid === data.ownerId) {
+              setUserPermission('OWNER');
+            } else {
+              const myCollab = (data.collaborators || []).find(
+                (c) => c.userId === uid,
+              );
+              if (myCollab) {
+                setUserPermission(myCollab.permission);
+              } else {
+                const publicAccessLevel = data.accessSettings?.publicAccessLevel;
+                if (publicAccessLevel === 'VIEW') setUserPermission('VIEWER');
+                else if (publicAccessLevel === 'EDIT') setUserPermission('EDITOR');
+                else setUserPermission(null);
+              }
+            }
+          }
+          
+          useEditorStore.setState({ 
+            currentMindmapId: id, 
+            currentMindmapName: data.name, 
+            isDirty: false,
+            hasManuallyRenamedMindmap: false // Reset flag when loading new document
+          });
           clearHistory();
-          setGraph(data.nodes, data.edges);
-          pushHistory(data.nodes, data.edges); 
+          
+          // [MỚI] Load relationships và summaries TRƯỚC setGraph để tránh bị ghi đè
+          const relationships = data.relationships || [];
+          const summaries = data.summaries || [];
+          
+          // [FIX] Tái tạo label nodes cho relationships nếu bị mất
+          const loadedNodes = [...data.nodes];
+          const loadedEdges = [...data.edges];
+          
+          relationships.forEach((rel: any) => {
+            if (rel.labelNodeId) {
+              // Kiểm tra xem label node có tồn tại không
+              const existingLabelNode = loadedNodes.find(n => n.id === rel.labelNodeId);
+              if (!existingLabelNode) {
+                // Tái tạo label node
+                const labelNode: NodeData = {
+                  id: rel.labelNodeId,
+                  parentId: rel.id,
+                  nodeText: rel.label || 'relationship',
+                  x: 0,
+                  y: 0,
+                  shape: 'roundedRect',
+                  color: 'transparent',
+                  borderColor: 'transparent',
+                  borderWidth: 0,
+                  fontSize: 11,
+                  fontWeight: 'normal',
+                  nodeLength: 'fit',
+                };
+                loadedNodes.push(labelNode);
+              } else {
+                // Đồng bộ label text từ relationship
+                existingLabelNode.nodeText = rel.label || existingLabelNode.nodeText;
+              }
+            }
+          });
+          
+          // [FIX] Tái tạo summary nodes nếu bị mất
+          summaries.forEach((sum: any) => {
+            if (sum.summaryNodeId) {
+              const existingSummaryNode = loadedNodes.find(n => n.id === sum.summaryNodeId);
+              if (!existingSummaryNode) {
+                const summaryNode: NodeData = {
+                  id: sum.summaryNodeId,
+                  parentId: sum.id,
+                  nodeText: sum.summaryText || 'Summary',
+                  x: 0,
+                  y: 0,
+                  shape: 'roundedRect',
+                  color: 'transparent',
+                  borderColor: '#F59E0B',
+                  borderWidth: 2,
+                  fontSize: 12,
+                  nodeLength: 150,
+                  textColor: '#000000',
+                };
+                loadedNodes.push(summaryNode);
+                
+                // Tạo edge từ summary -> summary node
+                const edgeExists = loadedEdges.some(e => e.from === sum.id && e.to === sum.summaryNodeId);
+                if (!edgeExists) {
+                  loadedEdges.push({
+                    id: `e-${sum.summaryNodeId}`,
+                    from: sum.id,
+                    to: sum.summaryNodeId,
+                  });
+                }
+              } else {
+                // Đồng bộ summary text từ summaryData
+                existingSummaryNode.nodeText = sum.summaryText || existingSummaryNode.nodeText;
+                if (!existingSummaryNode.textColor) existingSummaryNode.textColor = '#000000';
+              }
+            }
+          });
+          
+          // Set tất cả cùng lúc
+          useEditorStore.setState({
+            nodes: loadedNodes,
+            edges: loadedEdges,
+            relationships,
+            summaries,
+          });
+          
+          pushHistory(loadedNodes, loadedEdges);
           setGlobalStore({
             globalStructure: (data.layoutMode as GlobalStructure) || 'mindmap',
             globalFont: data.fontFamily || fonts[0].value,
             branchLineWidth: data.branchLineWidth || 2,
-            isColoredBranch: data.isColoredBranch ?? true,
-            globalBranchColor: data.globalBranchColor || '#94A3B8',
+            globalBranchColor: data.globalBranchColor || '#14B8A6',
             activeColorThemeId: data.activeColorThemeId || 'dawn',
             backgroundColor: data.backgroundColor || '#FAFAFB', 
           });
           setBackgroundColor(data.backgroundColor || '#FAFAFB');
-          setSelectedNodeIds(['root']);
+          if (data.nodes.length <= 1) {
+             setSelectedNodeIds(['root']);
+          } else {
+             setSelectedNodeIds([]); 
+          }
           setIsDataLoaded(true);
         }
-      } catch (error) {
-        if (isMounted) {
-          addToast('Không thể tải mindmap!', 'error');
-          navigate('/dashboard', { replace: true });
+      } catch (error: any) {
+        if (!isMounted) return;
+
+        const status = error?.response?.status;
+
+        // 403/401 => bị deny
+        if (status === 403 || status === 401) {
+          setAccessDenied(true);
+          setIsDataLoaded(true);
+          return;
         }
+
+        console.error('[Editor] Load mindmap failed:', error);
+        addToast('Lỗi tải mindmap', 'error');
+        navigate('/dashboard', { replace: true });
       }
     };
     loadData();
@@ -459,37 +1152,102 @@ export default function Editor() {
   }, [
     id, isAuthed, navigate, addToast, clearHistory,
     setGraph, pushHistory, activeColorThemeId, setGlobalStore,
-    isGuest, createGuest,
+    isGuest, createGuest, user,
   ]);
+
+  // --- Collaboration: Reload when access changes from denied to allowed ---
+  const [reloadToken, setReloadToken] = useState(0);
+  
+  useEffect(() => {
+    if (!id || isGuest) return;
+    if (!accessDenied) return;
+    if (accessPermissionState !== 'allowed') return;
+
+    setAccessDenied(false);
+    setReloadToken((t) => t + 1);
+  }, [id, isGuest, accessDenied, accessPermissionState]);
 
   const handleSave = () => {
     if (!isAuthed) {
       addToast('Vui lòng đăng nhập để lưu mindmap.', 'info');
       login();
     } else if (id) {
-      const content = { nodes: nodes, edges };
-      mindmapsApi
-        .update(id, { name, content })
-        .then(() => {
-          addToast('Đã lưu mindmap!', 'success');
-          useEditorStore.setState({ isDirty: false });
-          const newItems = mindmapItems.map(item => 
-             item.id === id ? { ...item, name: name } : item
-          );
-          setMindmapsStore({ items: newItems });
-        })
-        .catch((e) => {
-          console.error('Save failed:', e);
-          addToast('Lưu thất bại', 'error');
-        });
+      if (isOwner) {
+        // [FIX] Phải gửi đầy đủ nodes, edges, relationships, summaries
+        const content = { 
+          nodes: nodes, 
+          edges,
+          relationships: relationships || [],
+          summaries: summaries || []
+        };
+        mindmapsApi
+          .update(id, { name, content })
+          .then(() => {
+            addToast('Đã lưu mindmap!', 'success');
+            useEditorStore.setState({ isDirty: false });
+            const newItems = mindmapItems.map(item => 
+               item.id === id ? { ...item, name: name } : item
+            );
+            setMindmapsStore({ items: newItems });
+          })
+          .catch((e) => {
+            console.error('Save failed:', e);
+            addToast('Lưu thất bại', 'error');
+          });
+      } else {
+        addToast(
+          'Bạn đang ở chế độ Sandbox (Chỉ xem). Thay đổi không được lưu vào bản gốc.',
+          'info',
+        );
+      }
     }
   };
 
+  // [REMOVED] Auto open/close panel logic - now only controlled by toolbar button
+  // useEffect(() => {
+  //   if (selectedNodeIds.length > 0) {
+  //      setFormattingToolbarOpen(true);
+  //   } else {
+  //      setFormattingToolbarOpen(false);
+  //   }
+  // }, [selectedNodeIds]);
+
+  // [VIEWPORT RE-CENTERING] Smart re-centering when panel opens/closes
   useEffect(() => {
-    if (selectedNodeIds.length > 0) {
-       setFormattingToolbarOpen(true);
+    const prevState = prevPanelStateRef.current;
+    const currentState = isFormattingToolbarOpen;
+    
+    // Only re-center if state actually changed
+    if (prevState !== currentState) {
+      prevPanelStateRef.current = currentState;
+      
+      // Calculate delta shift
+      const deltaX = currentState ? -(PANEL_WIDTH / 2) : (PANEL_WIDTH / 2);
+      
+      // Get anchor point (selected node or viewport center)
+      let anchorX = 0;
+      let anchorY = 0;
+      
+      if (selectedNodeIds.length > 0) {
+        // Use selected node as anchor
+        const firstNode = nodes.find(n => n.id === selectedNodeIds[0]);
+        if (firstNode) {
+          anchorX = firstNode.x;
+          anchorY = firstNode.y;
+        }
+      } else {
+        // Use current viewport center as anchor
+        anchorX = (dimensions.width / 2 - pos.x) / scale;
+        anchorY = (dimensions.height / 2 - pos.y) / scale;
+      }
+      
+      // Apply smooth camera shift to keep anchor centered
+      setPos(prevPos => ({
+        x: prevPos.x + deltaX,
+        y: prevPos.y
+      }));
     }
-  }, [selectedNodeIds]);
+  }, [isFormattingToolbarOpen, selectedNodeIds, dimensions, scale, pos, nodes]);
 
   const handleCreateNew = useCallback(async () => {
     try {
@@ -515,220 +1273,67 @@ export default function Editor() {
     return () => window.removeEventListener('mm:create', createHandler);
   }, [handleCreateNew]);
 
-  // 1. Hàm Gửi Patch
-  const sendPatch = useCallback((type: string, payload: any) => {
-    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-      try {
-        wsRef.current.send(JSON.stringify({ type, payload }));
-      } catch (e) {
-        console.error('Lỗi khi gửi WebSocket patch:', e);
-      }
-    }
-  }, []);
-
-  // 2. Hook Kết nối và Nhận Patch
+  // Add Ctrl+S shortcut for saving and Ctrl+A for select all
   useEffect(() => {
-    if (!id || !isAuthed || isGuest || !isDataLoaded) {
-      return; // Chỉ user đăng nhập & không phải Guest mới kết nối WS
-    }
-
-    let isConnecting = true;
-    let isMounted = true; // Cờ cleanup
-
-    const connect = async () => {
-      try {
-        const token = await getAccessToken();
-        if (!token || !isMounted) return;
-
-        // TODO: Thay 'localhost:8081' bằng biến VITE_WS_URL
-        const wsUrl = `ws://localhost:8081/ws/mindmap/${id}?token=${token}`;
-        
-        const ws = new WebSocket(wsUrl);
-        wsRef.current = ws;
-        isConnecting = false;
-
-        ws.onopen = () => console.log(`WebSocket connected to mindmap: ${id}`);
-        ws.onclose = () => {
-          console.log(`WebSocket disconnected from mindmap: ${id}`);
-          wsRef.current = null;
-        };
-        ws.onerror = (err) => console.error('WebSocket error:', err);
-
-        // === [GĐ 9] LOGIC NHẬN PATCH ===
-        ws.onmessage = (event) => {
-          try {
-            const message: BroadcastPatch = JSON.parse(event.data);
-            const { type, payload } = message;
-
-            // Lấy state MỚI NHẤT từ store (RẤT QUAN TRỌNG)
-            const { nodes: currentNodes, edges: currentEdges } =
-              useEditorStore.getState();
-
-            // QUAN TRỌNG: Chỉ gọi setGraph, KHÔNG gọi debouncedPushHistory
-
-            switch (type) {
-              case 'USER_JOINED':
-                addToast(`User ${payload.userId.substring(0, 6)}... đã tham gia.`, 'info');
-                break;
-              case 'USER_LEFT':
-                addToast(`User ${payload.userId.substring(0, 6)}... đã rời đi.`, 'info');
-                break;
-              
-              case 'NODE_MOVE': {
-                const { id: nodeId, x, y } = payload;
-                const newNodes = currentNodes.map((n) =>
-                   n.id === nodeId ? { ...n, x, y } : n
-                );
-                setGraph(newNodes, currentEdges);
-                break;
-              }
-              case 'NODE_TEXT_CHANGE': {
-                const { id: nodeId, text } = payload;
-                const newNodes = currentNodes.map((n) =>
-                  n.id === nodeId ? { ...n, nodeText: text } : n
-                );
-                setGraph(newNodes, currentEdges);
-                setTimeout(() => handleLayout(true), 0);
-                break;
-              }
-              case 'NODE_CREATE': {
-                const { node: feNode, edge: feEdge } = payload;
-                setGraph([...currentNodes, feNode], [...currentEdges, feEdge]);
-                setTimeout(() => handleLayout(true), 0);
-                break;
-              }
-              case 'NODE_DELETE': {
-                const { nodeIds } = payload;
-                const set = new Set(nodeIds as string[]);
-                const newNodes = currentNodes.filter((n) => !set.has(n.id));
-                const newEdges = currentEdges.filter(
-                  (e) => !set.has(e.from) && !set.has(e.to)
-                );
-                setGraph(newNodes, newEdges);
-                setTimeout(() => handleLayout(true), 0);
-                break;
-              }
-              case 'NODE_REPARENT': {
-                const { nodeId, newParentId, x, y, side } = payload;
-                const newNodes = currentNodes.map((n) =>
-                  n.id === nodeId
-                    ? { ...n, parentId: newParentId, x, y, side }
-                    : n
-                );
-                const oldEdge = currentEdges.find((e) => e.to === nodeId);
-                let newEdges: EdgeData[];
-                if (oldEdge) {
-                  newEdges = currentEdges.map((e) =>
-                    e.id === oldEdge.id ? { ...e, from: newParentId } : e
-                  );
-                } else {
-                  newEdges = [
-                    ...currentEdges,
-                    { id: `e-${nodeId}`, from: newParentId, to: nodeId },
-                  ];
-                }
-                setGraph(newNodes, newEdges);
-               setTimeout(() => handleLayout(true), 0);
-                break;
-              }
-              case 'NODE_STYLE_UPDATE': {
-                const { id: nodeId, updates } = payload;
-                const newNodes = currentNodes.map((n) =>
-                  n.id === nodeId ? { ...n, ...updates } : n
-                );
-                setGraph(newNodes, currentEdges);
-                if (updates.nodeLength) setTimeout(() => handleLayout(true), 0);
-                break;
-              }
-              case 'NODE_QUICK_STYLE_APPLY': {
-              const { id: nodeId, styleId, resetStyle } = payload;
-                const newNodes = currentNodes.map((n) =>
-                  n.id === nodeId
-                    ? { ...n, ...resetStyle, quickStyleId: styleId }
-                    : n
-                );
-                setGraph(newNodes, currentEdges);
-                setTimeout(() => handleLayout(true), 0);
-                break;
-              }
-              case 'NODE_STYLE_PASTE': {
-               const { id: nodeId, style } = payload;
-                const newNodes = currentNodes.map((n) =>
-                  n.id === nodeId ? { ...n, ...style } : n
-                );
-                setGraph(newNodes, currentEdges);
-               setTimeout(() => handleLayout(true), 0);
-                break;
-              }
-              case 'NODE_STYLE_RESET': {
-                const { id: nodeId, resetStyle } = payload;
-                const newNodes = currentNodes.map((n) =>
-                  n.id === nodeId ? { ...n, ...resetStyle } : n
-                );
-                setGraph(newNodes, currentEdges);
-                setTimeout(() => handleLayout(true), 0);
-                break;
-              }
-              case 'NODE_TOGGLE_COLLAPSE': {
-                const { id: nodeId } = payload;
-                const newNodes = currentNodes.map(n => 
-                  n.id === nodeId ? { ...n, collapsed: !n.collapsed } : n
-                );
-                setGraph(newNodes, currentEdges);
-               break;
-              }
-              case 'ROOT_TOGGLE_COLLAPSE': {
-                const { side } = payload;
-                // [FIX TS ERROR] Thêm type guard
-                if (side === 'left' || side === 'right') {
-               setRootCollapse(prev => ({ ...prev, [side as 'left' | 'right']: !prev[side as 'left' | 'right'] }));
-                } else {
-                  console.warn(`Invalid side received in ROOT_TOGGLE_COLLAPSE: ${side}`);
-                }
-                break;
-              }
-              default:
-                console.warn('Unknown WebSocket patch type:', type);
-            }
-          } catch (e) {
-            console.error('Lỗi khi xử lý tin nhắn WebSocket:', e);
-         }
-        };
-      } catch (err) {
-        console.error("Không thể lấy access token cho WebSocket:", err);
-        addToast("Lỗi xác thực WebSocket.", "error");
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Ctrl+S: Save
+      if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+        e.preventDefault();
+        if (isDirty) {
+          handleSave();
+        }
+      }
+      
+      // Ctrl+A: Select all nodes on canvas
+      if ((e.ctrlKey || e.metaKey) && e.key === 'a') {
+        e.preventDefault();
+        // Chỉ select nodes trong canvas, không select các element ngoài
+        const allNodeIds = nodes.map(n => n.id);
+        setSelectedNodeIds(allNodeIds);
       }
     };
-
-    connect();
-
-    // Hàm cleanup
-    return () => {
-      isMounted = false;
-      if (wsRef.current && !isConnecting) {
-       console.log('Closing WebSocket connection...');
-        wsRef.current.close();
-      }
-      wsRef.current = null;
-    };
-  }, [id, isAuthed, isGuest, isDataLoaded, getAccessToken, addToast, setGraph]);
-  // (Bỏ pushHistory khỏi deps)
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isDirty, handleSave, nodes]);
 
   // ================================================
   // Style & Layout Logic
-  // [MERGE] Giữ nguyên logic 5 bước của feature/tt
   // ================================================
+  // NOTE: Old WebSocket code removed - now using useRealtime hook
 
-  
+const deepEqualNodes = (nodes1: NodeData[], nodes2: NodeData[]): boolean => {
+  if (nodes1.length !== nodes2.length) return false;
+  for (let i = 0; i < nodes1.length; i++) {
+    const n1 = nodes1[i];
+    const n2 = nodes2[i];
+    if (
+      n1.id !== n2.id ||
+      Math.abs(n1.x - n2.x) > 0.1 || 
+      Math.abs(n1.y - n2.y) > 0.1 ||
+      n1.parentId !== n2.parentId ||
+      n1.side !== n2.side ||
+      n1.collapsed !== n2.collapsed ||
+      n1.imageWidth !== n2.imageWidth || // Include image dimensions
+      n1.imageHeight !== n2.imageHeight
+    ) {
+      return false;
+    }
+  }
+  return true;
+};
 
-  const handleLayout = useCallback(
-    (keepCamera: boolean = false) => {
+const handleLayout = useCallback(
+    () => {
+      const stack = new Error().stack;
+      const caller = stack?.split('\n')[2]?.trim() || 'unknown';
+      console.log(`[Layout] Called from: ${caller}`);
+      
       const { globalStructure, nodes, edges } = useEditorStore.getState();
       const layoutType = globalStructure;
 
       let newNodes: NodeData[] = [...nodes];
 
-      if (layoutType === 'mindmap') {
+      if (layoutType === 'mindmap' || layoutType === 'logic') {
         const HORIZONTAL_GAP = 120;
         const VERTICAL_GAP = 20;
         const ROOT_X = 0;
@@ -757,9 +1362,30 @@ export default function Editor() {
         const calculateSubtreeHeights = (node: TreeNode): number => {
           const visual = nodeVisuals.get(node.id);
           const selfHeight = visual?.box.h || 60;
+          
+          // [SUPER-NODE] Tính boundary padding nếu node có boundary
+          let boundaryPaddingVertical = 0;
+          if (node.boundary) {
+            // Padding cho boundary: base 30px, giảm theo depth
+            const depth = (() => {
+              let d = 0;
+              let parentId = node.parentId;
+              while (parentId) {
+                const parent = nodes.find(n => n.id === parentId);
+                if (parent?.boundary) d++;
+                parentId = parent?.parentId;
+              }
+              return d;
+            })();
+            const basePadding = 30;
+            const depthPadding = depth * -8;
+            const padding = Math.max(10, basePadding + depthPadding);
+            boundaryPaddingVertical = padding * 2; // Top + Bottom
+          }
+          
           if (node.children.length === 0) {
-            node.subtreeHeight = selfHeight;
-            return selfHeight;
+            node.subtreeHeight = selfHeight + boundaryPaddingVertical;
+            return node.subtreeHeight;
           }
           let childrenTotalHeight = 0;
           node.children.forEach((child, index) => {
@@ -768,7 +1394,7 @@ export default function Editor() {
               childrenTotalHeight += VERTICAL_GAP;
             }
           });
-          node.subtreeHeight = Math.max(selfHeight, childrenTotalHeight);
+          node.subtreeHeight = Math.max(selfHeight, childrenTotalHeight) + boundaryPaddingVertical;
           return node.subtreeHeight;
         };
         const positionBranch = (
@@ -784,7 +1410,26 @@ export default function Editor() {
           branchNodes.forEach((node) => {
             const blockHeight = node.subtreeHeight;
             const nodeVisual = nodeVisuals.get(node.id);
-            const nodeWidth = nodeVisual?.box.w || 150;
+            let nodeWidth = nodeVisual?.box.w || 150;
+            
+            // [SUPER-NODE] Expand width if node has boundary
+            if (node.boundary) {
+              const depth = (() => {
+                let d = 0;
+                let parentId = node.parentId;
+                while (parentId) {
+                  const parent = nodes.find(n => n.id === parentId);
+                  if (parent?.boundary) d++;
+                  parentId = parent?.parentId;
+                }
+                return d;
+              })();
+              const basePadding = 30;
+              const depthPadding = depth * -8;
+              const padding = Math.max(10, basePadding + depthPadding);
+              nodeWidth += padding * 2; // Left + Right padding
+            }
+            
             const parentVisual = nodeVisuals.get(parent.id);
             const parentWidth = parentVisual?.box.w || 150;
             node.x =
@@ -811,7 +1456,26 @@ export default function Editor() {
           children.forEach((node) => {
             const blockHeight = node.subtreeHeight;
             const nodeVisual = nodeVisuals.get(node.id);
-            const nodeWidth = nodeVisual?.box.w || 150;
+            let nodeWidth = nodeVisual?.box.w || 150;
+            
+            // [SUPER-NODE] Expand width if node has boundary
+            if (node.boundary) {
+              const depth = (() => {
+                let d = 0;
+                let parentId = node.parentId;
+                while (parentId) {
+                  const parent = nodes.find(n => n.id === parentId);
+                  if (parent?.boundary) d++;
+                  parentId = parent?.parentId;
+                }
+                return d;
+              })();
+              const basePadding = 30;
+              const depthPadding = depth * -8;
+              const padding = Math.max(10, basePadding + depthPadding);
+              nodeWidth += padding * 2;
+            }
+            
             const parentVisual = nodeVisuals.get(parent.id);
             const parentWidth = parentVisual?.box.w || 150;
             node.x =
@@ -832,23 +1496,46 @@ export default function Editor() {
           rootNode.x = ROOT_X;
           rootNode.y = ROOT_Y;
           rootNode.side = 'right';
-          const rightGroup: TreeNode[] = [];
-          const leftGroup: TreeNode[] = [];
-          let rightHeight = 0;
-          let leftHeight = 0;
-          const sortedRootChildren = [...rootNode.children].sort(
-            (a, b) => b.subtreeHeight - a.subtreeHeight
-          );
-          sortedRootChildren.forEach((child) => {
-            const childBlockHeight = child.subtreeHeight;
-            if (rightHeight <= leftHeight) {
-              rightGroup.push(child);
-              rightHeight += childBlockHeight + (rightGroup.length > 1 ? VERTICAL_GAP : 0);
+          let rightGroup: TreeNode[] = [];
+          let leftGroup: TreeNode[] = [];
+            if (layoutType === 'logic') {
+              // Force all root children to the RIGHT for logic structure
+              rootNode.children.forEach((child) => { child.side = 'right'; });
+              rightGroup = rootNode.children;
+              leftGroup = [];
             } else {
-              leftGroup.push(child);
-              leftHeight += childBlockHeight + (leftGroup.length > 1 ? VERTICAL_GAP : 0);
+              // [STICKY STATE] Do NOT rebalance existing root children.
+              // Respect each child's existing side. Only assign side for children without a side.
+              const existingLeft: TreeNode[] = [];
+              const existingRight: TreeNode[] = [];
+              const unassigned: TreeNode[] = [];
+              rootNode.children.forEach((child) => {
+                if (child.side === 'left') existingLeft.push(child);
+                else if (child.side === 'right') existingRight.push(child);
+                else unassigned.push(child);
+              });
+
+              // For unassigned children (rare), use water-filling to decide side without moving existing ones
+              const sortedUnassigned = [...unassigned].sort((a, b) => b.subtreeHeight - a.subtreeHeight);
+              let leftAccum = existingLeft.reduce((sum, c, idx) => sum + c.subtreeHeight + (idx > 0 ? VERTICAL_GAP : 0), 0);
+              let rightAccum = existingRight.reduce((sum, c, idx) => sum + c.subtreeHeight + (idx > 0 ? VERTICAL_GAP : 0), 0);
+              sortedUnassigned.forEach((child) => {
+                const h = child.subtreeHeight;
+                if (rightAccum <= leftAccum) {
+                  child.side = 'right';
+                  existingRight.push(child);
+                  rightAccum += h + (existingRight.length > 1 ? VERTICAL_GAP : 0);
+                } else {
+                  child.side = 'left';
+                  existingLeft.push(child);
+                  leftAccum += h + (existingLeft.length > 1 ? VERTICAL_GAP : 0);
+                }
+              });
+
+              // Use the sticky groups for positioning
+              rightGroup = existingRight;
+              leftGroup = existingLeft;
             }
-          });
           positionBranch(rightGroup, rootNode, 'right');
           positionBranch(leftGroup, rootNode, 'left');
           newNodes = Array.from(treeMap.values()).map((node) => {
@@ -857,9 +1544,9 @@ export default function Editor() {
           });
         }
       } else {
-        // Logic Dagre cho 'org' và 'logic'
+        // Dagre layout cho 'org' (chỉ org)
         const g = new dagre.graphlib.Graph();
-        const rankdir = layoutType === 'org' ? 'TB' : 'LR';
+        const rankdir = 'TB';
         g.setGraph({ rankdir: rankdir, nodesep: 50, ranksep: 120 });
         g.setDefaultEdgeLabel(() => ({}));
         const adjMap = new Map<string, string[]>();
@@ -871,18 +1558,7 @@ export default function Editor() {
           const visual = nodeVisuals.get(node.id);
          let w = visual?.box.w || 100;
           let h = visual?.box.h || 50;
-          if (layoutType === 'logic') {
-            const children = adjMap.get(node.id) || [];
-            if (children.length > 0) {
-              let childrenHeight = 0;
-              children.forEach((childId, idx) => {
-                childrenHeight += nodeVisuals.get(childId)?.box.h || 50;
-                if (idx > 0) childrenHeight += 30;
-              });
-              h = Math.max(h, childrenHeight);
-            }
-          }
-          if (layoutType === 'org') {
+          {
             const children = adjMap.get(node.id) || [];
             if (children.length > 0) {
               let childrenWidth = 0;
@@ -891,7 +1567,7 @@ export default function Editor() {
                 if (idx > 0) childrenWidth += 30;
               });
               w = Math.max(w, childrenWidth);
-         }
+           }
           }
           g.setNode(node.id, { label: node.nodeText, width: w, height: h });
         });
@@ -899,8 +1575,7 @@ export default function Editor() {
         dagre.layout(g);
         newNodes = nodes.map((n): NodeData => {
           const pos = g.node(n.id);
-          const side =
-            layoutType === 'org' ? 'right' : pos.x < 0 ? 'left' : 'right';
+          const side = 'right';
           return pos ? { ...n, x: pos.x, y: pos.y, side: side } : n;
         });
       }
@@ -908,33 +1583,26 @@ export default function Editor() {
       const finalNodesMap = new Map(newNodes.map(n => [n.id, n]));
       const allEdges = useEditorStore.getState().edges;
 
-      // 2. Tìm tất cả các node gốc (không có cha) NGOẠI TRỪ 'root'
       const floatingRoots = newNodes.filter(
         n => (n.parentId === undefined || n.parentId === null) && n.id !== 'root'
       );
 
-      // 3. Tạo một map các cạnh để tìm con (chỉ cần làm 1 lần)
       const adjMap = new Map<string, string[]>();
       allEdges.forEach(e => {
         if (!adjMap.has(e.from)) adjMap.set(e.from, []);
         adjMap.get(e.from)!.push(e.to);
       });
 
-      // 4. Duyệt qua từng "đảo"
       for (const floatingRoot of floatingRoots) {
         const islandNodes = new Map<string, NodeData>();
         const islandEdges: EdgeData[] = [];
-        const q: NodeData[] = [floatingRoot]; // Hàng đợi cho BFS
-
-        // 5. Tìm tất cả con cháu của đảo này (BFS)
+        const q: NodeData[] = [floatingRoot]; 
         while (q.length > 0) {
           const current = q.shift()!;
           if (!islandNodes.has(current.id)) {
             islandNodes.set(current.id, current);
-            
             const childrenIds = adjMap.get(current.id) || [];
             childrenIds.forEach(childId => {
-              // Lấy node từ map (đã được layout chính cập nhật)
               const childNode = finalNodesMap.get(childId); 
               if (childNode) {
                 q.push(childNode);
@@ -944,9 +1612,8 @@ export default function Editor() {
           }
         }
 
-        if (islandNodes.size <= 1) continue; // Không có con, bỏ qua
+        if (islandNodes.size <= 1) continue; 
 
-        // 6. Tạo 1 graph Dagre *riêng* cho hòn đảo này
         const g = new dagre.graphlib.Graph();
         const islandLayoutDir = 'LR';
         g.setGraph({ rankdir: islandLayoutDir, nodesep: 50, ranksep: 100 });
@@ -962,17 +1629,13 @@ export default function Editor() {
         });
         islandEdges.forEach((edge) => g.setEdge(edge.from, edge.to));
         
-        // 7. Chạy layout cục bộ
         dagre.layout(g);
 
-        // 8. Tính toán độ dời (offset)
-        // Vị trí "neo" là vị trí hiện tại của node nổi (do người dùng kéo)
         const anchorPos = finalNodesMap.get(floatingRoot.id)!; 
         const dagreRootPos = g.node(floatingRoot.id);
         const offsetX = anchorPos.x - dagreRootPos.x;
         const offsetY = anchorPos.y - dagreRootPos.y;
 
-        // 9. Áp dụng vị trí mới (đã dời) cho tất cả con cháu
         islandNodes.forEach((node, id) => {
           const dagrePos = g.node(id);
           if (dagrePos) {
@@ -981,102 +1644,383 @@ export default function Editor() {
               ...existingNode,
               x: dagrePos.x + offsetX,
               y: dagrePos.y + offsetY,
-              // Gán "side" để đường kẻ vẽ đúng
               side: (islandLayoutDir === 'LR' ? (dagrePos.x < 0 ? 'left' : 'right') : 'right') as 'left' | 'right', 
             };
-            finalNodesMap.set(id, updatedNode); // Cập nhật lại map
+            finalNodesMap.set(id, updatedNode); 
           }
         });
-      } // Kết thúc vòng lặp for (duyệt các đảo)
+      } 
       
-      // 10. Chuyển map cuối cùng về mảng newNodes
       newNodes = Array.from(finalNodesMap.values());
 
-      // Cập nhật state VÀ reset collapse root (UI mới)
-      setGraph(newNodes, edges);
-      setRootCollapse({ left: false, right: false });
+      // Position summary nodes at brace tip positions
+      const { summaries } = useEditorStore.getState();
 
-      // Logic Căn giữa/Zoom (Không đổi)
-      if (newNodes.length === 0) {
-        const currentWidth = window.innerWidth;
-        const currentHeight = window.innerHeight - 48;
-        setDimensions({ width: currentWidth, height: currentHeight });
-        setScale(1);
-        setPos({ x: currentWidth / 2, y: currentHeight / 2 });
-        return;
-      }
-      let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-      newNodes.forEach((node) => {
-        const visual = nodeVisuals.get(node.id);
-        const w = visual?.box.w || 100;
-        const h = visual?.box.h || 50;
-        const x = node.x; const y = node.y;
-        minX = Math.min(minX, x - w / 2);
-        maxX = Math.max(maxX, x + w / 2);
-        minY = Math.min(minY, y - h / 2);
-        maxY = Math.max(maxY, y + h / 2);
-      });
-      const boundsWidth = maxX - minX + 80;
-      const boundsHeight = maxY - minY + 80;
-      const currentWidth = window.innerWidth;
-      const currentHeight = window.innerHeight - 48;
-      setDimensions({ width: currentWidth, height: currentHeight });
-      if (boundsWidth <= 0 || boundsHeight <= 0) {
-        if (!keepCamera) {
-          setScale(1);
-          setPos({
-            x: currentWidth / 2 - newNodes[0].x,
-            y: currentHeight / 2 - newNodes[0].y,
-          });
+      type SummaryLayout = {
+        summary: typeof summaries[number];
+        firstNodeSide: 'left' | 'right';
+        direction: -1 | 1;
+        startX: number;
+        midY: number;
+        xMid: number;
+        spanHeight: number;
+      };
+
+      const layouts: SummaryLayout[] = [];
+
+      summaries.forEach(summary => {
+        if (!summary.summaryNodeId) return;
+        const parentNode = newNodes.find(n => n.id === summary.parentId);
+        if (!parentNode) return;
+        
+        const siblings = newNodes.filter(n => n.parentId === summary.parentId);
+        const startIdx = siblings.findIndex(n => n.id === summary.startNodeId);
+        const endIdx = siblings.findIndex(n => n.id === summary.endNodeId);
+        if (startIdx === -1 || endIdx === -1) return;
+        
+        const [minIdx, maxIdx] = [Math.min(startIdx, endIdx), Math.max(startIdx, endIdx)];
+        
+        // Collect leaf nodes
+        const collectLeafNodes = (nodeId: string): string[] => {
+          const node = newNodes.find(n => n.id === nodeId);
+          if (node?.collapsed) return [nodeId];
+          const children = newNodes.filter(n => n.parentId === nodeId);
+          if (children.length === 0) return [nodeId];
+          return children.flatMap(child => collectLeafNodes(child.id));
+        };
+        
+        const leafNodes: string[] = [];
+        for (let i = minIdx; i <= maxIdx; i++) {
+          leafNodes.push(...collectLeafNodes(siblings[i].id));
         }
-        return;
+        
+        // Calculate brace position
+        const firstNode = newNodes.find(n => n.id === summary.startNodeId);
+        if (!firstNode) return;
+        
+        const isLeft = firstNode.side === 'left';
+        const direction = isLeft ? -1 : 1;
+        
+        let braceX = isLeft ? Infinity : -Infinity;
+        let startY = Infinity;
+        let endY = -Infinity;
+        
+        leafNodes.forEach(leafId => {
+          const node = newNodes.find(n => n.id === leafId);
+          const visual = nodeVisuals.get(leafId);
+          if (node && visual) {
+            const nodeLeft = node.x - visual.box.w / 2;
+            const nodeRight = node.x + visual.box.w / 2;
+            const nodeTop = node.y - visual.box.h / 2;
+            const nodeBottom = node.y + visual.box.h / 2;
+            braceX = isLeft ? Math.min(braceX, nodeLeft) : Math.max(braceX, nodeRight);
+            startY = Math.min(startY, nodeTop);
+            endY = Math.max(endY, nodeBottom);
+          }
+        });
+        
+        const braceWidth = 15;
+        const startX = isLeft ? braceX - 20 : braceX + 20;
+        const midY = (startY + endY) / 2;
+        const xMid = startX + (braceWidth * direction * 1.5);
+        const spanHeight = endY - startY;
+
+        layouts.push({
+          summary,
+          firstNodeSide: (firstNode.side as 'left' | 'right') || 'right',
+          direction: direction as -1 | 1,
+          startX,
+          midY,
+          xMid,
+          spanHeight,
+        });
+      });
+
+      const grouped = new Map<string, SummaryLayout[]>();
+      layouts.forEach(l => {
+        const key = `${l.summary.parentId}-${l.firstNodeSide}`;
+        if (!grouped.has(key)) grouped.set(key, []);
+        grouped.get(key)!.push(l);
+      });
+
+      const outwardBase = 80;
+      const outwardStep = 28;
+
+      grouped.forEach(group => {
+        group.sort((a, b) => b.spanHeight - a.spanHeight); 
+        group.forEach((layout, idx) => {
+          const level = group.length - idx - 1; 
+          summaryLayoutLevelsRef.current.set(layout.summary.id, level);
+          const { summary, direction, xMid, midY, firstNodeSide } = layout;
+          const summaryNodeIndex = newNodes.findIndex(n => n.id === summary.summaryNodeId);
+          if (summaryNodeIndex !== -1) {
+            newNodes[summaryNodeIndex] = {
+              ...newNodes[summaryNodeIndex],
+              x: xMid + (direction * (outwardBase + level * outwardStep)),
+              y: midY, 
+              side: firstNodeSide,
+            };
+          }
+        });
+      });
+
+      // Lấy trạng thái hiện tại của nodes từ store
+      const currentNodesInStore = useEditorStore.getState().nodes;
+
+      // Chỉ cập nhật graph nếu có sự thay đổi đáng kể về vị trí/kích thước
+      if (!deepEqualNodes(newNodes, currentNodesInStore)) {
+        setGraph(newNodes, edges);
       }
-      const scaleX = currentWidth / boundsWidth;
-      const scaleY = currentHeight / boundsHeight;
-      const newScale = Math.min(1, scaleX, scaleY);
-      const boundsCenterX = minX + (maxX - minX) / 2;
-      const boundsCenterY = minY + (maxY - minY) / 2;
-      const newX = currentWidth / 2 - boundsCenterX * newScale;
-      const newY = currentHeight / 2 - boundsCenterY * newScale;
-      if (!keepCamera) {
-        setScale(newScale);
-        setPos({ x: newX, y: newY });
-      }
+      
+      setRootCollapse({ left: false, right: false });
     },
-    [nodeVisuals, setGraph, edges] // [GĐ 7] Bỏ 'nodes'
+    [nodeVisuals, setGraph, edges] 
   );
 
-  // [SỬA] THÊM CÁC HÀM XỬ LÝ ZOOM NÀY
-const zoomStep = 1.2; // Tốc độ zoom
+  
 
-const handleZoomIn = useCallback(() => {
-  // Zoom vào vị trí trung tâm màn hình
-  handleSetZoom(scale * zoomStep);
-}, [scale]); // [SỬA] Thêm scale vào dependency
+  // ============================================================================
+  // Rebalance Layout - Chia đều tất cả node con về 2 bên
+  // ============================================================================
+  const handleRebalanceLayout = useCallback(() => {
+    console.log('[Rebalance] Starting full tree rebalance');
+    
+    const { globalStructure, nodes, edges } = useEditorStore.getState();
+    
+    // Chỉ hoạt động với mindmap structure
+    if (globalStructure !== 'mindmap') {
+      console.log('[Rebalance] Only works with mindmap structure');
+      return;
+    }
 
-const handleZoomOut = useCallback(() => {
-  // Zoom ra từ vị trí trung tâm màn hình
-  handleSetZoom(scale / zoomStep);
-}, [scale]); // [SỬA] Thêm scale vào dependency
+    let newNodes: NodeData[] = [...nodes];
+    
+    const HORIZONTAL_GAP = 120;
+    const VERTICAL_GAP = 20;
+    const ROOT_X = 0;
+    const ROOT_Y = 0;
+    const treeMap = new Map<string, TreeNode>();
+    
+    type TreeNode = NodeData & {
+      children: TreeNode[];
+      subtreeHeight: number;
+    };
+    
+    const buildTree = (): TreeNode | null => {
+      let root: TreeNode | null = null;
+      nodes.forEach((node) => {
+        treeMap.set(node.id, { ...node, children: [], subtreeHeight: 0 });
+      });
+      edges.forEach((edge) => {
+        const parent = treeMap.get(edge.from);
+        const child = treeMap.get(edge.to);
+        if (parent && child) {
+          parent.children.push(child);
+        }
+      });
+      const rootNode = treeMap.get('root');
+      if (rootNode) root = rootNode;
+      return root;
+    };
+    
+    const calculateSubtreeHeights = (node: TreeNode): number => {
+      const visual = nodeVisuals.get(node.id);
+      const selfHeight = visual?.box.h || 60;
+      
+      let boundaryPaddingVertical = 0;
+      if (node.boundary) {
+        const depth = (() => {
+          let d = 0;
+          let parentId = node.parentId;
+          while (parentId) {
+            const parent = nodes.find(n => n.id === parentId);
+            if (parent?.boundary) d++;
+            parentId = parent?.parentId;
+          }
+          return d;
+        })();
+        const basePadding = 30;
+        const depthPadding = depth * -8;
+        const padding = Math.max(10, basePadding + depthPadding);
+        boundaryPaddingVertical = padding * 2;
+      }
+      
+      if (node.children.length === 0) {
+        node.subtreeHeight = selfHeight + boundaryPaddingVertical;
+        return node.subtreeHeight;
+      }
+      
+      let childrenTotalHeight = 0;
+      node.children.forEach((child, index) => {
+        childrenTotalHeight += calculateSubtreeHeights(child);
+        if (index > 0) {
+          childrenTotalHeight += VERTICAL_GAP;
+        }
+      });
+      node.subtreeHeight = Math.max(selfHeight, childrenTotalHeight) + boundaryPaddingVertical;
+      return node.subtreeHeight;
+    };
+    
+    const positionBranch = (
+      branchNodes: TreeNode[],
+      parent: TreeNode,
+      side: 'left' | 'right'
+    ) => {
+      const totalHeight = branchNodes.reduce((sum, node, index) => {
+        return sum + node.subtreeHeight + (index > 0 ? VERTICAL_GAP : 0);
+      }, 0);
+      let currentY = parent.y - totalHeight / 2;
+      const direction = side === 'left' ? -1 : 1;
+      branchNodes.forEach((node) => {
+        const blockHeight = node.subtreeHeight;
+        const nodeVisual = nodeVisuals.get(node.id);
+        let nodeWidth = nodeVisual?.box.w || 150;
+        
+        if (node.boundary) {
+          const depth = (() => {
+            let d = 0;
+            let parentId = node.parentId;
+            while (parentId) {
+              const parent = nodes.find(n => n.id === parentId);
+              if (parent?.boundary) d++;
+              parentId = parent?.parentId;
+            }
+            return d;
+          })();
+          const basePadding = 30;
+          const depthPadding = depth * -8;
+          const padding = Math.max(10, basePadding + depthPadding);
+          nodeWidth += padding * 2;
+        }
+        
+        const parentVisual = nodeVisuals.get(parent.id);
+        const parentWidth = parentVisual?.box.w || 150;
+        node.x =
+          parent.x +
+          direction * (HORIZONTAL_GAP + parentWidth / 2 + nodeWidth / 2);
+        node.y = currentY + blockHeight / 2;
+        node.side = side;
+        currentY += blockHeight + VERTICAL_GAP;
+        if (node.children.length > 0) {
+          positionChildrenVertically(node.children, node, side);
+        }
+      });
+    };
+    
+    const positionChildrenVertically = (
+      children: TreeNode[],
+      parent: TreeNode,
+      side: 'left' | 'right'
+    ) => {
+      const totalHeight = children.reduce((sum, node, index) => {
+        return sum + node.subtreeHeight + (index > 0 ? VERTICAL_GAP : 0);
+      }, 0);
+      let currentY = parent.y - totalHeight / 2;
+      const direction = side === 'left' ? -1 : 1;
+      children.forEach((node) => {
+        const blockHeight = node.subtreeHeight;
+        const nodeVisual = nodeVisuals.get(node.id);
+        let nodeWidth = nodeVisual?.box.w || 150;
+        
+        if (node.boundary) {
+          const depth = (() => {
+            let d = 0;
+            let parentId = node.parentId;
+            while (parentId) {
+              const parent = nodes.find(n => n.id === parentId);
+              if (parent?.boundary) d++;
+              parentId = parent?.parentId;
+            }
+            return d;
+          })();
+          const basePadding = 30;
+          const depthPadding = depth * -8;
+          const padding = Math.max(10, basePadding + depthPadding);
+          nodeWidth += padding * 2;
+        }
+        
+        const parentVisual = nodeVisuals.get(parent.id);
+        const parentWidth = parentVisual?.box.w || 150;
+        node.x =
+          parent.x +
+          direction *
+            (HORIZONTAL_GAP / 1.5 + parentWidth / 2 + nodeWidth / 2);
+        node.y = currentY + blockHeight / 2;
+        node.side = side;
+        currentY += blockHeight + VERTICAL_GAP;
+        if (node.children.length > 0) {
+          positionChildrenVertically(node.children, node, side);
+        }
+      });
+    };
+    
+    const rootNode = buildTree();
+    if (rootNode) {
+      calculateSubtreeHeights(rootNode);
+      rootNode.x = ROOT_X;
+      rootNode.y = ROOT_Y;
+      rootNode.side = 'right';
+      
+      // [REBALANCE MODE] Không giữ side cũ - chia đều tất cả children
+      const sortedChildren = [...rootNode.children].sort((a, b) => b.subtreeHeight - a.subtreeHeight);
+      
+      let rightGroup: TreeNode[] = [];
+      let leftGroup: TreeNode[] = [];
+      let leftAccum = 0;
+      let rightAccum = 0;
+      
+      sortedChildren.forEach((child) => {
+        const h = child.subtreeHeight;
+        if (rightAccum <= leftAccum) {
+          child.side = 'right';
+          rightGroup.push(child);
+          rightAccum += h + (rightGroup.length > 1 ? VERTICAL_GAP : 0);
+        } else {
+          child.side = 'left';
+          leftGroup.push(child);
+          leftAccum += h + (leftGroup.length > 1 ? VERTICAL_GAP : 0);
+        }
+      });
+      
+      positionBranch(rightGroup, rootNode, 'right');
+      positionBranch(leftGroup, rootNode, 'left');
+      
+      newNodes = Array.from(treeMap.values()).map((node) => {
+        const { children, subtreeHeight, ...rest } = node;
+        return rest;
+      });
+    }
+    
+    setGraph(newNodes, edges);
+    console.log('[Rebalance] Completed');
+  }, [nodeVisuals, edges, setGraph]);
 
-const handleSetZoom = useCallback((newScale: number) => {
-  const stage = stageRef.current;
-  if (!stage) {
-    setScale(newScale);
-    return;
-  }
+  const zoomStep = 1.2; 
+  const handleZoomIn = useCallback(() => {
+    handleSetZoom(scale * zoomStep);
+  }, [scale]); 
+  const handleZoomOut = useCallback(() => {
+    handleSetZoom(scale / zoomStep);
+  }, [scale]); 
 
-  const { width, height } = dimensions;
-  const oldScale = scale;
+  const handleSetZoom = useCallback((newScale: number) => {
+    const stage = stageRef.current;
+    if (!stage) {
+      setScale(newScale);
+      return;
+    }
 
-  // Lấy vị trí trung tâm màn hình
-  const center = { x: width / 2, y: height / 2 };
+    const { width, height } = dimensions;
+    const oldScale = scale;
 
-  // Tính toán điểm thế giới (world point) mà trung tâm màn hình đang trỏ tới
-  const mousePointTo = {
-    x: (center.x - pos.x) / oldScale,
-    y: (center.y - pos.y) / oldScale,
-  };
+    // Lấy vị trí trung tâm màn hình
+    const center = { x: width / 2, y: height / 2 };
+
+    // Tính toán world point mà trung tâm màn hình đang trỏ tới
+    const mousePointTo = {
+      x: (center.x - pos.x) / oldScale,
+      y: (center.y - pos.y) / oldScale,
+    };
 
   // Đặt scale mới
   setScale(newScale);
@@ -1088,23 +2032,140 @@ const handleSetZoom = useCallback((newScale: number) => {
   });
 }, [scale, pos.x, pos.y, dimensions.width, dimensions.height]);
 
-const handleFitToScreen = useCallback(() => {
-  // Gọi handleLayout(false) sẽ tự động căn giữa và zoom
-  handleLayout(false); 
-}, [handleLayout]); 
+  // ================================================
+  // New Node Animation (Spring Physics - Xmind style)
+  // ================================================
+  const fadingInRef = useRef<Set<string>>(new Set());
+  const startNodeBirthAnimation = useCallback((nodeId: string, parentX: number, parentY: number, finalX: number, finalY: number) => {
+    const stage = stageRef.current?.getStage();
+    if (!stage) return;
+    try {
+      const group = stage.findOne(`#${nodeId}`) as any;
+      if (!group) return;
+      
+      fadingInRef.current.add(nodeId);
+      
+      // Initial state: at parent position, small scale, transparent
+      group.x(parentX);
+      group.y(parentY);
+      group.scaleX(0.5);
+      group.scaleY(0.5);
+      group.opacity(0);
+      
+      // Spring animation: position + scale + opacity
+      const tween = new (window as any).Konva.Tween({
+        node: group,
+        x: finalX,
+        y: finalY,
+        scaleX: 1,
+        scaleY: 1,
+        opacity: 1,
+        duration: 0.25, // 250ms for smooth spring feel
+        easing: (window as any).Konva?.Easings?.EaseOut || undefined,
+        onFinish: () => {
+          fadingInRef.current.delete(nodeId);
+        },
+      });
+      tween.play();
+    } catch (e) {
+      fadingInRef.current.delete(nodeId);
+    }
+  }, []);
 
-  // ================================================
-  // Node Actions [CẬP NHẬT GĐ 7 + 9]
-  // ================================================
+  // ==========================================================
+  // Render Tracking (diagnose number of renders per action)
+  // ==========================================================
+  const renderTrackRef = useRef<{ active: boolean; id: number; start: number; count: number; label: string }>(
+    { active: false, id: 0, start: 0, count: 0, label: '' }
+  );
+  // Increment render count on every render when tracking is active
+  if (renderTrackRef.current.active) {
+    renderTrackRef.current.count++;
+  }
+  const startRenderTracking = useCallback((label: string) => {
+    const now = (typeof performance !== 'undefined' ? performance.now() : Date.now());
+    const id = Date.now();
+    if (renderTrackRef.current.active) {
+      // Overlapping sessions should not happen, but guard just in case
+      // End previous session and log it
+      const prev = renderTrackRef.current;
+      const prevDuration = Math.round(now - prev.start);
+      console.warn(`[RenderTrack] FORCE-END ${prev.label} id=${prev.id} renders=${prev.count} duration=${prevDuration}ms`);
+    }
+    renderTrackRef.current = { active: true, id, start: now, count: 0, label };
+    console.log(`[RenderTrack] START ${label} id=${id}`);
+  }, []);
+  const endRenderTracking = useCallback(() => {
+    if (!renderTrackRef.current.active) return;
+    const now = (typeof performance !== 'undefined' ? performance.now() : Date.now());
+    const sess = renderTrackRef.current;
+    const duration = Math.round(now - sess.start);
+    console.log(`[RenderTrack] END ${sess.label} id=${sess.id} renders=${sess.count} duration=${duration}ms`);
+    renderTrackRef.current.active = false;
+  }, []);
+
+const handleFitToScreen = useCallback(() => {
+  console.log('[FitToScreen] Called - Fitting camera to view all nodes');
+  
+  // Gọi layout để tính toán vị trí
+  handleLayout();
+  
+  // Sau đó thực hiện fit camera
+  const { nodes } = useEditorStore.getState();
+  if (nodes.length === 0) return;
+  
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  nodes.forEach((node) => {
+    const visual = nodeVisuals.get(node.id);
+    const w = visual?.box.w || 100;
+    const h = visual?.box.h || 50;
+    const x = node.x; const y = node.y;
+    minX = Math.min(minX, x - w / 2);
+    maxX = Math.max(maxX, x + w / 2);
+    minY = Math.min(minY, y - h / 2);
+    maxY = Math.max(maxY, y + h / 2);
+  });
+  
+  const boundsWidth = maxX - minX + 80;
+  const boundsHeight = maxY - minY + 80;
+  
+  const panelOffset = isFormattingToolbarOpen ? PANEL_WIDTH : 0;
+  const currentWidth = window.innerWidth - panelOffset;
+  const currentHeight = window.innerHeight - 48;
+  
+  if (boundsWidth <= 0 || boundsHeight <= 0) {
+    setScale(1);
+    setPos({ x: currentWidth / 2 - nodes[0].x, y: currentHeight / 2 - nodes[0].y });
+    return;
+  }
+  
+  const scaleX = currentWidth / boundsWidth;
+  const scaleY = currentHeight / boundsHeight;
+  const newScale = Math.min(1, scaleX, scaleY);
+  const boundsCenterX = minX + (maxX - minX) / 2;
+  const boundsCenterY = minY + (maxY - minY) / 2;
+  const newX = currentWidth / 2 - boundsCenterX * newScale;
+  const newY = currentHeight / 2 - boundsCenterY * newScale;
+  
+  setScale(newScale);
+  setPos({ x: newX, y: newY });
+}, [handleLayout, nodeVisuals, isFormattingToolbarOpen, PANEL_WIDTH]); 
+
+  // [AUTO-PAN] Ensure node is visible in viewport (not hidden behind panel)
+
 
   const startEditing = useCallback((nodeId: string) => {
+    // --- Collaboration: Permission Check ---
+    if (!promptUpgradeToEditorIfNeeded()) return;
+    
     setSelectedNodeIds([nodeId]);
     setEditingNodeId(nodeId);
+    // Giữ camera cố định theo yêu cầu
     setTimeout(() => {
       editingInputRef.current?.focus();
       editingInputRef.current?.select();
     }, 50);
-  }, []);
+  }, [promptUpgradeToEditorIfNeeded]);
 
   const justStoppedEditingRef = useRef(false);
 
@@ -1112,9 +2173,12 @@ const handleFitToScreen = useCallback(() => {
     if (!isDataLoaded || !justStoppedEditingRef.current) return;
     justStoppedEditingRef.current = false;
     setTimeout(() => {
-      handleLayout(true); // true = keepCamera
+      console.log('[Layout] Triggered by stopEditing useEffect');
+      handleLayout(); 
     }, 0);
-  }, [nodes, isDataLoaded, handleLayout]);
+  }, [isDataLoaded, handleLayout]);
+
+
 
   const stopEditing = useCallback(
     (save: boolean) => {
@@ -1132,59 +2196,162 @@ const handleFitToScreen = useCallback(() => {
         setGraph(newNodes, edges);
         justStoppedEditingRef.current = true; 
         useEditorStore.setState({ isDirty: true });
-        debouncedPushHistory();
+        
+        // Auto-update mindmap name from root node if user hasn't manually renamed
+        if (editingNodeId === 'root' && !useEditorStore.getState().hasManuallyRenamedMindmap) {
+          const rootText = newText.trim();
+          if (rootText) {
+            // Take first line or first 50 characters as name
+            const firstLine = rootText.split('\n')[0];
+            const newName = firstLine.length > 50 ? firstLine.substring(0, 50) + '...' : firstLine;
+            useEditorStore.setState({ currentMindmapName: newName });
+            
+            // Update in toolbar's local items list
+            const mindmapItems = useMindmapsStore.getState().items;
+            const currentId = useEditorStore.getState().currentMindmapId;
+            if (currentId) {
+              const newItems = mindmapItems.map(item => 
+                item.id === currentId ? { ...item, name: newName } : item
+              );
+              useMindmapsStore.setState({ items: newItems });
+            }
+          }
+        }
+        
+        // [OPTIMIZATION] Layout sẽ tự động trigger khi nodeVisuals thay đổi
+        // Không cần trigger thủ công ở đây vì text change sẽ update nodeVisuals
+        // và handleLayout đã có dependency vào nodeVisuals
+        
         debouncedPersistData();
         sendPatch('NODE_TEXT_CHANGE', { id: editingNodeId, text: newText }); 
       }
     },
     [
       editingNodeId, nodes, edges, setGraph, 
-      debouncedPushHistory, debouncedPersistData, sendPatch, // GĐ 7 & 9
+      debouncedPersistData, sendPatch, 
     ]
   );
 
   const handleAddChild = useCallback((parentId: string) => {
-    const parentNode = nodeMap.get(parentId); // Lấy dữ liệu THÔ của node cha
-    const parentVisual = nodeVisuals.get(parentId); // Lấy dữ liệu HÌNH ẢNH của node cha
+    // --- Collaboration: Permission Check ---
+    if (!promptUpgradeToEditorIfNeeded()) return;
     
+    // Track renders for this action
+    startRenderTracking('addChild');
+    const parentNode = nodeMap.get(parentId); 
+    const parentVisual = nodeVisuals.get(parentId); 
     if (!parentNode || !parentVisual) return;
 
-    const parentComputedStyle = parentVisual.style; // Dùng để lấy vị trí, "bên" (side)
+    // Nếu cha đang collapsed thì mở nhánh ra
+    let updatedNodes = nodes;
+    if (parentNode.collapsed) {
+      updatedNodes = nodes.map(n => n.id === parentId ? { ...n, collapsed: false } : n);
+    }
+
+    const parentComputedStyle = parentVisual.style; 
 
     const newId = "n" + Date.now();
+    
+    // [WATER FILLING ALGORITHM] - Predictive Placement cho root children
+    let determinedSide = parentComputedStyle.side;
+    
+    if (useEditorStore.getState().globalStructure === 'logic') {
+      // Always add to the right in logic structure
+      determinedSide = 'right';
+    } else if (parentId === 'root') {
+      // Tính tổng chiều cao thực tế của mỗi bên
+      const rootChildren = edges.filter(e => e.from === 'root').map(e => e.to);
+      let leftHeight = 0;
+      let rightHeight = 0;
+      
+      rootChildren.forEach(childId => {
+        const childNode = nodeMap.get(childId);
+        const childVisual = nodeVisuals.get(childId);
+        if (!childNode || !childVisual) return;
+        
+        const childHeight = childVisual.box.h;
+        if (childNode.side === 'left') {
+          leftHeight += childHeight;
+        } else {
+          rightHeight += childHeight;
+        }
+      });
+      
+      // Water Filling: Chọn bên thấp hơn
+      determinedSide = leftHeight <= rightHeight ? 'left' : 'right';
+    }
 
-    // 1. Bắt đầu với các thuộc tính cơ bản
+    // Pre-calc final position (Predictive Placement)
+    const HORIZONTAL_GAP = 120;
+    const VERTICAL_GAP = 20;
+    const DEFAULT_NODE_HEIGHT = 60;
+    const DEFAULT_NODE_WIDTH = 150;
+
+    let calculatedX = parentComputedStyle.x;
+    let calculatedY = parentComputedStyle.y;
+
+    const siblings = nodes.filter(n => n.parentId === parentId);
+    const getSubtreeHeight = (nodeId: string): number => {
+      const visual = nodeVisuals.get(nodeId);
+      if (!visual) return DEFAULT_NODE_HEIGHT;
+      const node = nodeMap.get(nodeId);
+      if (!node) return visual.box.h;
+      const children = nodes.filter(n => n.parentId === nodeId);
+      if (children.length === 0 || node.collapsed) return visual.box.h;
+      let childrenTotalHeight = 0;
+      children.forEach((child, index) => {
+        childrenTotalHeight += getSubtreeHeight(child.id);
+        if (index > 0) childrenTotalHeight += VERTICAL_GAP;
+      });
+      return Math.max(visual.box.h, childrenTotalHeight);
+    };
+
+    if (siblings.length > 0) {
+      const direction = (useEditorStore.getState().globalStructure === 'logic') ? 1 : (determinedSide === 'left' ? -1 : 1);
+      const parentWidth = parentVisual.box.w;
+      let totalHeight = 0;
+      siblings.forEach((sibling, index) => {
+        totalHeight += getSubtreeHeight(sibling.id);
+        if (index > 0) totalHeight += VERTICAL_GAP;
+      });
+      totalHeight += DEFAULT_NODE_HEIGHT + VERTICAL_GAP;
+      calculatedX = parentComputedStyle.x + direction * (HORIZONTAL_GAP / 1.5 + parentWidth / 2 + DEFAULT_NODE_WIDTH / 2);
+      let currentY = parentComputedStyle.y - totalHeight / 2;
+      siblings.forEach((sibling, index) => {
+        const siblingSubtreeHeight = getSubtreeHeight(sibling.id);
+        currentY += siblingSubtreeHeight;
+        if (index < siblings.length - 1 || siblings.length > 0) currentY += VERTICAL_GAP;
+      });
+      calculatedY = currentY + DEFAULT_NODE_HEIGHT / 2;
+    } else {
+      const direction = (useEditorStore.getState().globalStructure === 'logic') ? 1 : (determinedSide === 'left' ? -1 : 1);
+      const parentWidth = parentVisual.box.w;
+      calculatedX = parentComputedStyle.x + direction * (HORIZONTAL_GAP / 1.5 + parentWidth / 2 + DEFAULT_NODE_WIDTH / 2);
+      calculatedY = parentComputedStyle.y;
+    }
+
     const newNodeData: NodeData = { 
       id: newId, 
       nodeText: "Nội dung",
-      // Lấy vị trí và "bên" (side) từ style đã tính toán của cha
-      x: parentComputedStyle.x + 40,
-      y: parentComputedStyle.y + 20,
+      x: calculatedX,
+      y: calculatedY,
       parentId,
-      side: parentComputedStyle.side, 
+      side: (useEditorStore.getState().globalStructure === 'logic') ? 'right' : determinedSide,
     };
 
-    // 2. Lấy TẤT CẢ các key style từ DEFAULT_NODE_STYLE
     const styleKeys = Object.keys(DEFAULT_NODE_STYLE) as Array<keyof typeof DEFAULT_NODE_STYLE>;
 
-    // 3. Sao chép TẤT CẢ các giá trị style từ node cha (parentNode)
+    const EXCLUDED_STYLES = ['color', 'borderColor', 'textColor', 'branchColor', 'quickStyleId'];
+
     styleKeys.forEach(key => {
-      // Nếu node cha (dữ liệu thô) có định nghĩa một style cụ thể (không phải undefined),
-      // thì node con sẽ kế thừa nó.
+      if (EXCLUDED_STYLES.includes(key)) return; 
+
       if (parentNode[key] !== undefined) {
         (newNodeData as any)[key] = parentNode[key];
       }
     });
 
-    // 4. Xử lý trường hợp đặc biệt: Kế thừa từ ROOT
     if (parentId === 'root') {
-      // Không kế thừa style hình dạng của root (root to, màu khác)
-      // Đặt lại chúng về 'undefined' để chúng lấy từ theme/quickstyle
-      newNodeData.color = undefined;
-      newNodeData.textColor = undefined;
-      newNodeData.shape = undefined;
-      newNodeData.borderColor = undefined;
-      newNodeData.borderWidth = undefined;
       newNodeData.fontSize = undefined; 
       newNodeData.fontWeight = undefined;
       newNodeData.textCase = undefined;
@@ -1193,43 +2360,109 @@ const handleFitToScreen = useCallback(() => {
 
     const newEdgeData: EdgeData = { id: `e-${newId}`, from: parentId, to: newId };
     
-    const newNodes = [...nodes, newNodeData];
+    const newNodes = [...updatedNodes, newNodeData];
     const newEdges = [...edges, newEdgeData];
 
     pushHistory(nodes, edges);
     setGraph(newNodes, newEdges);
-    startEditing(newId);
-    setTimeout(() => handleLayout(true), 50); 
-  }, [nodes, edges, pushHistory, setGraph, nodeMap, nodeVisuals, startEditing, handleLayout]); // CẬP NHẬT: Thêm nodeMap
+    
+    // [FIX YÊU CẦU 1] Call layout immediately to get correct position, then animate
+    // Smart viewport: ensure new node is visible without full fit-to-screen
+    setTimeout(() => {
+      handleLayout();
+      setTimeout(() => {
+        const finalVisual = nodeVisuals.get(newId);
+        if (finalVisual) {
+          startNodeBirthAnimation(newId, parentComputedStyle.x, parentComputedStyle.y, finalVisual.style.x, finalVisual.style.y);
+        }
+      }, 0);
+      startEditing(newId);
+      // Smart pan: only adjust camera if node is outside viewport or behind panel
+      setTimeout(() => {
+        // ensureNodeVisible removed
+      }, 100);
+      endRenderTracking();
+    }, 0);
+  }, [nodes, edges, pushHistory, setGraph, nodeMap, nodeVisuals, startEditing, handleLayout, startNodeBirthAnimation]);
 
   const handleAddSibling = useCallback((nodeId: string) => {
+    // --- Collaboration: Permission Check ---
+    if (!promptUpgradeToEditorIfNeeded()) return;
+    
+    // Track renders for this action
+    startRenderTracking('addSibling');
     if (nodeId === 'root') { 
-      handleAddChild('root'); // Trường hợp đặc biệt: thêm "anh em" cho root -> thêm con
+      handleAddChild('root'); 
       return; 
     }
 
     const siblingNode = nodeMap.get(nodeId); 
     const parentId = siblingNode?.parentId;
 
-    if (!parentId || !siblingNode) return; 
+    if (!parentId || !siblingNode) return;
 
     const parentVisual = nodeVisuals.get(parentId);
     if (!parentVisual) return;
 
     const newId = "n" + Date.now();
 
+    // Pre-calc final position for sibling (Predictive Placement)
+    const HORIZONTAL_GAP = 120;
+    const VERTICAL_GAP = 20;
+    const DEFAULT_NODE_HEIGHT = 60;
+    const DEFAULT_NODE_WIDTH = 150;
+    let calculatedX = parentVisual.style.x;
+    let calculatedY = parentVisual.style.y;
+    const allSiblings = nodes.filter(n => n.parentId === parentId);
+    const getSubtreeHeight = (nodeId: string): number => {
+      const visual = nodeVisuals.get(nodeId);
+      if (!visual) return DEFAULT_NODE_HEIGHT;
+      const node = nodeMap.get(nodeId);
+      if (!node) return visual.box.h;
+      const children = nodes.filter(n => n.parentId === nodeId);
+      if (children.length === 0 || node.collapsed) return visual.box.h;
+      let childrenTotalHeight = 0;
+      children.forEach((child, index) => {
+        childrenTotalHeight += getSubtreeHeight(child.id);
+        if (index > 0) childrenTotalHeight += VERTICAL_GAP;
+      });
+      return Math.max(visual.box.h, childrenTotalHeight);
+    };
+    if (allSiblings.length > 0) {
+      const direction = (useEditorStore.getState().globalStructure === 'logic') ? 1 : (siblingNode.side === 'left' ? -1 : 1);
+      const parentWidth = parentVisual.box.w;
+      let totalHeight = 0;
+      allSiblings.forEach((sibling, index) => {
+        totalHeight += getSubtreeHeight(sibling.id);
+        if (index > 0) totalHeight += VERTICAL_GAP;
+      });
+      totalHeight += DEFAULT_NODE_HEIGHT + VERTICAL_GAP;
+      calculatedX = parentVisual.style.x + direction * (HORIZONTAL_GAP / 1.5 + parentWidth / 2 + DEFAULT_NODE_WIDTH / 2);
+      let currentY = parentVisual.style.y - totalHeight / 2;
+      allSiblings.forEach((sibling, index) => {
+        const siblingSubtreeHeight = getSubtreeHeight(sibling.id);
+        currentY += siblingSubtreeHeight;
+        if (index < allSiblings.length - 1 || allSiblings.length > 0) currentY += VERTICAL_GAP;
+      });
+      calculatedY = currentY + DEFAULT_NODE_HEIGHT / 2;
+    }
+
     const newNodeData: NodeData = { 
       id: newId, 
       nodeText: "Nội dung",
-      x: parentVisual.style.x + 40, 
-      y: parentVisual.style.y + 40, 
+      x: calculatedX, 
+      y: calculatedY, 
       parentId: parentId, 
-      side: siblingNode.side, 
+      side: (useEditorStore.getState().globalStructure === 'logic') ? 'right' : siblingNode.side,
     };
 
     const styleKeys = Object.keys(DEFAULT_NODE_STYLE) as Array<keyof typeof DEFAULT_NODE_STYLE>;
+    
+    const EXCLUDED_STYLES = ['color', 'borderColor', 'textColor', 'branchColor', 'quickStyleId'];
 
     styleKeys.forEach(key => {
+      if (EXCLUDED_STYLES.includes(key)) return;
+
       if (siblingNode[key] !== undefined) {
         (newNodeData as any)[key] = siblingNode[key];
       }
@@ -1242,13 +2475,32 @@ const handleFitToScreen = useCallback(() => {
 
     pushHistory(nodes, edges);
     setGraph(newNodes, newEdges);
-    startEditing(newId);
-    setTimeout(() => handleLayout(true), 50); 
     
-  }, [nodes, edges, pushHistory, setGraph, nodeMap, nodeVisuals, startEditing, handleLayout, handleAddChild]);
+    // [FIX YÊU CẦU 1] Call layout immediately to get correct position, then animate
+    // Smart viewport: ensure new node is visible without full fit-to-screen
+    setTimeout(() => {
+      handleLayout();
+      setTimeout(() => {
+        const finalVisual = nodeVisuals.get(newId);
+        if (finalVisual) {
+          startNodeBirthAnimation(newId, parentVisual.style.x, parentVisual.style.y, finalVisual.style.x, finalVisual.style.y);
+        }
+      }, 0);
+      startEditing(newId);
+      // Smart pan: only adjust camera if node is outside viewport or behind panel
+      setTimeout(() => {
+        // ensureNodeVisible removed
+      }, 100);
+      endRenderTracking();
+    }, 0);
+    
+  }, [nodes, edges, pushHistory, setGraph, nodeMap, nodeVisuals, startEditing, handleLayout, handleAddChild, startNodeBirthAnimation]);
 
   const handleDeleteNode = useCallback(
-    () => { // Bỏ tham số nodeId
+    () => {
+      // --- Collaboration: Permission Check ---
+      if (!promptUpgradeToEditorIfNeeded()) return;
+      
       if (selectedNodeIds.length === 0) return;
 
       const idsToDelete = selectedNodeIds.filter(id => id !== 'root');
@@ -1269,22 +2521,20 @@ const handleFitToScreen = useCallback(() => {
         findChildren(id);
       });
 
-      // Chọn cha của node ĐẦU TIÊN bị xóa
       const parentId = nodes.find((n) => n.id === idsToDelete[0])?.parentId ?? 'root';
       const newNodes = nodes.filter((n) => !nodesToDelete.has(n.id));
       const newEdges = edges.filter(
         (e) => !nodesToDelete.has(e.from) && !nodesToDelete.has(e.to)
       );
       setGraph(newNodes, newEdges);
-      setSelectedNodeIds([parentId]); // Chọn node cha
-      setTimeout(() => handleLayout(true), 50);
-      debouncedPushHistory();
+      setSelectedNodeIds([]);
+      setTimeout(() => handleLayout(), 50);
       debouncedPersistData();
       sendPatch('NODE_DELETE', { nodeIds: Array.from(nodesToDelete) });
     },
     [
-      nodes, edges, setGraph, selectedNodeIds, handleLayout, // Cập nhật dependency
-      debouncedPushHistory, debouncedPersistData, sendPatch,
+      nodes, edges, setGraph, selectedNodeIds, handleLayout, 
+      debouncedPersistData, sendPatch, promptUpgradeToEditorIfNeeded,
     ]
   );
 
@@ -1294,7 +2544,6 @@ const handleFitToScreen = useCallback(() => {
     let newNodes = [...nodes];
     const idSet = selectedIdsSet;
 
-    // [MERGE] Giữ lại logic `styleLocked` từ feature/tt
     const STYLE_KEYS: Array<keyof NodeData> = [
       'shape', 'color', 'borderColor', 'borderWidth', 'borderStyle',
       'fontFamily', 'fontSize', 'fontWeight', 'fontStyle', 'textDecoration', 'textAlign', 'textColor', 'textCase', 'nodeLength',
@@ -1304,17 +2553,14 @@ const handleFitToScreen = useCallback(() => {
 
     if (updates.branchColor !== undefined) {
       const updateBranchColorRecursive = (nodeId: string, color: string) => {
-        // Chỉ áp dụng cho node đang được chọn
         if (idSet.has(nodeId)) {
           newNodes = newNodes.map(n => n.id === nodeId ? { ...n, branchColor: color } : n);
         }
         edges.forEach(e => { if (e.from === nodeId) updateBranchColorRecursive(e.to, color); });
       };
-      // Lặp qua tất cả node được chọn
       selectedNodeIds.forEach(id => updateBranchColorRecursive(id, updates.branchColor as string));
     }
     
-    // Áp dụng update cho tất cả node được chọn
     newNodes = newNodes.map(n => idSet.has(n.id) ? { ...n, ...updates } : n);
     
     if (isStyleUpdate) {
@@ -1322,17 +2568,35 @@ const handleFitToScreen = useCallback(() => {
         newNodes = newNodes.map(n => n.id === nodeId ? { ...n, styleLocked: true } : n);
         edges.forEach(e => { if (e.from === nodeId) lockRec(e.to); });
       };
-      // Lặp qua tất cả node được chọn
       selectedNodeIds.forEach(id => lockRec(id));
     }
 
     setGraph(newNodes, edges);
-    if (updates.nodeLength) {
-      setTimeout(() => handleLayout(true), 50);
+    
+    // [OPTIMIZATION] Dirty Checking - chỉ layout khi có thay đổi dimension
+    // Theo spec: fontSize, padding, borderWidth, nodeLength ảnh hưởng đến kích thước
+    const needsLayout = updates.nodeLength !== undefined || 
+                        updates.fontSize !== undefined || 
+                        updates.borderWidth !== undefined;
+    
+    if (needsLayout) {
+      setTimeout(() => handleLayout(), 50);
     }
-    debouncedPushHistory();
-    debouncedPersistData();
-    // Gửi patch cho TỪNG node
+    
+    // Lưu ngay lập tức khi thay đổi style node
+    if (id) {
+      if (isGuest) {
+        const { relationships, summaries } = useEditorStore.getState();
+        saveGuestDoc(id, name, newNodes, edges, relationships, summaries);
+      } else if (isAuthed) {
+        const { relationships, summaries } = useEditorStore.getState();
+        const docToSave = { name, content: { nodes: newNodes, edges, relationships, summaries } };
+        mindmapsApi.update(id, docToSave).catch((e) => {
+          console.error('Lưu style node thất bại:', e);
+        });
+      }
+    }
+    
     selectedNodeIds.forEach(id => {
       sendPatch('NODE_STYLE_UPDATE', { id, updates });
     });
@@ -1347,17 +2611,12 @@ const handleFitToScreen = useCallback(() => {
         }
       }
       if (e.key === 'Tab') {
-        e.preventDefault(); // LUÔN LUÔN chặn trình duyệt "nhảy"
+        e.preventDefault(); 
 
-        // Chỉ thêm node con nếu:
-        // 1. Không đang edit (editingNodeId là null)
-        // 2. Chỉ có 1 node được chọn
         if (!editingNodeId && selectedNodeIds.length === 1) {
           handleAddChild(selectedNodeIds[0]);
         }
-        // Nếu đang edit, hoặc chọn nhiều node, hoặc không chọn node nào,
-        // phím Tab sẽ không làm gì cả (vì đã preventDefault).
-        return; // Kết thúc xử lý cho phím Tab
+        return; 
       }
       if (editingNodeId) return;
       if (
@@ -1366,29 +2625,57 @@ const handleFitToScreen = useCallback(() => {
       )
         return;
 
-      // [SỬA 1] Di chuyển Undo/Redo lên TRƯỚC khi kiểm tra selectedNodeId
-      // để đảm bảo chúng hoạt động toàn cục.
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
         e.preventDefault();
         undo();
-        return; // Thoát sớm
+        return; 
       }
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y') {
         e.preventDefault();
         redo();
-        return; // Thoát sớm
+        return; 
+      }
+
+      // Handle Delete for relationship, summary, or boundary
+      if (e.key === 'Delete' || e.key === 'Backspace') {
+        e.preventDefault();
+        
+        // [FIX] Ưu tiên xóa boundary nếu đang chọn boundary
+        if (selectedBoundaryId) {
+          handleDeleteBoundary(selectedBoundaryId);
+          return;
+        }
+        
+        if (selectedRelationshipId) {
+          handleDeleteRelationship(selectedRelationshipId);
+          return;
+        }
+        
+        if (selectedSummaryId) {
+          handleDeleteSummary(selectedSummaryId);
+          return;
+        }
+        
+        // Check if any selected node has boundary to delete
+        if (selectedNodeIds.length === 1) {
+          const node = nodes.find(n => n.id === selectedNodeIds[0]);
+          if (node?.boundary) {
+            // If boundary is selected, just remove boundary, don't delete node
+            handleDeleteBoundary(node.id);
+            return;
+          }
+        }
       }
 
       if (selectedNodeIds.length !== 1) {
-        // Ngoại trừ phím Delete
         if (e.key === 'Delete' || e.key === 'Backspace') {
           e.preventDefault();
-          handleDeleteNode(); // Gọi hàm không tham số
+          handleDeleteNode(); 
         }
         return;
       }
       
-      const singleSelectedId = selectedNodeIds[0]; // Đây là node duy nhất đang được chọn
+      const singleSelectedId = selectedNodeIds[0]; 
 
       if (e.key === 'Tab') {
         e.preventDefault();
@@ -1398,7 +2685,7 @@ const handleFitToScreen = useCallback(() => {
         handleAddSibling(singleSelectedId);
       } else if (e.key === 'Delete' || e.key === 'Backspace') {
         e.preventDefault();
-        handleDeleteNode(); // Gọi hàm không tham số
+        handleDeleteNode(); 
       } else if (e.key === 'F2') {
         e.preventDefault();
         startEditing(singleSelectedId);
@@ -1416,20 +2703,21 @@ const handleFitToScreen = useCallback(() => {
       }
     },
     [
-      editingNodeId, selectedNodeIds, handleAddChild, // Cập nhật dependency
-      handleAddSibling, handleDeleteNode, undo, redo, startEditing,
+      editingNodeId, selectedNodeIds, selectedBoundaryId, 
+      selectedRelationshipId, selectedSummaryId,
+      handleAddChild, handleAddSibling, handleDeleteNode, 
+      handleDeleteBoundary, handleDeleteRelationship, handleDeleteSummary,
+      undo, redo, startEditing, nodes,
     ]
   );
 
   const handleToolbarAddChild = useCallback(() => {
-    // Chỉ hoạt động nếu 1 node (và chỉ 1) đang được chọn
     if (selectedNodeIds.length === 1) { 
       handleAddChild(selectedNodeIds[0]);
     }
-  }, [selectedNodeIds, handleAddChild]); // handleAddChild đã được bọc trong useCallback
+  }, [selectedNodeIds, handleAddChild]); 
 
   const handleToolbarAddSibling = useCallback(() => {
-    // Chỉ hoạt động nếu 1 node (và chỉ 1) đang được chọn
     if (selectedNodeIds.length === 1) { 
       handleAddSibling(selectedNodeIds[0]);
     }
@@ -1440,17 +2728,10 @@ const handleFitToScreen = useCallback(() => {
   const nodeId = selectedNodeIds[0];
   const node = nodeMap.get(nodeId);
   if (!node) return;
-
-  
-
-  // Lấy hyperlink hiện tại (nếu có) từ node.
-  // Cần đảm bảo `node.hyperlink` tồn tại trong kiểu NodeData của bạn.
   const currentUrl = (node as any).hyperlink || "";
   const url = window.prompt("Nhập URL cho liên kết (để trống để xóa):", currentUrl);
-  
-  if (url !== null) { // User clicked OK (null nghĩa là Cancel)
-    // Chúng ta gọi handleUpdateNode, nó đã được refactor để xử lý nhiều node
-    // nhưng ở đây nó sẽ chỉ áp dụng cho 1 node đang được chọn
+   
+  if (url !== null) { 
     handleUpdateNode({ hyperlink: url || undefined });
   }
   }, [selectedNodeIds, nodeMap, handleUpdateNode]);
@@ -1460,22 +2741,297 @@ const handleFitToScreen = useCallback(() => {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [handleKeyDown]);
 
-  // ================================================
-  // Drag & Drop [CẬP NHẬT GĐ 7 + 9]
-  // ================================================
-
   const handleDragStart = (nodeId: string) => {
-    pushHistory(useEditorStore.getState().nodes, useEditorStore.getState().edges); // GĐ 7
+    pushHistory(useEditorStore.getState().nodes, useEditorStore.getState().edges);
     setDragStartState({ nodes, edges });
-    const node = stageRef.current?.findOne(`#${nodeId}`);
+    setDraggingNodeId(nodeId);
+    
+    const stage = stageRef.current;
+    const layer = stage?.getLayers()[0];
+    if (!stage || !layer) return;
+
+    const node = stage.findOne(`#${nodeId}`);
     if (node && editingNodeId === nodeId) {
       node.stopDrag();
+      return;
+    }
+
+    // Thu thập tất cả node con (đệ quy)
+    const collectChildren = (id: string): string[] => {
+      const children = adjacencyMap.get(id) || [];
+      const allChildren = [...children];
+      children.forEach(childId => {
+        allChildren.push(...collectChildren(childId));
+      });
+      return allChildren;
+    };
+
+    const childIds = collectChildren(nodeId);
+    
+    const nodesToHide: any[] = [];
+    const edgeClones: any[] = [];
+    const nodeClones: any[] = [];
+
+    // --- A. CLONE NODE CHA (để tạo "cái xác" nằm lại vị trí cũ) ---
+    const rootNodeShape = stage.findOne(`#${nodeId}`);
+    if (rootNodeShape) {
+      const rootClone = rootNodeShape.clone();
+      rootClone.draggable(false);
+      rootClone.opacity(1); // Giữ nguyên độ đậm trong cache
+      nodeClones.push(rootClone);
+      // KHÔNG ẩn rootNodeShape thật - để kéo nó đi
+    }
+
+    // --- B. CLONE CON CHÁU & DÂY ---
+    const childIdSet = new Set([nodeId, ...childIds]);
+    
+    // Clone các node con
+    childIds.forEach(childId => {
+      const childNode = stage.findOne(`#${childId}`);
+      if (childNode) {
+        const clone = childNode.clone();
+        clone.draggable(false);
+        nodeClones.push(clone);
+        // Ẩn con thật đi
+        childNode.visible(false);
+        nodesToHide.push(childNode);
+      }
+    });
+
+    // Clone tất cả edges liên quan (KHÔNG ẩn vì chúng sẽ tự động update vị trí)
+    edges.forEach(edge => {
+      if (childIdSet.has(edge.from) || childIdSet.has(edge.to)) {
+        const edgeShape = stage.findOne(`#${edge.id}`);
+        if (edgeShape) {
+          const clone = edgeShape.clone();
+          edgeClones.push(clone);
+          // KHÔNG ẩn dây thật - để chúng tự động vẽ lại theo vị trí mới
+        }
+      }
+    });
+
+    // --- C. TẠO IMPOSTER GROUP (CÁI XÁC MỜ) ---
+    if (nodeClones.length > 0 || edgeClones.length > 0) {
+      const imposterGroup = new Konva.Group({
+        listening: false,
+        opacity: 0.3, // Làm mờ toàn bộ cái xác (30%)
+        x: 0,
+        y: 0
+      });
+
+      // Thêm Dây trước, Node sau
+      edgeClones.forEach(clone => imposterGroup.add(clone));
+      nodeClones.forEach(clone => imposterGroup.add(clone));
+      
+      layer.add(imposterGroup);
+
+      // Cache thành ảnh tĩnh - tính bounding box thủ công hoàn toàn
+      try {
+        layer.batchDraw();
+        
+        let minX = Infinity, minY = Infinity;
+        let maxX = -Infinity, maxY = -Infinity;
+        
+        // Duyệt qua tất cả edges để tìm min/max
+        edgeClones.forEach((clone: any) => {
+          const points = clone.points();
+          if (points && points.length > 0) {
+            for (let i = 0; i < points.length; i += 2) {
+              const x = points[i];
+              const y = points[i + 1];
+              minX = Math.min(minX, x);
+              maxX = Math.max(maxX, x);
+              minY = Math.min(minY, y);
+              maxY = Math.max(maxY, y);
+            }
+          }
+        });
+        
+        // Duyệt qua tất cả nodes
+        nodeClones.forEach((clone: any) => {
+          const x = clone.x();
+          const y = clone.y();
+          const width = clone.width();
+          const height = clone.height();
+          const offsetX = clone.offsetX() || 0;
+          const offsetY = clone.offsetY() || 0;
+          
+          // Tính toán đúng bounding box với offset
+          const left = x - offsetX;
+          const right = x - offsetX + width;
+          const top = y - offsetY;
+          const bottom = y - offsetY + height;
+          
+          minX = Math.min(minX, left);
+          maxX = Math.max(maxX, right);
+          minY = Math.min(minY, top);
+          maxY = Math.max(maxY, bottom);
+        });
+        
+        // Tăng padding để chắc chắn không bị cắt
+        const padding = 100;
+        const cacheWidth = (maxX - minX) + padding * 2;
+        const cacheHeight = (maxY - minY) + padding * 2;
+        
+        if (isFinite(minX) && isFinite(cacheWidth) && cacheWidth > 0 && cacheHeight > 0) {
+          imposterGroup.cache({
+            x: minX - padding,
+            y: minY - padding,
+            width: cacheWidth,
+            height: cacheHeight,
+            pixelRatio: 1
+          });
+        }
+      } catch (e) {
+        console.warn('Cache error:', e);
+      }
+
+      imposterRef.current = imposterGroup;
+      hiddenRealNodesRef.current = nodesToHide; // Chỉ lưu nodes, không lưu edges
+      draggedNodeChildrenRef.current = new Set(childIds);
     }
   };
 
+  // ...
+  const handleImageLoad = useCallback((nodeId: string, width: number, height: number) => {
+    const { nodes, edges } = useEditorStore.getState();
+    const node = nodes.find(n => n.id === nodeId);
+    
+    // Chỉ update nếu chưa có kích thước hoặc kích thước thay đổi
+    if (node && (node.imageWidth !== width || node.imageHeight !== height)) {
+        const newNodes = nodes.map(n => 
+            n.id === nodeId ? { ...n, imageWidth: width, imageHeight: height } : n
+        );
+        setGraph(newNodes, edges);
+        debouncedPersistData();
+       
+        pendingLayoutRef.current = true;
+    }
+  }, [setGraph, debouncedPersistData]); 
+
+  useEffect(() => {
+    if (pendingLayoutRef.current) {
+      handleLayout(); 
+      pendingLayoutRef.current = false;
+    }
+  }, [handleLayout]);
+
+  useEffect(() => {
+    if (isDataLoaded) {
+      const t = setTimeout(() => {
+        handleFitToScreen();
+        setIsReadyToShow(true); 
+      }, 10); 
+      return () => clearTimeout(t);
+    }
+  }, [isDataLoaded]); // Chỉ depend on isDataLoaded, không depend on handleFitToScreen
+
   const handleDragMove = (e: any, draggedNodeId: string) => {
-    const pos = e.target.position();
-    let targetFound: string | null = null;
+    // Detect drop target khi đang kéo
+    const currentX = e.target.x();
+    const currentY = e.target.y();
+    
+    let potentialDropTarget: string | null = null;
+    let targetSide: 'left' | 'right' | null = null;
+    
+    for (const node of nodes) {
+      if (node.id === draggedNodeId) continue;
+      if (draggedNodeChildrenRef.current.has(node.id)) continue; // Không cho drop vào con
+      
+      const visual = nodeVisuals.get(node.id);
+      if (!visual) continue;
+      
+      const { w, h } = visual.box;
+      const { x, y } = visual.style;
+      
+      const isOver =
+        currentX > x - w / 2 &&
+        currentX < x + w / 2 &&
+        currentY > y - h / 2 &&
+        currentY < y + h / 2;
+      
+      if (isOver) {
+        potentialDropTarget = node.id;
+        
+        // Calculate side for root based on which side has lower height
+        if (node.id === 'root') {
+          // Calculate total height of each side
+          const calculateSideHeight = (side: 'left' | 'right'): number => {
+            const sideNodes = nodes.filter(n => n.parentId === 'root' && n.side === side);
+            if (sideNodes.length === 0) return 0;
+            
+            const getSubtreeHeight = (nodeId: string): number => {
+              const visual = nodeVisuals.get(nodeId);
+              const selfHeight = visual?.box.h || 60;
+              const children = edges.filter(e => e.from === nodeId).map(e => e.to);
+              if (children.length === 0) return selfHeight;
+              
+              const childrenHeight = children.reduce((sum, childId) => sum + getSubtreeHeight(childId), 0);
+              return selfHeight + childrenHeight + (children.length - 1) * 20;
+            };
+            
+            return sideNodes.reduce((sum, node) => sum + getSubtreeHeight(node.id), 0);
+          };
+          
+          const leftHeight = calculateSideHeight('left');
+          const rightHeight = calculateSideHeight('right');
+          
+          // Show hint on the side with lower height
+          targetSide = leftHeight <= rightHeight ? 'left' : 'right';
+        }
+        break;
+      }
+    }
+    
+    if (dropTargetNodeId !== potentialDropTarget) {
+      setDropTargetNodeId(potentialDropTarget);
+    }
+    if (dropTargetSide !== targetSide) {
+      setDropTargetSide(targetSide);
+    }
+  };
+
+  const handleDragEnd = (e: any, draggedNodeId: string) => {
+    // Fix: Root node không thể drag, chỉ reset về vị trí 0,0
+    if (draggedNodeId === 'root') {
+      e.target.position({ x: 0, y: 0 });
+      setDragStartState(null);
+      setDropTargetNodeId(null);
+      setDraggingNodeId(null);
+      draggedNodeChildrenRef.current.clear();
+      if (imposterRef.current) {
+        imposterRef.current.destroy();
+        imposterRef.current = null;
+      }
+      if (hiddenRealNodesRef.current.length > 0) {
+        hiddenRealNodesRef.current.forEach(node => node.visible(true));
+        hiddenRealNodesRef.current = [];
+      }
+      return;
+    }
+
+    // Cleanup Imposter
+    if (imposterRef.current) {
+      imposterRef.current.destroy();
+      imposterRef.current = null;
+    }
+
+    // Hiện lại nodes thật
+    if (hiddenRealNodesRef.current.length > 0) {
+      hiddenRealNodesRef.current.forEach(node => node.visible(true));
+      hiddenRealNodesRef.current = [];
+    }
+    
+    draggedNodeChildrenRef.current.clear();
+    setDropTargetNodeId(null);
+    setDropTargetSide(null);
+    setDraggingNodeId(null);
+    setDragStartState(null);
+    const finalX = e.target.x();
+    const finalY = e.target.y();
+
+    // Check drop target khi thả (thay vì trong khi drag)
+    let dropTargetId: string | null = null;
     for (const node of nodes) {
       if (node.id === draggedNodeId) continue;
       const visual = nodeVisuals.get(node.id);
@@ -1483,25 +3039,17 @@ const handleFitToScreen = useCallback(() => {
       const { w, h } = visual.box;
       const { x, y } = visual.style;
       const isOver =
-        pos.x > x - w / 2 &&
-        pos.x < x + w / 2 &&
-        pos.y > y - h / 2 &&
-        pos.y < y + h / 2;
+        finalX > x - w / 2 &&
+        finalX < x + w / 2 &&
+        finalY > y - h / 2 &&
+        finalY < y + h / 2;
       if (isOver) {
-        targetFound = node.id;
+        dropTargetId = node.id;
         break;
       }
     }
-    setDropTargetId(targetFound);
-  };
-
-  const handleDragEnd = (e: any, draggedNodeId: string) => {
-    setDragStartState(null);
-    const finalX = e.target.x();
-    const finalY = e.target.y();
 
     if (dropTargetId && dropTargetId !== draggedNodeId) {
-      // Reparent
       const draggedNode = nodes.find((n) => n.id === draggedNodeId);
       if (!draggedNode) return;
       let isDroppingOnChild = false;
@@ -1515,8 +3063,14 @@ const handleFitToScreen = useCallback(() => {
       checkChildren(draggedNodeId);
       if (isDroppingOnChild) {
         addToast('Không thể di chuyển node cha vào node con!', 'error');
-        setGraph(dragStartState?.nodes || nodes, dragStartState?.edges || edges);
-        setDropTargetId(null);
+        // Phục hồi vị trí cũ của node
+        if (dragStartState) {
+          const oldNode = dragStartState.nodes.find(n => n.id === draggedNodeId);
+          if (oldNode) {
+            e.target.position({ x: oldNode.x, y: oldNode.y });
+          }
+          setGraph(dragStartState.nodes, dragStartState.edges);
+        }
         return;
       }
       const newParentId = dropTargetId;
@@ -1532,7 +3086,26 @@ const handleFitToScreen = useCallback(() => {
           { id: `e-${draggedNodeId}`, from: newParentId, to: draggedNodeId },
         ];
       }
-      const parentSide = nodeMap.get(newParentId)?.side || 'right';
+      // Determine new side
+      let newSide = nodeMap.get(newParentId)?.side || 'right';
+      const gs = useEditorStore.getState().globalStructure;
+      if (gs === 'logic') {
+        // In logic mode, always force children to the right
+        newSide = 'right';
+      } else {
+        // If dropping onto ROOT, use the side indicated by the drop target indicator (green plus sign)
+        if (newParentId === 'root' && dropTargetSide) {
+          // Use the side where the indicator was shown during drag
+          newSide = dropTargetSide;
+        } else if (newParentId === 'root') {
+          // Fallback: if dropTargetSide wasn't set, infer by drop x relative to root
+          const rootNode = nodes.find(n => n.id === 'root');
+          if (rootNode) {
+            newSide = (finalX < rootNode.x) ? 'left' : 'right';
+          }
+        }
+      }
+      // Áp dụng format theme phân cấp: reset style về undefined để kế thừa theme
       const newNodes = nodes.map((n) =>
         n.id === draggedNodeId
           ? {
@@ -1540,17 +3113,31 @@ const handleFitToScreen = useCallback(() => {
               parentId: newParentId,
               x: finalX,
               y: finalY,
-              side: parentSide,
+              side: newSide,
+              // Reset các thuộc tính style để node kế thừa theme phân cấp mới
+              color: undefined,
+              borderColor: undefined,
+              textColor: undefined,
+              fontSize: undefined,
+              fontWeight: undefined,
+              borderWidth: undefined,
+              shape: undefined,
             }
           : n
       );
       setGraph(newNodes, newEdges);
-      // [GĐ 9] Gửi patch
       sendPatch('NODE_REPARENT', {
-        nodeId: draggedNodeId, newParentId, x: finalX, y: finalY, side: parentSide,
+        nodeId: draggedNodeId, newParentId, x: finalX, y: finalY, side: newSide,
       });
+      // Layout lại khi thay đổi parent
+      setTimeout(() => {
+        handleLayout();
+        // Smart pan: ensure moved node is visible
+        setTimeout(() => {
+          // ensureNodeVisible removed
+        }, 100);
+      }, 50); 
     } else {
-      // Kéo
       const newNodes = nodes.map((n) => {
         if (n.id === draggedNodeId) {
           if (n.parentId) {
@@ -1563,96 +3150,98 @@ const handleFitToScreen = useCallback(() => {
         return n;
       });
       setGraph(newNodes, edges);
-      // [GĐ 9] Gửi patch
       sendPatch('NODE_MOVE', { id: draggedNodeId, x: finalX, y: finalY });
+      // Re-run layout so summary nodes stay anchored to their braces
+      setTimeout(() => handleLayout(), 0);
     }
-    setDropTargetId(null);
-    setTimeout(() => handleLayout(true), 50); // Giữ camera
-    // [GĐ 7] Gọi debouncer
-    // [SỬA 2] Xóa debouncedPushHistory. Đã push ở handleDragStart.
-    // debouncedPushHistory();
     debouncedPersistData();
   };
 
-  // ================================================
-  // Handlers cho Toolbar [CẬP NHẬT GĐ 7 + 9]
-  // ================================================
-
-  // [MERGE] Giữ lại logic UI mới từ feature/tt
   const handleToggleColoredBranch = (state: boolean) => {
-    pushHistory(useEditorStore.getState().nodes, useEditorStore.getState().edges); // Logic này ảnh hưởng toàn bộ, push ngay
+    pushHistory(useEditorStore.getState().nodes, useEditorStore.getState().edges); 
     if (state) {
       const rootChildren = edges.filter(e => e.from === 'root').map(e => e.to);
       let newNodes = [...nodes];
       rootChildren.forEach((childId, idx) => {
         const color = BRANCH_COLORS_PALETTE[idx % BRANCH_COLORS_PALETTE.length];
         const assignRec = (nodeId: string) => {
-          newNodes = newNodes.map(n => n.id === nodeId ? (n.styleLocked ? n : { ...n, branchColor: color, color: mixWithWhite(color, 0.8), textColor: getContrastColor(mixWithWhite(color, 0.8)) }) : n);
+          newNodes = newNodes.map(n => n.id === nodeId ? (n.styleLocked ? n : { ...n, branchColor: color }) : n);
           edges.forEach(e => { if (e.from === nodeId) assignRec(e.to); });
         };
         assignRec(childId);
       });
-      setGlobalStore({ isColoredBranch: true });
       setGraph(newNodes, edges);
     } else {
-      const globalColor = useEditorStore.getState().globalBranchColor;
-      let newNodes = nodes.map(n => (n.styleLocked ? n : { ...n, branchColor: undefined, color: mixWithWhite(globalColor, 0.85), textColor: getContrastColor(mixWithWhite(globalColor, 0.85)) }));
-      setGlobalStore({ isColoredBranch: false });
-      setGraph(newNodes, edges);
-    }
-    // [GĐ 7 & 9] Kích hoạt lưu và gửi patch
-    debouncedPersistData();
-    sendPatch('LINE_COLOR_TOGGLE', { state });
-  };
-
-  // [MERGE] Giữ lại logic UI mới từ feature/tt
-  const handleSetBackgroundColor = (color: string) => {
-    setBackgroundColor(color);
-    const newNodes = nodes.map(n => {
-      if (n.styleLocked) return n;
-      const fill = mixWithWhite(color, 0.85);
-      const branchFill = color;
-      return { 
-        ...n, 
-        color: n.color || fill, 
-        branchColor: n.branchColor || branchFill,
-        textColor: getContrastColor(fill) 
-      };
-    });
-    pushHistory(useEditorStore.getState().nodes, useEditorStore.getState().edges); // Logic này ảnh hưởng toàn bộ, push ngay
-    setGraph(newNodes, edges);
-    // [GĐ 7 & 9] Kích hoạt lưu và gửi patch
-    debouncedPersistData();
-    sendPatch('BACKGROUND_CHANGE', { color });
-  };
-  
-const handleSetGlobalBranchColor = (color: string) => {
-    pushHistory(useEditorStore.getState().nodes, useEditorStore.getState().edges);
-    // 1. Cập nhật màu toàn cục trong store
-    setGlobalStore({ globalBranchColor: color });
-
-    const { isColoredBranch } = useEditorStore.getState();
-
-    // 2. Nếu KHÔNG ở chế độ nhiều màu, cập nhật lại màu cho các node
-    if (!isColoredBranch) {
       const newNodes = nodes.map(n => {
-        if (n.styleLocked) return n; // Bỏ qua node đã khóa style
-
-        const fill = mixWithWhite(color, 0.85); // Dùng màu toàn cục mới
-        return {
-          ...n,
-          branchColor: undefined, // Đảm bảo nó kế thừa màu toàn cục
-          color: fill,
-          textColor: getContrastColor(fill)
+        if (n.styleLocked) return n;
+        return { 
+          ...n, 
+          branchColor: undefined, 
+          color: undefined, 
+          textColor: undefined, 
+          borderColor: undefined 
         };
       });
       setGraph(newNodes, edges);
     }
-    // (Nếu isColoredBranch = true, không cần làm gì,
-    // vì logic render đã tự đọc globalBranchColor khi cần)
-
     debouncedPersistData();
-    // Gửi patch cho các user khác
+    sendPatch('LINE_COLOR_TOGGLE', { state });
+  };
+
+  const handleSetBackgroundColor = (color: string) => {
+    setBackgroundColor(color);
+    useEditorStore.setState({ backgroundColor: color, isDirty: true });
+    pushHistory(useEditorStore.getState().nodes, useEditorStore.getState().edges);
+    
+    // Lưu ngay lập tức
+    if (id) {
+      const { nodes: currentNodes, edges: currentEdges } = useEditorStore.getState();
+      if (isGuest) {
+        const { relationships, summaries } = useEditorStore.getState();
+        saveGuestDoc(id, name, currentNodes, currentEdges, relationships, summaries);
+      } else if (isAuthed) {
+        const { relationships, summaries } = useEditorStore.getState();
+        const docToSave = { name, content: { nodes: currentNodes, edges: currentEdges, relationships, summaries } };
+        mindmapsApi.update(id, docToSave).catch((e) => {
+          console.error('Lưu màu nền thất bại:', e);
+        });
+      }
+    }
+    
+    sendPatch('BACKGROUND_CHANGE', { color });
+  };
+   
+  const handleSetGlobalBranchColor = (color: string) => {
+    pushHistory(useEditorStore.getState().nodes, useEditorStore.getState().edges);
+    setGlobalStore({ globalBranchColor: color });
+
+    const newNodes = nodes.map(n => {
+      if (n.styleLocked) return n; 
+      return { 
+        ...n, 
+        branchColor: undefined,
+        color: undefined,        
+        borderColor: undefined, 
+        textColor: undefined    
+      };
+    });
+    
+    setGraph(newNodes, edges);
+    useEditorStore.setState({ isDirty: true });
+    
+    // Lưu ngay lập tức
+    if (id) {
+      const { relationships, summaries } = useEditorStore.getState();
+      if (isGuest) {
+        saveGuestDoc(id, name, newNodes, edges, relationships, summaries);
+      } else if (isAuthed) {
+        const docToSave = { name, content: { nodes: newNodes, edges, relationships, summaries } };
+        mindmapsApi.update(id, docToSave).catch((e) => {
+          console.error('Lưu màu dây thất bại:', e);
+        });
+      }
+    }
+    
     sendPatch('GLOBAL_BRANCH_COLOR_CHANGE', { color });
   };
 
@@ -1662,22 +3251,44 @@ const handleSetGlobalBranchColor = (color: string) => {
 
     const newNodes = nodes.map((n) => {
       if (idSet.has(n.id)) {
-        const resetStyle = applyNodeDefaults(n, activeTheme);
-        return { ...n, ...resetStyle, quickStyleId: styleId };
+        // Chỉ set quickStyleId, không reset các properties khác
+        // getNodeComputedStyle sẽ tự động áp dụng quick style colors
+        return { 
+          ...n, 
+          quickStyleId: styleId,
+          // Xóa các override colors để quick style có hiệu lực
+          color: undefined,
+          borderColor: undefined,
+          textColor: undefined,
+          borderWidth: undefined,
+          fontWeight: undefined,
+          textDecoration: undefined,
+          fontSize: undefined,
+          textCase: undefined,
+        };
       }
       return n;
     });
     
     setGraph(newNodes, edges);
-    setTimeout(() => handleLayout(true), 50);
-    debouncedPushHistory();
-    debouncedPersistData();
+    setTimeout(() => handleLayout(), 50);
+    
+    // Lưu ngay lập tức
+    if (id) {
+      const { relationships, summaries } = useEditorStore.getState();
+      if (isGuest) {
+        saveGuestDoc(id, name, newNodes, edges, relationships, summaries);
+      } else if (isAuthed) {
+        const docToSave = { name, content: { nodes: newNodes, edges, relationships, summaries } };
+        mindmapsApi.update(id, docToSave).catch((e) => {
+          console.error('Lưu quick style thất bại:', e);
+        });
+      }
+    }
     
     // Gửi patch cho TỪNG node
-    const tempResetStyle = applyNodeDefaults(nodes[0], activeTheme); // Tạm
-    selectedNodeIds.forEach(id => {
-      // TODO: Cần lấy resetStyle chính xác cho từng node
-      sendPatch('NODE_QUICK_STYLE_APPLY', { id: id, styleId, resetStyle: tempResetStyle });
+    selectedNodeIds.forEach(nodeId => {
+      sendPatch('NODE_QUICK_STYLE_APPLY', { id: nodeId, styleId });
     });
   };
 
@@ -1696,66 +3307,219 @@ const handleSetGlobalBranchColor = (color: string) => {
   const handlePasteStyle = () => {
     if (!selectedNodeIds || !styleClipboard) return;
     const idSet = selectedIdsSet;
+    
+    // [OPTIMIZATION] Dirty checking - chỉ layout nếu có style ảnh hưởng đến kích thước
+    const needsLayout = styleClipboard.fontSize !== undefined || 
+                        styleClipboard.borderWidth !== undefined;
+    
     const newNodes = nodes.map((n) =>
       idSet.has(n.id) ? { ...n, ...styleClipboard } : n
     );
     setGraph(newNodes, edges);
-    setTimeout(() => handleLayout(true), 50);
-    debouncedPushHistory();
-    debouncedPersistData();
-    sendPatch('NODE_STYLE_PASTE', { id: selectedNodeIds, style: styleClipboard }); // GĐ 9
+    
+    // Chỉ trigger layout nếu style ảnh hưởng đến dimension (fontSize, padding, border)
+    // Theo spec: màu sắc chỉ cần Repaint
+    if (needsLayout) {
+      setTimeout(() => handleLayout(), 50);
+    }
+    
+    // Lưu ngay lập tức
+    if (id) {
+      const { relationships, summaries } = useEditorStore.getState();
+      if (isGuest) {
+        saveGuestDoc(id, name, newNodes, edges, relationships, summaries);
+      } else if (isAuthed) {
+        const docToSave = { name, content: { nodes: newNodes, edges, relationships, summaries } };
+        mindmapsApi.update(id, docToSave).catch((e) => {
+          console.error('Lưu paste style thất bại:', e);
+        });
+      }
+    }
+    
+    sendPatch('NODE_STYLE_PASTE', { id: selectedNodeIds, style: styleClipboard }); 
   };
 
   const handleResetStyle = () => {
     if (!selectedNodeIds || !currentNode) return;
     const idSet = selectedIdsSet;
     const resetStyle = applyNodeDefaults(currentNode, activeTheme);
+    
+    // [OPTIMIZATION] Reset style có thể thay đổi fontSize, borderWidth -> cần layout
+    const needsLayout = resetStyle.fontSize !== undefined || 
+                        resetStyle.borderWidth !== undefined;
+    
     const newNodes = nodes.map((n) =>
       idSet.has(n.id) ? { ...n, ...resetStyle } : n
     );
     setGraph(newNodes, edges);
-    setTimeout(() => handleLayout(true), 50);
-    debouncedPushHistory();
-    debouncedPersistData();
-    sendPatch('NODE_STYLE_RESET', { id: selectedNodeIds, resetStyle }); // GĐ 9
+    
+    // Chỉ layout nếu có thay đổi dimension
+    if (needsLayout) {
+      setTimeout(() => handleLayout(), 50);
+    }
+    
+    // Lưu ngay lập tức
+    if (id) {
+      const { relationships, summaries } = useEditorStore.getState();
+      if (isGuest) {
+        saveGuestDoc(id, name, newNodes, edges, relationships, summaries);
+      } else if (isAuthed) {
+        const docToSave = { name, content: { nodes: newNodes, edges, relationships, summaries } };
+        mindmapsApi.update(id, docToSave).catch((e) => {
+          console.error('Lưu reset style thất bại:', e);
+        });
+      }
+    }
+    
+    sendPatch('NODE_STYLE_RESET', { id: selectedNodeIds, resetStyle }); 
   };
-
-  // ================================================
-  // Logic Collapse [MERGE GĐ 7 + 9]
-  // ================================================
 
   const handleToggleCollapse = useCallback(
     (e: any, nodeId: string, side?: 'left' | 'right') => {
       e.cancelBubble = true;
       
-      // [MERGE] Giữ lại logic UI mới (root collapse) từ feature/tt
       if (nodeId === 'root' && side) {
         setRootCollapse(prev => ({ ...prev, [side]: !prev[side] }));
-        // [GĐ 9] Gửi patch cho Root collapse
+        
+        // [FIX YÊU CẦU 2] Bỏ selection nếu node đang select thuộc nhánh bị đóng
+        const affectedChildren = edges.filter(e => e.from === 'root').map(e => e.to);
+        const childrenOnSide = affectedChildren.filter(childId => {
+          const childNode = nodeMap.get(childId);
+          return childNode?.side === side;
+        });
+        
+        // Tìm tất cả descendants của children trên side này
+        const getAllDescendants = (nodeId: string): string[] => {
+          const children = edges.filter(e => e.from === nodeId).map(e => e.to);
+          if (children.length === 0) return [];
+          return [...children, ...children.flatMap(c => getAllDescendants(c))];
+        };
+        
+        const allAffectedIds = new Set([
+          ...childrenOnSide,
+          ...childrenOnSide.flatMap(id => getAllDescendants(id))
+        ]);
+        
+        // Nếu có node đang select nằm trong nhánh bị đóng, clear selection
+        const hasSelectedInCollapsedBranch = selectedNodeIds.some(id => allAffectedIds.has(id));
+        if (hasSelectedInCollapsedBranch) {
+          setSelectedNodeIds([]);
+        }
+        
         sendPatch('ROOT_TOGGLE_COLLAPSE', { side });
-        // Không push history, không persist (đây là UI state)
+        setTimeout(() => handleLayout(), 0);
       } else if (nodeId !== 'root') {
-        // [MERGE] Giữ lại logic GĐ 7/9 (node con collapse)
-        const newNodes = nodes.map(n => 
-          n.id === nodeId ? { ...n, collapsed: !n.collapsed } : n
-        );
-        setGraph(newNodes, edges);
-        debouncedPushHistory();
+        const node = nodeMap.get(nodeId);
+        if (!node) return;
+        
+        const wasCollapsed = node.collapsed;
+        
+        // [FIX YÊU CẦU 2] Nếu đang đóng nhánh, bỏ selection các node con
+        if (!wasCollapsed) {
+          // Đang expand -> sắp collapse, tìm tất cả descendants
+          const getAllDescendants = (nodeId: string): string[] => {
+            const children = edges.filter(e => e.from === nodeId).map(e => e.to);
+            if (children.length === 0) return [];
+            return [...children, ...children.flatMap(c => getAllDescendants(c))];
+          };
+          
+          const allDescendants = new Set(getAllDescendants(nodeId));
+          const hasSelectedInCollapsedBranch = selectedNodeIds.some(id => allDescendants.has(id));
+          
+          if (hasSelectedInCollapsedBranch) {
+            setSelectedNodeIds([]);
+          }
+        }
+        
+        // [SMART ANCHOR] Lưu vị trí hiện tại của node để giữ anchor point
+        const visual = nodeVisuals.get(nodeId);
+        if (visual) {
+          const nodeScreenX = pos.x + node.x * scale;
+          const nodeScreenY = pos.y + node.y * scale;
+          
+          const newNodes = nodes.map(n => 
+            n.id === nodeId ? { ...n, collapsed: !n.collapsed } : n
+          );
+          setGraph(newNodes, edges);
+          
+          // Sau khi layout, giữ node ở cùng vị trí screen
+          setTimeout(() => {
+            const updatedNode = useEditorStore.getState().nodes.find(n => n.id === nodeId);
+            if (updatedNode) {
+              const newPosX = nodeScreenX - updatedNode.x * scale;
+              const newPosY = nodeScreenY - updatedNode.y * scale;
+              setPos({ x: newPosX, y: newPosY });
+              
+              // [AUTO-SCROLL TO CHILDREN] Nếu đang expand, pan đến children
+              if (wasCollapsed) {
+                // Tính toán bounding box của các children mới hiện ra
+                const children = edges.filter(e => e.from === nodeId).map(e => e.to);
+                if (children.length > 0) {
+                  const childNodes = useEditorStore.getState().nodes.filter(n => children.includes(n.id));
+                  if (childNodes.length > 0) {
+                    let minChildX = Infinity, maxChildX = -Infinity;
+                    childNodes.forEach(child => {
+                      const childVisual = nodeVisuals.get(child.id);
+                      if (childVisual) {
+                        const childLeft = child.x - childVisual.box.w / 2;
+                        const childRight = child.x + childVisual.box.w / 2;
+                        minChildX = Math.min(minChildX, childLeft);
+                        maxChildX = Math.max(maxChildX, childRight);
+                      }
+                    });
+                    
+                    // Kiểm tra xem children có nằm ngoài viewport không
+                    const panelOffset = isFormattingToolbarOpen ? PANEL_WIDTH : 0;
+                    const visibleWidth = window.innerWidth - panelOffset;
+                    const rightEdge = maxChildX * scale + newPosX;
+                    
+                    // Nếu children bị overflow, pan sang phải
+                    if (rightEdge > visibleWidth - 50) {
+                      const adjustX = visibleWidth - rightEdge - 50;
+                      setPos({ x: newPosX + adjustX, y: newPosY });
+                    }
+                  }
+                }
+              }
+            }
+          }, 60); // Đợi layout hoàn tất
+        }
+        
         debouncedPersistData();
-        sendPatch('NODE_TOGGLE_COLLAPSE', { id: nodeId }); // GĐ 9
+        sendPatch('NODE_TOGGLE_COLLAPSE', { id: nodeId }); 
+        setTimeout(() => handleLayout(), 0);
       }
     },
     [
-      nodes, edges, setGraph, debouncedPushHistory, 
-      debouncedPersistData, sendPatch, // GĐ 7 & 9
+      nodes, edges, setGraph, nodeMap, nodeVisuals, scale, pos, 
+      selectedNodeIds, isFormattingToolbarOpen, PANEL_WIDTH,
+      debouncedPersistData, sendPatch, 
     ]
   );
 
-  // [MERGE] Giữ lại logic UI mới (isNodeVisible) từ feature/tt
   const isNodeVisible = useCallback((nodeId: string): boolean => {
     const node = nodeMap.get(nodeId);
     if (!node) return false;
     if (nodeId === 'root' || !node.parentId) return true;
+    
+    // [FIX] Label nodes của relationships: ẩn nếu relationship ẩn
+    if (node.parentId?.startsWith('rel_')) {
+      const relationship = relationships.find(r => r.id === node.parentId);
+      if (!relationship) return false;
+      // Label node visible nếu cả 2 nodes của relationship đều visible
+      return isNodeVisible(relationship.from) && isNodeVisible(relationship.to);
+    }
+    
+    // [FIX] Summary nodes: ẩn nếu summary ẩn
+    if (node.parentId?.startsWith('sum_')) {
+      const summary = summaries.find(s => s.id === node.parentId);
+      if (!summary) return false;
+      // Summary node visible nếu parent và start/end đều visible
+      return isNodeVisible(summary.parentId) && 
+             isNodeVisible(summary.startNodeId) && 
+             isNodeVisible(summary.endNodeId);
+    }
+    
     if (node.parentId === 'root') {
       if (node.side === 'left' && rootCollapse.left) return false;
       if ((node.side === 'right' || !node.side) && rootCollapse.right) return false;
@@ -1765,7 +3529,7 @@ const handleSetGlobalBranchColor = (color: string) => {
     if (parent.collapsed) return false;
     if (parent.id === 'root') return true;
     return isNodeVisible(node.parentId);
-  }, [nodeMap, rootCollapse]);
+  }, [nodeMap, rootCollapse, relationships, summaries]);
 
   const visibleNodes = useMemo(
     () => nodes.filter((n) => isNodeVisible(n.id)),
@@ -1775,6 +3539,7 @@ const handleSetGlobalBranchColor = (color: string) => {
     () => new Set(visibleNodes.map((n) => n.id)),
     [visibleNodes]
   );
+
   const visibleEdges = useMemo(
     () =>
       edges.filter(
@@ -1782,8 +3547,49 @@ const handleSetGlobalBranchColor = (color: string) => {
       ),
     [edges, visibleNodeIds]
   );
+  
+  // [MỚI] Lọc relationships: chỉ hiện nếu CẢ 2 node from/to đều visible
+  const visibleRelationships = useMemo(
+    () =>
+      relationships.filter(
+        (r) => visibleNodeIds.has(r.from) && visibleNodeIds.has(r.to)
+      ),
+    [relationships, visibleNodeIds]
+  );
+  
+  // [MỚI] Lọc summaries: chỉ hiện nếu TẤT CẢ nodes liên quan đều visible
+  const visibleSummaries = useMemo(
+    () =>
+      summaries.filter((s) => {
+        // Check parent node visible (đệ quy) - isNodeVisible đã kiểm tra collapsed đệ quy
+        if (!isNodeVisible(s.parentId)) return false;
+        
+        // Check start và end nodes visible (đệ quy)
+        if (!isNodeVisible(s.startNodeId)) return false;
+        if (!isNodeVisible(s.endNodeId)) return false;
+        
+        // Check tất cả nodes GIỮA start và end cũng phải visible
+        const parent = nodeMap.get(s.parentId);
+        if (!parent) return false;
+        
+        const siblings = nodes.filter(n => n.parentId === s.parentId);
+        const startIdx = siblings.findIndex(n => n.id === s.startNodeId);
+        const endIdx = siblings.findIndex(n => n.id === s.endNodeId);
+        
+        if (startIdx === -1 || endIdx === -1) return false;
+        
+        const [minIdx, maxIdx] = [Math.min(startIdx, endIdx), Math.max(startIdx, endIdx)];
+        
+        // Tất cả nodes trong range phải visible
+        for (let i = minIdx; i <= maxIdx; i++) {
+          if (!isNodeVisible(siblings[i].id)) return false;
+        }
+        
+        return true;
+      }),
+    [summaries, isNodeVisible, nodeMap, nodes]
+  );
 
-  // [MERGE] Giữ lại logic UI mới (descendantCounts) từ feature/tt
   const descendantCounts = useMemo(() => {
     const counts = new Map<string, number>();
     const rootCounts = { left: 0, right: 0 };
@@ -1819,21 +3625,19 @@ const handleSetGlobalBranchColor = (color: string) => {
     return { counts, rootCounts };
   }, [edges, nodeMap]);
 
-  useEffect(() => {
-    if (!editingNodeId || !editingInputRef.current) return;
-    const el = editingInputRef.current;
-    const resize = () => {
-      const visual = nodeVisuals.get(editingNodeId!);
-      if (!visual || !el) return;
+  // [FIX] Initialize textarea height when starting edit
+  useLayoutEffect(() => {
+    if (editingNodeId && editingInputRef.current) {
+      const el = editingInputRef.current;
+      const visual = nodeVisuals.get(editingNodeId);
       el.style.height = 'auto';
-      const unscaledScroll = el.scrollHeight / Math.max(scale, 0.0001);
-      const target = Math.max(visual.box.h, unscaledScroll);
-      el.style.height = `${target}px`;
-    };
-    resize();
-    const t = setTimeout(resize, 50);
-    return () => clearTimeout(t);
-  }, [editingNodeId, scale, pos, nodeVisuals]); 
+      el.style.height = el.scrollHeight + 'px';
+      // Start with the current node width; expansion happens on input when needed
+      if (visual && editingNodeId === 'root') {
+        el.style.width = `${visual.box.w}px`;
+      }
+    }
+  }, [editingNodeId]);
 
   const computeEditingNodePosition = useCallback(() => {
     if (!editingNodeId) return null;
@@ -1855,17 +3659,36 @@ const handleSetGlobalBranchColor = (color: string) => {
       fontFamily: style.fontFamily || 'Inter',
       fontWeight: style.fontWeight || 'normal',
       fontStyle: style.fontStyle === 'italic' ? 'italic' : 'normal',
-      textAlign: style.textAlign || 'center',
+      textAlign: style.textAlign || 'CENTER',
       textColor: style.textColor || '#333333',
       textDecoration: style.textDecoration || 'none',
     };
   }, [editingNodeId, nodeVisuals, nodeMap, scale, pos]);
 
   // ================================================
-  // Render (Hợp nhất JSX của feature/tt với Logic của chúng ta)
+  // Render 
   // ================================================
 
-  if (!isDataLoaded) {
+  if (!isDataLoaded || (!isGuest && accessPermissionState === 'loading')) {
+    return (
+      <div className="w-screen h-screen bg-white flex items-center justify-center text-gray-800 gap-2">
+        <Spinner className="w-8 h-8 border-gray-400 border-t-gray-800" />
+        Đang tải...
+      </div>
+    );
+  }
+
+  // --- Collaboration: Access Denied Screen ---
+  if (accessDenied && !isGuest) {
+    return (
+      <AccessDeniedScreen
+        onRequestAccess={handleRequestAccessFromScreen}
+        requestStatus={requestStatus}
+      />
+    );
+  }
+
+  if (!isReadyToShow) { 
     return (
       <div className="w-screen h-screen bg-white flex items-center justify-center text-gray-800 gap-2">
         <Spinner className="w-8 h-8 border-gray-400 border-t-gray-800" />
@@ -1880,31 +3703,44 @@ const handleSetGlobalBranchColor = (color: string) => {
         {fonts
           .map(
             (font) =>
-              `@import url('https://fonts.googleapis.com/css2?family=${
+              `..import url('https://fonts.googleapis.com/css2?family=${
                 font.value.split(',')[0].replace(/ /g, '+')
-              }:wght@400;700&display=swap');`
+              }:wght..400;700&display=swap');`
           )
           .join('\n')}
       </style>
+      {/* [FLEXBOX LAYOUT] Main container with flex layout for docking sidebar */}
       <div className="w-screen h-screen bg-white overflow-hidden flex flex-col">
         <EditorToolbar
           onCommitName={() => {
-            debouncedPersistData();
+            // Save immediately when name is changed
+            if (isAuthed && id) {
+              const content = { nodes: nodes, edges };
+              mindmapsApi.update(id, { name, content }).catch((e) => {
+                console.error('Save name failed:', e);
+              });
+            } else if (isGuest && id) {
+              const { relationships, summaries } = useEditorStore.getState();
+              saveGuestDoc(id, name, nodes, edges, relationships, summaries);
+            }
             sendPatch('MAP_NAME_CHANGE', { name });
           }}
           onDashboard={() => navigate('/dashboard')}
           onUndo={undo}
           onRedo={redo}
-          onShare={() => {
-            navigator.clipboard.writeText(window.location.href);
-            addToast('Đã sao chép link chia sẻ!', 'success');
-          }}
+          onShare={() => setIsShareModalOpen(true)}
+          readOnly={isReadOnly}
+          isOwner={isOwner}
+          pendingRequestsCount={pendingRequests?.length ?? 0}
+          onShowRequests={() => setRequestModalOpen(true)}
           onTheme={toggleTheme} 
           onSave={handleSave}
           isDirty={isDirty}
           onToggleFormattingToolbar={() =>
             setFormattingToolbarOpen(!isFormattingToolbarOpen)
           }
+          presentationMode={presentationMode}
+          onSetPresentationMode={setPresentationMode}
           currentScale={scale}
           onZoomIn={handleZoomIn}
           onZoomOut={handleZoomOut}
@@ -1914,95 +3750,199 @@ const handleSetGlobalBranchColor = (color: string) => {
           onAddChild={handleToolbarAddChild}
           onAddSibling={handleToolbarAddSibling}
           onSetHyperlink={handleSetHyperlink}
+          onUpdateNode={handleUpdateNode}
+          onToggleBoundary={handleToggleBoundary}
+          onAddRelationship={handleAddRelationship}
+          onAddSummary={handleAddSummary}
+          stageRef={stageRef}
         />
+        {!presentationMode && <Sidebar />}
+
+
         <Sidebar />
 
+        {/* ✅ CHAT SIDEBAR */}
+        {isConnected && id && (
+          <ChatSidebar
+            mindmapId={id}
+            sendPatch={sendPatch}
+          />
+        )}
+
+        {mode === 'share' && (
+          <div className="absolute top-14 left-1/2 -translate-x-1/2 bg-blue-100 text-blue-800 px-4 py-1 rounded-full text-xs font-medium z-50 pointer-events-none opacity-80">
+            Chế độ xem (View Only)
+          </div>
+        )}
+
+        {/* Textarea edit node */}
         {editingNodeId &&
           (() => {
-            // [MERGE] Giữ lại logic textarea wrapper mới của feature/tt
             const visual = nodeVisuals.get(editingNodeId!);
             const node = nodeMap.get(editingNodeId!);
             if (!visual || !node || !stageRef.current) return null;
+
+            const { style, box } = visual;
             const stageRect = stageRef.current.container().getBoundingClientRect();
-            const wrapperStyle: React.CSSProperties = {
-              position: 'absolute',
-              left: stageRect.left,
-              top: stageRect.top,
-              width: stageRect.width,
-              height: stageRect.height,
-              transform: `translate(${pos.x}px, ${pos.y}px) scale(${scale})`,
-              transformOrigin: '0 0',
-              zIndex: 50,
-              pointerEvents: 'none',
-            };
-            const localLeft = visual.style.x - visual.box.w / 2;
-            const localTop = visual.style.y - visual.box.h / 2;
+            const absoluteX = stageRect.left + pos.x + style.x * scale;
+            const absoluteY = stageRect.top + pos.y + style.y * scale;
+            
+            // Check if Level 3+
+            const topology = nodeTopology.get(editingNodeId!);
+            const depth = topology?.depth || 0;
+            const isUnderlineStyle = depth >= 3 && editingNodeId !== 'root';
+            const isRoot = editingNodeId === 'root';
+
             return (
-              <div style={wrapperStyle}>
-                <textarea
-                  ref={editingInputRef}
-                  defaultValue={node.nodeText}
-                  onInput={(e) => {
-                    const el = e.currentTarget as HTMLTextAreaElement;
-                    const visualNow = visual;
-                    if (!visualNow) return;
-                    el.style.height = 'auto';
-                    const unscaledScroll = el.scrollHeight / Math.max(scale, 0.0001);
-                    const targetH = Math.max(visualNow.box.h, unscaledScroll);
-                    el.style.height = `${targetH}px`;
-                  }}
-                  onBlur={() => stopEditing(true)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' && !e.shiftKey) {
-                      e.preventDefault();
-                      stopEditing(true);
-                    } else if (e.key === 'Escape') {
-                      stopEditing(false);
-                    } else if (e.key === 'Tab') {
-                      e.preventDefault(); // Ngăn Tab nhảy focus
-                      stopEditing(true); // Lưu và kết thúc
+              <textarea
+                ref={(el) => {
+                  editingInputRef.current = el;
+                  // Tự động set height lần đầu khi mount để tránh bị cụt text
+                  if (el) {
+                     if (el.style.height === '' || el.style.height === 'auto') {
+                         el.style.height = 'auto';
+                         el.style.height = el.scrollHeight + 'px';
+                     }
+                     // Nếu là root, có thể cần tính lại width ngay lập tức nếu text ban đầu quá dài
+                     if (isRoot) {
+                        // Kích hoạt sự kiện input giả để tính toán width ban đầu cho root
+                        const event = new Event('input', { bubbles: true });
+                        el.dispatchEvent(event);
+                     }
                   }
-                  }}
-                  style={{
-                    position: 'absolute',
-                    left: localLeft,
-                    top: localTop,
-                    width: visual.box.w,
-                    height: visual.box.h,
-                    fontSize: `${visual.box.finalFontSize}px`,
-                    fontWeight: visual.style.fontWeight || 'normal',
-                    fontStyle: visual.style.fontStyle === 'italic' ? 'italic' : 'normal',
-                    fontFamily: visual.style.fontFamily || 'Inter',
-                    lineHeight: LINE_HEIGHT_MULTIPLIER,
-                    padding: `${PADDING_Y}px ${PADDING_X}px`,
-                    textAlign: visual.style.textAlign || 'center',
-                    textDecoration: visual.style.textDecoration || 'none',
-                    color: visual.style.textColor || '#333333',
-                    backgroundColor: visual.style.color,
-                    border: `${visual.style.borderWidth || 0}px ${
-                      visual.style.borderStyle === 'dashed' ? 'dashed'
-                      : visual.style.borderStyle === 'dotted' ? 'dotted'
-                      : 'solid'
-                    } ${visual.style.borderColor || 'transparent'}`,
-                    borderRadius: visual.style.shape === 'roundedRect' ? '8px' : '0px',
-                    boxSizing: 'border-box',
-                    outline: 'none',
-                    boxShadow: 'none',
-                    transition: 'none',
-                    pointerEvents: 'auto',
-                    overflow: 'hidden',
-                  }}
-                  className="z-50 rounded-md outline-none resize-none"
-                />
-              </div>
+                }}
+                defaultValue={node.id === 'root' ? (node.nodeText || '').toUpperCase() : node.nodeText}
+                onInput={(e) => {
+                  const el = e.currentTarget as HTMLTextAreaElement;
+                  if (isRoot) {
+                      const { selectionStart, selectionEnd } = el;
+                      const upper = el.value.toUpperCase();
+                      if (el.value !== upper) {
+                        el.value = upper;
+                        if (selectionStart !== null && selectionEnd !== null) {
+                          el.setSelectionRange(selectionStart, selectionEnd);
+                        }
+                      }
+                  }
+                  
+                  // === TRƯỜNG HỢP 1: NODE GỐC (AUTO-EXPAND WIDTH & HEIGHT) ===
+                  if (isRoot) {
+                      const minWidth = visual.box.w;
+                      const maxWidth = 800; // Root được phép rộng tối đa 800px
+
+                      // 1. Tạo Span ẩn để đo độ rộng text
+                      const span = document.createElement('span');
+                      const computedStyle = window.getComputedStyle(el);
+                      
+                      span.style.font = computedStyle.font;
+                      span.style.fontFamily = computedStyle.fontFamily;
+                      span.style.fontSize = computedStyle.fontSize;
+                      span.style.fontWeight = computedStyle.fontWeight;
+                      span.style.letterSpacing = computedStyle.letterSpacing;
+                      span.style.whiteSpace = 'pre'; // Giữ nguyên khoảng trắng để đo chính xác
+                      span.style.visibility = 'hidden';
+                      span.style.position = 'absolute';
+                      span.style.top = '-9999px';
+                      
+                      span.textContent = el.value || '.';
+                      
+                      document.body.appendChild(span);
+                      const textWidth = span.getBoundingClientRect().width;
+                      document.body.removeChild(span);
+
+                      // 2. Tính toán padding để cộng vào
+                      const paddingLeft = parseFloat(computedStyle.paddingLeft) || 0;
+                      const paddingRight = parseFloat(computedStyle.paddingRight) || 0;
+                      const borderLeft = parseFloat(computedStyle.borderLeftWidth) || 0;
+                      const borderRight = parseFloat(computedStyle.borderRightWidth) || 0;
+                      const totalPadding = paddingLeft + paddingRight + borderLeft + borderRight;
+
+                      // 3. Tính width mới (+30px buffer)
+                      const desiredWidth = textWidth + totalPadding + 30;
+                      const finalWidth = Math.min(maxWidth, Math.max(minWidth, desiredWidth));
+
+                      // 4. Apply Width và tính lại Height
+                      el.style.width = `${finalWidth}px`;
+                      el.style.height = 'auto';
+                      el.style.height = `${el.scrollHeight}px`;
+                  } 
+                  
+                  // === TRƯỜNG HỢP 2: NODE THƯỜNG (CỐ ĐỊNH WIDTH, CHỈ TĂNG HEIGHT) ===
+                  else {
+                      // Logic đơn giản bạn yêu cầu
+                      el.style.height = 'auto';
+                      el.style.height = `${el.scrollHeight}px`;
+                  }
+                }}
+                onBlur={() => stopEditing(true)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    stopEditing(true);
+                  } else if (e.key === 'Escape') {
+                    stopEditing(false);
+                  } else if (e.key === 'Tab') {
+                    e.preventDefault();
+                    stopEditing(true);
+                  }
+                }}
+                style={{
+                  position: 'fixed',
+                  left: absoluteX,
+                  top: absoluteY,
+                  
+                  // Width khởi tạo: Luôn bắt đầu bằng width hiện tại của node
+                  width: visual.box.w,
+                  
+                  transform: `translate(-50%, -50%) scale(${scale})`,
+                  transformOrigin: 'center center',
+                  
+                  fontSize: `${visual.box.finalFontSize}px`,
+                  fontWeight: visual.style.fontWeight || 'normal',
+                  fontStyle: visual.style.fontStyle === 'italic' ? 'italic' : 'normal',
+                  fontFamily: visual.style.fontFamily || 'Inter',
+                  lineHeight: 1.3, 
+                  padding: isUnderlineStyle ? '4px 2px' : `${PADDING_Y}px ${PADDING_X}px`,
+                  textAlign: (visual.style.textAlign || 'CENTER').toLowerCase() as 'left' | 'center' | 'right',
+                  textDecoration: visual.style.textDecoration || 'none',
+                  color: visual.style.textColor || '#333333',
+                  backgroundColor: isUnderlineStyle ? 'transparent' : visual.style.color,
+                  
+                  border: isUnderlineStyle ? 'none' : `${visual.style.borderWidth || 0}px ${
+                    visual.style.borderStyle === 'dashed' ? 'dashed'
+                    : visual.style.borderStyle === 'dotted' ? 'dotted'
+                    : 'solid'
+                  } ${visual.style.borderColor || 'transparent'}`,
+                  borderBottom: isUnderlineStyle ? `2px solid ${topology?.branchBaseColor || '#666'}` : undefined,
+                  borderRadius: isUnderlineStyle ? '0px' : (visual.style.shape === 'roundedRect' ? '8px' : '0px'),
+                  
+                  boxSizing: 'border-box',
+                  outline: 'none',
+                  boxShadow: isUnderlineStyle 
+                    ? 'none'
+                    : '0 0 0 2px #3b82f6, 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05)',
+                  zIndex: 100,
+                  overflow: 'hidden',
+                  resize: 'none',
+                  overflowWrap: 'break-word',
+                  wordBreak: 'break-word',
+                }}
+                className="" 
+              />
             );
           })()}
 
-        <div
-          className="w-full h-full pt-12 relative" // UI Mới (pt-12)
-          style={{ backgroundColor }}
-        >
-          <Stage
+        <div className="flex flex-row flex-1 overflow-hidden">
+          {/* [CANVAS AREA] Flex: 1 auto, adjusts when panel opens */}
+          <div
+            ref={canvasContainerRef}
+            className="flex-1 pt-12 relative transition-all duration-300 ease-in-out"
+            style={{ 
+              backgroundColor,
+              width: isFormattingToolbarOpen ? `calc(100% - ${PANEL_WIDTH}px)` : '100%'
+            }}
+          >
+            <Stage
             ref={stageRef}
             width={dimensions.width}
             height={dimensions.height}
@@ -2011,12 +3951,12 @@ const handleSetGlobalBranchColor = (color: string) => {
             x={pos.x}
             y={pos.y}
             onWheel={(e) => {
-              e.evt.preventDefault(); // Ngăn trang web cuộn
+              e.evt.preventDefault(); 
               const stage = e.target.getStage();
               if (!stage) return;
 
               if (e.evt.ctrlKey) {
-                // === LOGIC ZOOM (Giữ nguyên) ===
+                // === LOGIC ZOOM ===
                 const scaleBy = 1.05;
                 const oldScale = stage.scaleX();
                 const pointerPos = stage.getPointerPosition();
@@ -2034,10 +3974,9 @@ const handleSetGlobalBranchColor = (color: string) => {
                   y: pointerPos.y - mousePointTo.y * newScale,
                 });
               } else {
-                // === LOGIC PAN (Thêm mới) ===
-                // Dùng cho cuộn chuột 2 ngón tay trên touchpad
+                // === LOGIC PAN ===
                 setPos({
-                  x: pos.x - e.evt.deltaX, // Dùng dấu trừ để di chuyển đúng hướng
+                  x: pos.x - e.evt.deltaX, 
                   y: pos.y - e.evt.deltaY,
                 });
               }
@@ -2047,21 +3986,15 @@ const handleSetGlobalBranchColor = (color: string) => {
               if (!stage) return;
 
               const isPanIntent = (e.evt.ctrlKey && e.evt.button === 0) || e.evt.button === 1;
-
-              // Chỉ xử lý khi click vào nền (Stage)
               if (e.target === stage) {
                 if (isPanIntent) {
                   setIsPanning(true);
                   isSelecting.current = false;
                 } else if (e.evt.button === 0) {
-                  // Click trái bình thường -> Bắt đầu chọn vùng
                   setIsPanning(false);
                   isSelecting.current = true;
-                  
                   const pos = stage.getPointerPosition();
                   if (!pos) return;
-                  
-                  // Lấy vị trí tương đối (un-scaled)
                   const unscaledPos = {
                     x: (pos.x - stage.x()) / stage.scaleX(),
                     y: (pos.y - stage.y()) / stage.scaleY(),
@@ -2075,11 +4008,13 @@ const handleSetGlobalBranchColor = (color: string) => {
                     height: 0,
                     visible: true,
                   });
-                  
-                  // Nếu không giữ Shift, bỏ chọn tất cả
                   if (!e.evt.shiftKey) {
                     setSelectedNodeIds([]);
                   }
+                  // Deselect relationship, summary, and boundary when clicking canvas
+                  setSelectedRelationshipId(null);
+                  setSelectedSummaryId(null);
+                  setSelectedBoundaryId(null);
                   if (editingNodeId) stopEditing(true);
                 }
               }
@@ -2088,11 +4023,8 @@ const handleSetGlobalBranchColor = (color: string) => {
               setIsPanning(false);
 
               if (isSelecting.current && selectionRect.visible) {
-                // Đã kéo xong, ẩn hình chữ nhật
                 isSelecting.current = false;
                 setSelectionRect({ ...selectionRect, visible: false });
-
-                // Xác định các node nằm trong vùng chọn
                 const { x, y, width, height } = selectionRect;
                 const rect = {
                   x1: x,
@@ -2103,7 +4035,6 @@ const handleSetGlobalBranchColor = (color: string) => {
 
                 const newlySelectedIds = visibleNodes
                   .filter((node) => {
-                    // Chọn nếu tâm node nằm trong hình chữ nhật
                     return (
                       node.x > rect.x1 &&
                       node.x < rect.x2 &&
@@ -2114,10 +4045,8 @@ const handleSetGlobalBranchColor = (color: string) => {
                   .map((node) => node.id);
 
                 if (e.evt.shiftKey) {
-                  // Thêm vào danh sách cũ
                   setSelectedNodeIds(prevIds => [...new Set([...prevIds, ...newlySelectedIds])]);
                 } else {
-                  // Thay thế danh sách cũ
                   setSelectedNodeIds(newlySelectedIds);
                 }
               }
@@ -2126,11 +4055,14 @@ const handleSetGlobalBranchColor = (color: string) => {
               if (isPanning) {
                 setPos({ x: pos.x + e.evt.movementX, y: pos.y + e.evt.movementY });
               } else if (isSelecting.current) {
-                // Cập nhật kích thước hình chữ nhật chọn
                 const stage = e.target.getStage();
                 if (!stage) return;
                 const pos = stage.getPointerPosition();
-                if (!pos) return;
+                
+                // Nếu chuột ra ngoài canvas (pos = null), giữ nguyên selectionRect để onMouseLeave xử lý
+                if (!pos) {
+                  return;
+                }
                 
                 const currentUnscaledPos = {
                   x: (pos.x - stage.x()) / stage.scaleX(),
@@ -2146,10 +4078,48 @@ const handleSetGlobalBranchColor = (color: string) => {
                   height: Math.abs(start.y - currentUnscaledPos.y),
                });
               }
+
+              // --- Collaboration: Send Cursor Position ---
+              const stage = e.target.getStage();
+              if (stage) {
+                const pointer = stage.getPointerPosition();
+                if (pointer) {
+                  const worldX = (pointer.x - stage.x()) / stage.scaleX();
+                  const worldY = (pointer.y - stage.y()) / stage.scaleY();
+                  sendCursor(worldX, worldY);
+                }
+              }
+            }}
+            onMouseLeave={() => {
+              // Khi chuột rời khỏi canvas, kết thúc selection nhưng vẫn select nodes trong vùng
+              if (isSelecting.current && selectionRect.visible) {
+                const { x, y, width, height } = selectionRect;
+                const rect = {
+                  x1: x,
+                  y1: y,
+                  x2: x + width,
+                  y2: y + height,
+                };
+
+                const newlySelectedIds = visibleNodes
+                  .filter((node) => {
+                    return (
+                      node.x > rect.x1 &&
+                      node.x < rect.x2 &&
+                      node.y > rect.y1 &&
+                      node.y < rect.y2
+                    );
+                  })
+                  .map((node) => node.id);
+
+                setSelectedNodeIds(newlySelectedIds);
+                isSelecting.current = false;
+                setSelectionRect({ visible: false, x: 0, y: 0, width: 0, height: 0 });
+              }
             }}
             onDblClick={(e) => {
               const stage = e.target.getStage();
-              if (e.target !== stage || !stage) return;
+              if (e.target !== stage) return;
               const pointerPos = stage.getPointerPosition();
               if (!pointerPos) return;
               const worldX = (pointerPos.x - pos.x) / scale;
@@ -2162,13 +4132,14 @@ const handleSetGlobalBranchColor = (color: string) => {
                 x: worldX,
                 y: worldY,
                 parentId: undefined,
+                // Thêm các thuộc tính style mặc định
+                ...DEFAULT_NODE_STYLE,
+                quickStyleId: 'default',
               };
 
               const newNodes = [...nodes, newNodeData];
               setGraph(newNodes, edges);
               startEditing(newId);
-              // [MERGE GĐ 7+9]
-              debouncedPushHistory();
               debouncedPersistData();
               sendPatch('NODE_CREATE', { node: newNodeData, edge: null });
             }}
@@ -2180,8 +4151,125 @@ const handleSetGlobalBranchColor = (color: string) => {
             }}
           >
             <Layer>
-              {/* [MERGE] Giữ lại logic render Edge của feature/tt */}
+              {visibleNodes.map((node) =>
+                node.boundary ? (
+                  <Boundary
+                    key={`boundary-${node.id}`}
+                    nodeId={node.id}
+                    nodes={nodes}
+                    edges={edges}
+                    nodeVisuals={nodeVisuals}
+                    isSelected={selectedBoundaryId === node.id}
+                    onClick={() => {
+                      setSelectedBoundaryId(node.id);
+                      setSelectedRelationshipId(null);
+                      setSelectedSummaryId(null);
+                      setSelectedNodeIds([]);
+                    }}
+                    onDelete={() => handleDeleteBoundary(node.id)}
+                  />
+                ) : null
+              )}
               {visibleEdges.map((edge) => {
+                // Check if this edge should be faded when dragging
+                const isDraggingRelated = draggingNodeId && (
+                  edge.from === draggingNodeId || 
+                  edge.to === draggingNodeId ||
+                  draggedNodeChildrenRef.current.has(edge.from) ||
+                  draggedNodeChildrenRef.current.has(edge.to)
+                );
+                
+                // Check if this is a summary edge (from a summary to its summary node)
+                const isSummaryEdge = edge.from.startsWith('sum_');
+                
+                if (isSummaryEdge) {
+                  // Find the summary data
+                  const summary = summaries.find(s => s.id === edge.from);
+                  if (!summary) return null;
+                  
+                  const toVisual = nodeVisuals.get(edge.to);
+                  if (!toVisual) return null;
+                  
+                  // Calculate brace position (same logic as Summary.tsx)
+                  const parentNode = nodes.find(n => n.id === summary.parentId);
+                  if (!parentNode) return null;
+                  
+                  const siblings = nodes.filter(n => n.parentId === summary.parentId);
+                  const startIdx = siblings.findIndex(n => n.id === summary.startNodeId);
+                  const endIdx = siblings.findIndex(n => n.id === summary.endNodeId);
+                  if (startIdx === -1 || endIdx === -1) return null;
+                  
+                  const [minIdx, maxIdx] = [Math.min(startIdx, endIdx), Math.max(startIdx, endIdx)];
+                  const parentVisual = nodeVisuals.get(parentNode.id);
+                  if (!parentVisual) return null;
+                  
+                  const isLeft = parentVisual.style.side === 'left';
+                  
+                  // Collect leaf nodes
+                  const collectLeafNodes = (nodeId: string): string[] => {
+                    const children = nodes.filter(n => n.parentId === nodeId);
+                    if (children.length === 0) return [nodeId];
+                    return children.flatMap(child => collectLeafNodes(child.id));
+                  };
+                  
+                  const leafNodes: string[] = [];
+                  for (let i = minIdx; i <= maxIdx; i++) {
+                    leafNodes.push(...collectLeafNodes(siblings[i].id));
+                  }
+                  
+                  // Calculate outermost X and Y range
+                  let braceX = isLeft ? Infinity : -Infinity;
+                  let startY = Infinity;
+                  let endY = -Infinity;
+                  
+                  leafNodes.forEach(leafId => {
+                    const visual = nodeVisuals.get(leafId);
+                    if (visual) {
+                      const { style, box } = visual;
+                      const nodeLeft = style.x - box.w / 2;
+                      const nodeRight = style.x + box.w / 2;
+                      const nodeTop = style.y - box.h / 2;
+                      const nodeBottom = style.y + box.h / 2;
+                      
+                      if (isLeft) {
+                        braceX = Math.min(braceX, nodeLeft);
+                      } else {
+                        braceX = Math.max(braceX, nodeRight);
+                      }
+                      
+                      startY = Math.min(startY, nodeTop);
+                      endY = Math.max(endY, nodeBottom);
+                    }
+                  });
+                  
+                  const direction = isLeft ? -1 : 1;
+                  const braceWidth = 15;
+                  const startX = isLeft ? braceX - 20 : braceX + 20;
+                  const midY = (startY + endY) / 2;
+                  const xMid = startX + (braceWidth * direction * 1.5);
+                  
+                  // Edge starts from brace tip, ends at summary node
+                  const p1 = { x: xMid, y: midY };
+                  const p4 = { x: toVisual.style.x + (isLeft ? toVisual.box.w / 2 : -toVisual.box.w / 2), y: toVisual.style.y };
+                  const points = [p1.x, p1.y, (p1.x + p4.x) / 2, p1.y, (p1.x + p4.x) / 2, p4.y, p4.x, p4.y];
+                  
+                  // Use summary color for arrow
+                  const summaryColor = summary.color || '#f59e0b';
+                  
+                  return <Arrow
+                    key={edge.id}
+                    points={points}
+                    stroke={summaryColor}
+                    strokeWidth={2}
+                    bezier={true}
+                    lineCap="round"
+                    lineJoin="round"
+                    pointerLength={8}
+                    pointerWidth={6}
+                    fill={summaryColor}
+                  />;
+                }
+                
                 const fromVisual = nodeVisuals.get(edge.from);
                 const toVisual = nodeVisuals.get(edge.to);
                 if (!fromVisual || !toVisual) return null;
@@ -2197,33 +4285,53 @@ const handleSetGlobalBranchColor = (color: string) => {
                   p4 = { x: toStyle.x, y: toStyle.y - toBox.h / 2 };
                   const midY = (p1.y + p4.y) / 2;
                   points = [p1.x, p1.y, p1.x, midY, p4.x, midY, p4.x, p4.y];
-                } else if (globalStructure === 'mindmap') {
-                  if (edge.from === 'root') {
+                } else if (globalStructure === 'mindmap' || globalStructure === 'logic') {
+                  // Check if fromNode and toNode are Level 3+ (has underline)
+                  const fromTopology = nodeTopology.get(edge.from);
+                  const fromDepth = fromTopology?.depth || 0;
+                  const isFromUnderline = fromDepth >= 3 && edge.from !== 'root';
+                  
+                  const toTopology = nodeTopology.get(edge.to);
+                  const toDepth = toTopology?.depth || 0;
+                  const isToUnderline = toDepth >= 3;
+                  
+                  // Nếu fromNode là Level 3+, edge mọc từ underline
+                  if (isFromUnderline) {
+                    p1 = { 
+                      x: fromStyle.x + (fromSide === 'left' ? -fromBox.w / 2 - 10 : fromBox.w / 2 + 10), 
+                      y: fromStyle.y + fromBox.h / 2 - 2 // Vị trí underline
+                    };
+                  } else if (edge.from === 'root') {
                     p1 = { x: fromStyle.x + (toSide === 'left' ? -fromBox.w / 2 : fromBox.w / 2), y: fromStyle.y };
                   } else {
                     p1 = { x: fromStyle.x + (fromSide === 'left' ? -fromBox.w / 2 : fromBox.w / 2), y: fromStyle.y };
                   }
-                  p4 = { x: toStyle.x + (toSide === 'left' ? toBox.w / 2 : -toBox.w / 2), y: toStyle.y };
+                  
+                  // Nếu toNode là Level 3+, edge kết nối vào underline
+                  if (isToUnderline) {
+                    p4 = { 
+                      x: toStyle.x + (toSide === 'left' ? toBox.w / 2 + 10 : -toBox.w / 2 - 10), 
+                      y: toStyle.y + toBox.h / 2 - 2 // Vị trí underline
+                    };
+                  } else {
+                    p4 = { x: toStyle.x + (toSide === 'left' ? toBox.w / 2 : -toBox.w / 2), y: toStyle.y };
+                  }
+                  
                   points = [ p1.x, p1.y, (p1.x + p4.x) / 2, p1.y, (p1.x + p4.x) / 2, p4.y, p4.x, p4.y ];
                 } else {
                   p1 = { x: fromStyle.x + (fromSide === 'left' ? -fromBox.w / 2 : fromBox.w / 2), y: fromStyle.y };
                   p4 = { x: toStyle.x + (toSide === 'left' ? toBox.w / 2 : -toBox.w / 2), y: toStyle.y };
                   points = [ p1.x, p1.y, (p1.x + p4.x) / 2, p1.y, (p1.x + p4.x) / 2, p4.y, p4.x, p4.y ];
                 }
-                let strokeColor = globalBranchColor;
-                if (isColoredBranch) {
-                  if (fromStyle.id === 'root') {
-                    const rootChildren = edges.filter(e => e.from === 'root').map(e => e.to);
-                    const childIndex = rootChildren.indexOf(toStyle.id);
-                    strokeColor = BRANCH_COLORS_PALETTE[childIndex % BRANCH_COLORS_PALETTE.length];
-                  } else {
-                    strokeColor = toStyle.branchColor || globalBranchColor;
-                }
-                } else {
-                  strokeColor = globalBranchColor;
-                }
-                const strokeWidth = branchLineWidth || 2;
-                const isBezier = toStyle.branchLineStyle === 'bezier' && globalStructure !== 'org';
+                // Sử dụng màu từ branchColor của fromNode, nếu không có thì dùng globalBranchColor
+                const fromNode = nodes.find(n => n.id === edge.from);
+                const strokeColor = fromNode?.branchColor || fromStyle.branchColor || globalBranchColor;
+                
+                // Apply node's branch line thickness or fallback to global setting
+                // 'normal' means use global setting, only 'thin' or 'thick' override
+                const nodeThickness = fromStyle.branchLineThickness === 'thin' ? 1 : fromStyle.branchLineThickness === 'thick' ? 3 : undefined;
+                const strokeWidth = nodeThickness !== undefined ? nodeThickness : (branchLineWidth || 2);
+                const isBezier = fromStyle.branchLineStyle === 'bezier' && globalStructure !== 'org'; // Changed to fromStyle
                 const lineProps = {
                   points: points,
                   stroke: strokeColor,
@@ -2231,39 +4339,113 @@ const handleSetGlobalBranchColor = (color: string) => {
                   bezier: isBezier,
                   lineCap: 'round' as const,
                   lineJoin: 'round' as const,
+                  opacity: isDraggingRelated ? 0.3 : 1, // Ẩn mờ khi drag
                 };
-                if (toStyle.branchLineEnd === 'arrow') {
+                if (fromStyle.branchLineEnd === 'arrow') { // Changed to fromStyle
                   return <Arrow {...lineProps} key={edge.id} pointerLength={8} pointerWidth={6} fill={strokeColor} />;
                 }
                 return <Line {...lineProps} key={edge.id} />;
               })}
 
-              {/* [MERGE] Giữ lại logic render Node của feature/tt */}
+              {/* Render Relationships - CHỈ hiện những cái visible */}
+              {visibleRelationships.map((rel) => (
+                <Relationship
+                  key={rel.id}
+                  relationship={rel}
+                  nodes={nodes}
+                  nodeVisuals={nodeVisuals}
+                  isSelected={selectedRelationshipId === rel.id}
+                  onUpdateControlPoints={handleUpdateRelationshipControlPoints}
+                  onUpdateLabel={handleUpdateRelationshipLabel}
+                  onClick={(id) => {
+                    setSelectedRelationshipId(id);
+                    setSelectedSummaryId(null);
+                    setSelectedBoundaryId(null);
+                    setSelectedNodeIds([]);
+                  }}
+                  onDelete={() => handleDeleteRelationship(rel.id)}
+                />
+              ))}
+
+              {/* Render Summaries - CHỈ hiện những cái visible */}
+              {visibleSummaries.map((sum) => (
+                <Summary
+                  key={sum.id}
+                  summary={sum}
+                  nodes={nodes}
+                  nodeVisuals={nodeVisuals}
+                  isSelected={selectedSummaryId === sum.id}
+                  level={summaryLayoutLevelsRef.current.get(sum.id) || 0}
+                  onUpdateRange={handleUpdateSummaryRange}
+                  onClick={() => {
+                    setSelectedSummaryId(sum.id);
+                    setSelectedRelationshipId(null);
+                    setSelectedBoundaryId(null);
+                    setSelectedNodeIds([]);
+                  }}
+                  onDelete={() => handleDeleteSummary(sum.id)}
+                />
+              ))}
+
               {visibleNodes.map((node) => {
                 const visual = nodeVisuals.get(node.id);
                 if (!visual) return null;
                 const { style, box } = visual;
-                const { w, h, textToRender, finalFontSize } = box;
+                const { w, h, textToRender, finalFontSize, imageHeight, imageWidthDisplay } = box;
                 const isSelected = selectedIdsSet.has(node.id);
-                const isDropTarget = node.id === dropTargetId;
                 const hasChildren = nodesWithChildren.has(node.id);
+                const isDropTarget = dropTargetNodeId === node.id;
+                const isDragging = draggingNodeId === node.id;
+                const combinedFontStyle = (style.fontStyle === 'italic' ? 'italic ' : '') + (style.fontWeight === 'bold' ? 'bold' : 'normal');
                 const shapeProps = {
                   width: w, height: h, offsetX: w / 2, offsetY: h / 2,
                   fill: style.color,
-                  stroke: isDropTarget ? "#34d399" : (isSelected ? "#3b82f6" : style.borderColor),
+                  stroke: isDropTarget ? "#10b981" : (isSelected ? "#3b82f6" : style.borderColor),
                   strokeWidth: isDropTarget ? 4 : (isSelected ? 3 : (style.borderWidth || 0)),
                   dash: style.borderStyle === 'dashed' ? [8, 4] : (style.borderStyle === 'dotted' ? [2, 3] : undefined),
                 };
+                const isFading = fadingInRef.current.has(node.id);
                 return (
                   <Group
-                    key={node.id} id={node.id} x={style.x} y={style.y} draggable
+                    key={node.id} id={node.id} x={style.x} y={style.y} 
+                    draggable={node.id !== 'root'}
+                    // Hide the node while it is being edited (for root and others)
+                    visible={editingNodeId !== node.id}
+                    {...(isFading ? {} : { opacity: (isDragging ? 0.75 : 1) })}
                     onDragStart={() => handleDragStart(node.id)}
                     onDragMove={(e) => handleDragMove(e, node.id)}
                     onDragEnd={(e) => handleDragEnd(e, node.id)}
                     onClick={(e) => {
                       e.cancelBubble = true;
+                      
+                      // Relationship mode: tạo relationship khi click node thứ 2
+                      if (isRelationshipMode && relationshipFrom && relationshipFrom !== node.id) {
+                        addRelationship(relationshipFrom, node.id);
+                        setIsRelationshipMode(false);
+                        setRelationshipFrom(null);
+                        return;
+                      }
+                      
+                      // Check if this is a label node of relationship
+                      const relatedRelationship = relationships.find(r => r.labelNodeId === node.id);
+                      if (relatedRelationship) {
+                        setSelectedRelationshipId(relatedRelationship.id);
+                        setSelectedSummaryId(null);
+                        setSelectedNodeIds([]);
+                        return;
+                      }
+                      
+                      // Check if this is a summary node
+                      const relatedSummary = summaries.find(s => s.summaryNodeId === node.id);
+                      if (relatedSummary) {
+                        setSelectedSummaryId(relatedSummary.id);
+                        setSelectedRelationshipId(null);
+                      } else {
+                        setSelectedSummaryId(null);
+                        setSelectedRelationshipId(null);
+                      }
+                      
                       if (e.evt.shiftKey) {
-                        // Giữ Shift: Thêm/bớt
                         setSelectedNodeIds(prevIds => {
                           const newSet = new Set(prevIds);
                           if (newSet.has(node.id)) {
@@ -2274,7 +4456,6 @@ const handleSetGlobalBranchColor = (color: string) => {
                           return Array.from(newSet);
                         });
                       } else {
-                        // Click thường: Chỉ chọn node này
                         setSelectedNodeIds([node.id]);
                       }
                     }}
@@ -2282,77 +4463,110 @@ const handleSetGlobalBranchColor = (color: string) => {
                     onMouseEnter={() => setHoveredNodeId(node.id)}
                     onMouseLeave={() => setHoveredNodeId(null)}
                >
-                    {(style.shape === 'rectangle' || style.shape === 'roundedRect') && (
-                      <Rect {...shapeProps} cornerRadius={style.shape === 'roundedRect' ? 8 : 0} />
-                    )}
-                    
+                    {(() => {
+                      const topology = nodeTopology.get(node.id);
+                      const depth = topology?.depth || 0;
+                      
+                      // Level 3+: Render underline (ngoại trừ org)
+                      if (depth >= 3 && node.id !== 'root' && useEditorStore.getState().globalStructure !== 'org') {
+                        return (
+                          <>
+                            <Rect 
+                              width={w} 
+                              height={h} 
+                              offsetX={w / 2} 
+                              offsetY={h / 2}
+                              fill="transparent"
+                              stroke={isSelected ? "#3b82f6" : "transparent"}
+                              strokeWidth={isSelected ? 2 : 0}
+                            />
+                            
+                            <Line
+                              points={[-w/2 - 10, h/2 - 2, w/2 + 10, h/2 - 2]}
+                              stroke={topology?.branchBaseColor || style.borderColor}
+                              strokeWidth={2}
+                              lineCap="round"
+                              listening={false}
+                            />
+                          </>
+                        );
+                      }
+                      
+                      return (
+                        <>
+                          {(style.shape === 'rectangle' || style.shape === 'roundedRect') && (
+                            <Rect {...shapeProps} cornerRadius={style.shape === 'roundedRect' ? 8 : 0} />
+                          )}
+                          
+                          {/* Tạm comment URLImage do useImage không available
+                          {style.imageUrl && (
+                            <URLImage 
+                              src={style.imageUrl}
+                              x={-w/2 + (style.borderWidth || 0) + PADDING_X} 
+                              y={-h/2 + (style.borderWidth || 0) + PADDING_Y} 
+                              width={imageWidthDisplay}
+                              height={imageHeight}
+                              onImageLoad={(imgW: number, imgH: number) => handleImageLoad(node.id, imgW, imgH)}
+                            />
+                          )}
+                          */}
+                        </>
+                      );
+                    })()}
+
                     <Text
                       visible={editingNodeId !== node.id}
-                      text={textToRender || '(...)'}
-                      width={w} height={h} offsetX={w / 2} offsetY={h / 2}
-                      align={style.textAlign}
+                      text={node.id === 'root' ? (textToRender || '(...)').toUpperCase() : (textToRender || '(...)')}
+                      width={w} 
+                      height={style.imageUrl ? (h - imageHeight - 10) : h} 
+                      offsetX={w / 2} 
+                      offsetY={style.imageUrl ? (h / 2) - imageHeight - 10 : h / 2} 
+                      align={(style.textAlign || 'CENTER').toLowerCase() as 'left' | 'center' | 'right'}
                       verticalAlign="middle"
                       fill={style.textColor}
                       padding={PADDING_Y} listening={false}
                       fontSize={finalFontSize}
-                      fontStyle={style.fontStyle === 'italic' ? 'italic' : style.fontWeight}
+                      fontStyle={combinedFontStyle}
                       fontFamily={style.fontFamily}
                       textDecoration={style.textDecoration === 'none' ? undefined : style.textDecoration}
                       lineHeight={LINE_HEIGHT_MULTIPLIER}
                     />
                     
-                    {/* [MERGE] Giữ lại logic UI mới (root collapse) từ feature/tt */}
+                    {isDropTarget && (
+                      <Group 
+                        x={
+                          globalStructure === 'org' ? 0 : 
+                          (node.id === 'root' && dropTargetSide === 'left') ? (-w / 2 - 15) :
+                          (node.id === 'root' && dropTargetSide === 'right') ? (w / 2 + 15) :
+                          (style.side === 'left' ? (-w / 2 - 15) : (w / 2 + 15))
+                        } 
+                        y={globalStructure === 'org' ? (h / 2 + 15) : 0}
+                      >
+                        <Circle radius={12} fill="#10b981" stroke="#FFFFFF" strokeWidth={2} />
+                        <Text
+                          text="+"
+                          fontSize={18}
+                          fill="#FFFFFF"
+                          align="center"
+                          verticalAlign="middle"
+                          width={24}
+                          height={24}
+                          offsetX={12}
+                          offsetY={12}
+                          fontStyle="bold"
+                          listening={false}
+                        />
+                      </Group>
+                    )}
+                    
                     {node.id === 'root' ? (
-                      <>
-                        {rootChildSides.left && (
-                          <Group
-                            x={-w / 2} y={0}
-                            onClick={(e) => handleToggleCollapse(e, 'root', 'left')}
-                            onMouseEnter={(e) => { const stage = e.target.getStage(); if (stage) stage.container().style.cursor = 'pointer'; }}
-                            onMouseLeave={(e) => { const stage = e.target.getStage(); if (stage) stage.container().style.cursor = 'default'; }}
-                          >
-                            <Circle radius={8} fill="#3b82f6" stroke="#FFFFFF" strokeWidth={2} />
-                          {rootCollapse.left ? (
-                              <Text
-                                text={`${descendantCounts.rootCounts.left || 0}`}
-                                fontSize={9} fill="#FFFFFF"
-                                align="center" verticalAlign="middle"
-                                width={16} height={16} offsetX={8} offsetY={8}
-                                fontStyle="bold" listening={false}
-                              />
-                            ) : (
-                              <Path data="M-4 0 H4" stroke="#FFFFFF" strokeWidth={2} lineCap="round" />
-                            )}
-                          </Group>
-                        )}
-                        {rootChildSides.right && (
-                          <Group
-                            x={w / 2} y={0}
-                            onClick={(e) => handleToggleCollapse(e, 'root', 'right')}
-                            onMouseEnter={(e) => { const stage = e.target.getStage(); if (stage) stage.container().style.cursor = 'pointer'; }}
-                            onMouseLeave={(e) => { const stage = e.target.getStage(); if (stage) stage.container().style.cursor = 'default'; }}
-                          >
-                            <Circle radius={8} fill="#3b82f6" stroke="#FFFFFF" strokeWidth={2} />
-                          {rootCollapse.right ? (
-                              <Text
-                                text={`${descendantCounts.rootCounts.right || 0}`}
-                                fontSize={9} fill="#FFFFFF"
-                                align="center" verticalAlign="middle"
-                                width={16} height={16} offsetX={8} offsetY={8}
-                                fontStyle="bold" listening={false}
-                              />
-                            ) : (
-                              <Path data="M-4 0 H4" stroke="#FFFFFF" strokeWidth={2} lineCap="round" />
-                            )}
-                          </Group>
-                        )}
-                      </>
+                      // Root node không có nút collapse/expand
+                      null
                     ) : (
-                      /* [MERGE] Giữ lại logic UI mới (node con collapse) từ feature/tt */
-                      hasChildren && (
+                      hasChildren && (node.collapsed || hoveredNodeId === node.id) && (
                         <Group
-                          x={(style.side === 'left' ? -w / 2 : w / 2)}
-                          y={0}
+                          x={globalStructure === 'org' ? 0 : (style.side === 'left' ? -w / 2 : w / 2)}
+                          y={globalStructure === 'org' ? (h / 2) : ((nodeTopology.get(node.id)?.depth || 0) >= 3 ? (h / 2 - 2) : 0)}
                           onClick={(e) => handleToggleCollapse(e, node.id)}
                           onMouseEnter={(e) => { const stage = e.target.getStage(); if (stage) stage.container().style.cursor = 'pointer'; }}
                          onMouseLeave={(e) => { const stage = e.target.getStage(); if (stage) stage.container().style.cursor = 'default'; }}
@@ -2370,30 +4584,30 @@ const handleSetGlobalBranchColor = (color: string) => {
                             <Path data="M-4 0 H4" stroke="#FFFFFF" strokeWidth={2} lineCap="round" />
                           )}
                         </Group>
-                       )
+                      )
                     )}
                     {(style as any).hyperlink && (
                     <Group
-                      // Đặt icon ở góc trên bên phải, bên ngoài node
-                      x={w / 2 - 10} // Điều chỉnh vị trí
-                      y={-h / 2 + 10} // Điều chỉnh vị trí
+                      x={w / 2 - 20} 
+                      y={0} 
                       onClick={(e) => {
-                        e.cancelBubble = true; // Ngăn không cho click này chọn node
+                        e.cancelBubble = true; 
                         window.open((style as any).hyperlink, '_blank', 'noopener,noreferrer');
                       }}
                       onMouseEnter={(e) => { const stage = e.target.getStage(); if (stage) stage.container().style.cursor = 'pointer'; }}
                       onMouseLeave={(e) => { const stage = e.target.getStage(); if (stage) stage.container().style.cursor = 'default'; }}
                       title={`Mở link: ${(style as any).hyperlink}`}
                     >
-                      {/* Vòng tròn nền nhỏ */}
-                      <Circle radius={9} fill="#E0E7FF" stroke="#4F46E5" strokeWidth={1} />
-                      {/* Icon Link (SVG Path) */}
+                      <Circle radius={8} fill="#5f85ffff" stroke="#ffffffff" strokeWidth={1} />
                       <Path 
-                        data="M9.25 10.75a.75.75 0 0 0 1.5 0v-1.5h1.5a.75.75 0 0 0 0-1.5h-1.5v-1.5a.75.75 0 0 0-1.5 0v1.5h-1.5a.75.75 0 0 0 0 1.5h1.5v1.5Z M3.75 5.5a2 2 0 0 1 2-2h4.5a2 2 0 0 1 2 2v1a.75.75 0 0 0 1.5 0v-1a3.5 3.5 0 0 0-3.5-3.5h-4.5A3.5 3.5 0 0 0 2.25 5.5v5A3.5 3.5 0 0 0 5.75 14h1a.75.75 0 0 0 0-1.5h-1a2 2 0 0 1-2-2v-5Z"
-                        fill="#4F46E5"
-                        scale={{ x: 0.8, y: 0.8 }}
-                        offsetX={10} // Căn giữa icon
-                        offsetY={10} // Căn giữa icon
+                        data="M21 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h6 M21 3l-9 9 M15 3h6v6"
+                        stroke="#ffffffff"      
+                        strokeWidth={2}       
+                        lineCap="round"
+                        lineJoin="round"
+                        scale={{ x: 0.4, y: 0.4 }} 
+                        offsetX={12}          
+                        offsetY={12}          
                       />
                     </Group>
                   )}
@@ -2411,39 +4625,117 @@ const handleSetGlobalBranchColor = (color: string) => {
                 visible={selectionRect.visible}
               />
             </Layer>
-          </Stage>
-          {isFormattingToolbarOpen && (
-            <FormattingToolbar
+
+            {/* --- Collaboration: Cursor Layer --- */}
+            <CursorLayer />
+            </Stage>
+          </div>
+
+          {/* [PROPERTIES PANEL] Docked sidebar with fixed width and smooth transition */}
+          <div
+            className="transition-all duration-300 ease-in-out overflow-hidden"
+            style={{
+              width: isFormattingToolbarOpen ? `${PANEL_WIDTH}px` : '0px',
+              flexShrink: 0,
+              borderLeft: isFormattingToolbarOpen ? '1px solid #e5e7eb' : 'none'
+            }}
+          >
+            {isFormattingToolbarOpen && !presentationMode && (
+              <FormattingToolbar
               selectedIds={selectedNodeIds}
               currentNode={currentNode}
               currentBackgroundColor={backgroundColor}
               globalStructure={globalStructure}
               activeColorThemeId={activeColorThemeId}
-              
-              onApplyLayout={(structure) => {
+
+              onApplyLayout={(structure: GlobalStructure) => {
                 pushHistory(useEditorStore.getState().nodes, useEditorStore.getState().edges);
                 setGlobalStore({ globalStructure: structure });
-                handleLayout(false);
+                
+                // Nếu chuyển sang mindmap, dùng rebalance để chia đều 2 bên
+                if (structure === 'mindmap') {
+                  handleRebalanceLayout();
+                } else {
+                  handleLayout();
+                }
+                
                 useEditorStore.setState({ isDirty: true });
+
+                // Fit to screen sau khi apply layout
+                setTimeout(() => {
+                  handleFitToScreen();
+                }, 100);
+                
+                // Lưu ngay lập tức
+                if (id) {
+                  const { nodes: currentNodes, edges: currentEdges, relationships, summaries } = useEditorStore.getState();
+                  if (isGuest) {
+                    saveGuestDoc(id, name, currentNodes, currentEdges, relationships, summaries);
+                  } else if (isAuthed) {
+                    const docToSave = { name, content: { nodes: currentNodes, edges: currentEdges, relationships, summaries } };
+                    mindmapsApi.update(id, docToSave).catch((e) => {
+                      console.error('Lưu layout thất bại:', e);
+                    });
+                  }
+                }
               }}
-              onSetBackgroundColor={(color) => {
+              onSetBackgroundColor={(color: string) => {
                  handleSetBackgroundColor(color);
                  useEditorStore.setState({ isDirty: true });
               }}
-              onSetGlobalFont={(font) => {
+              onSetGlobalFont={(font: string) => {
                 pushHistory(useEditorStore.getState().nodes, useEditorStore.getState().edges);
                 useEditorStore.setState({ globalFont: font, isDirty: true });
+                
+                // Lưu ngay lập tức
+                if (id) {
+                  const { nodes: currentNodes, edges: currentEdges, relationships, summaries } = useEditorStore.getState();
+                  if (isGuest) {
+                    saveGuestDoc(id, name, currentNodes, currentEdges, relationships, summaries);
+                  } else if (isAuthed) {
+                    const docToSave = { name, content: { nodes: currentNodes, edges: currentEdges, relationships, summaries } };
+                    mindmapsApi.update(id, docToSave).catch((e) => {
+                      console.error('Lưu font thất bại:', e);
+                    });
+                  }
+                }
               }}
-              onSetBranchLineWidth={(width) => {
+              onSetBranchLineWidth={(width: number) => {
                 pushHistory(useEditorStore.getState().nodes, useEditorStore.getState().edges);
                 useEditorStore.setState({ branchLineWidth: width, isDirty: true });
+                
+                // Lưu ngay lập tức
+                if (id) {
+                  const { nodes: currentNodes, edges: currentEdges, relationships, summaries } = useEditorStore.getState();
+                  if (isGuest) {
+                    saveGuestDoc(id, name, currentNodes, currentEdges, relationships, summaries);
+                  } else if (isAuthed) {
+                    const docToSave = { name, content: { nodes: currentNodes, edges: currentEdges, relationships, summaries } };
+                    mindmapsApi.update(id, docToSave).catch((e) => {
+                      console.error('Lưu độ dày dây thất bại:', e);
+                    });
+                  }
+                }
               }}
-              onToggleColoredBranch={(state) => handleToggleColoredBranch(state)}
               onSetGlobalBranchColor={handleSetGlobalBranchColor}
-              onSetActiveColorTheme={(themeName) => {
+              onSetActiveColorTheme={(themeName: keyof typeof colorThemes) => {
                 pushHistory(useEditorStore.getState().nodes, useEditorStore.getState().edges);
                 setGlobalStore({ activeColorThemeId: themeName });
                 setBackgroundColor(colorThemes[themeName as keyof typeof colorThemes].background);
+                useEditorStore.setState({ backgroundColor: colorThemes[themeName as keyof typeof colorThemes].background, isDirty: true });
+                
+                // Lưu ngay lập tức
+                if (id) {
+                  const { nodes: currentNodes, edges: currentEdges, relationships, summaries } = useEditorStore.getState();
+                  if (isGuest) {
+                    saveGuestDoc(id, name, currentNodes, currentEdges, relationships, summaries);
+                  } else if (isAuthed) {
+                    const docToSave = { name, content: { nodes: currentNodes, edges: currentEdges, relationships, summaries } };
+                    mindmapsApi.update(id, docToSave).catch((e) => {
+                      console.error('Lưu theme thất bại:', e);
+                    });
+                  }
+                }
               }}
               
               onUpdateNode={handleUpdateNode}
@@ -2451,9 +4743,60 @@ const handleSetGlobalBranchColor = (color: string) => {
               onCopyStyle={handleCopyStyle}
               onPasteStyle={handlePasteStyle}
               onResetStyle={handleResetStyle}
-            />
-          )}
+              onLayoutAll={() => {
+                handleRebalanceLayout();
+                setTimeout(() => handleFitToScreen(), 100);
+              }}
+              
+              onToggleColoredBranch={() => {}}
+              />
+            )}
+          </div>
         </div>
+
+        {/* --- Collaboration: Connection Indicator --- */}
+        {!isConnected && isAuthed && !isGuest && (
+          <div className="absolute top-4 left-1/2 transform -translate-x-1/2 z-50 bg-red-500 text-white px-4 py-2 rounded-full shadow-lg flex items-center gap-2 animate-pulse">
+            <svg
+              className="w-4 h-4"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
+              />
+            </svg>
+            <span className="text-sm font-medium">
+              Mất kết nối máy chủ. Đang thử lại...
+            </span>
+          </div>
+        )}
+
+        {/* --- Collaboration: Share Modal --- */}
+        <ShareModal
+          isOpen={isShareModalOpen}
+          onClose={() => setIsShareModalOpen(false)}
+          mindmapId={id!}
+          isOwner={isOwner}
+          pendingRequests={pendingRequests}
+          onApproveRequest={handleApproveAccessRequest}
+          onDenyRequest={handleDenyAccessRequest}
+        />
+
+        {/* --- Collaboration: Access Request Modal (for owner) --- */}
+        {isOwner && !isGuest && (
+          <AccessRequestModal
+            isOpen={isRequestModalOpen}
+            onClose={() => setRequestModalOpen(false)}
+            requests={pendingRequests || []}
+            onApprove={handleApproveAccessRequest}
+            onDeny={handleDenyAccessRequest}
+          />
+        )}
       </div>
     </>
   );

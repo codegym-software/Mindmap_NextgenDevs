@@ -46,7 +46,7 @@ export const signUp = (email: string, password: string): Promise<{ user: Cognito
  });
 };
 
-// 3. Wrapper cho hàm Xác nhận Đăng ký (Confirm Sign Up) (Không thay đổi)
+// 3. Wrapper cho hàm Xác nhận Đăng ký (Confirm Sign Up)
 export const confirmSignUp = (username: string, code: string): Promise<string> => {
  return new Promise((resolve, reject) => {
   const cognitoUser = new CognitoUser({
@@ -197,6 +197,31 @@ export const signOut = async (): Promise<void> => {
   clearFrontendAuthState();
   window.location.replace(`${window.location.origin}/dashboard`);
  }
+};
+
+// 9. Wrapper cho Đổi Mật khẩu (Change Password)
+export const changePassword = (oldPassword: string, newPassword: string): Promise<string> => {
+ return new Promise((resolve, reject) => {
+  const cognitoUser = UserPool.getCurrentUser();
+  
+  if (!cognitoUser) {
+   return reject(new Error('No user found. Please sign in.'));
+  }
+
+  // Cần session hợp lệ trước khi đổi mật khẩu
+  cognitoUser.getSession((err: Error | undefined, session: CognitoUserSession | null) => {
+   if (err || !session) {
+    return reject(err || new Error('Session not valid'));
+   }
+
+   cognitoUser.changePassword(oldPassword, newPassword, (err: Error | undefined, result?: string) => {
+    if (err) {
+     return reject(err);
+    }
+    resolve(result || 'SUCCESS');
+   });
+  });
+ });
 };
 
 /**

@@ -9,6 +9,8 @@ import {
 } from '../services/dataMapper';
 import { NodeData as FeNodeData } from '../app/store/useEditorStore';
 // === KẾT THÚC IMPORT MỚI ===
+import { v4 as uuidv4 } from 'uuid';
+
 
 const KEY = 'mm_guest_maps'; // danh sách guest (dashboard)
 const BUCKET = 'mm_guest_docs'; // nội dung mindmap guest (editor)
@@ -40,7 +42,7 @@ export function useLocalMindmap() {
    */
   const createGuest = useCallback(() => {
     const arr: GuestItem[] = listGuests();
-    const id = 'guest-' + Date.now();
+    const id = 'guest-' + uuidv4();
     const item: GuestItem = {
       id,
       name: 'Mindmap mới',
@@ -60,32 +62,15 @@ export function useLocalMindmap() {
         nodeText: 'Chủ đề chính',
         x: 0,
         y: 0,
-        // Gán các giá trị mặc định của FE (từ useEditorStore.ts)
-        shape: 'roundedRect',
-        color: '#FFFFFF',
-        textColor: '#4A5568',
-        borderColor: '#CBD5E0',
-        borderWidth: 2,
-        borderStyle: 'solid',
-        fontSize: 14,
-        fontWeight: 'normal',
-        fontStyle: 'normal',
-        textDecoration: 'none',
-        textAlign: 'center',
-        textCase: 'normal',
+        // Node gốc không set các thuộc tính style để sử dụng theme mặc định
         nodeLength: 'fit',
-        localStructure: 'default',
-        branchLineStyle: 'bezier',
-        branchLineEnd: 'none',
-        branchLineThickness: 'normal',
         quickStyleId: 'default',
       };
 
       // 2. Dịch nó sang chuẩn BE (dùng dataMapper)
       const beContent: BeMindmapContent = normalizeContentFEtoBE(
         [feRootNode], // Mảng node FE
-        [], // Mảng edge
-        { layoutMode: 'mindmap', theme: 'light' }
+        [] // Mảng edge
       );
 
       // 3. Lưu chuẩn BE vào localStorage

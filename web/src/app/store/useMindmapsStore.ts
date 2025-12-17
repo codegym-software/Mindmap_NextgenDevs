@@ -1,7 +1,7 @@
 // src/app/store/useMindmapsStore.ts
 import { create } from "zustand";
 
-export type MindmapItem = { id: string; name: string; createdAt: string; };
+export type MindmapItem = { id: string; name: string; createdAt: string; updatedAt?: string; };
 
 type State = {
   items: MindmapItem[];

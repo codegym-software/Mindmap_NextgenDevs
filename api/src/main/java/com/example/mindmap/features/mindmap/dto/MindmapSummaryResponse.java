@@ -10,6 +10,7 @@ public record MindmapSummaryResponse(
         String id,
         String name,
         String ownerId,
+        Instant createdAt,
         Instant updatedAt,
         List<String> tags,
         Mindmap.AccessSettings accessSettings

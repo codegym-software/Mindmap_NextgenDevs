@@ -21,7 +21,8 @@ web/.env
 web/.env.*
 !web/.env.example
 web/.eslintcache
-
+web/*.tsbuildinfo
+web/tsconfig.tsbuildinfo
 # build cache
 web/.parcel-cache/
 web/.turbo/
@@ -83,6 +84,7 @@ decription-be.txt
 decription-fe.txt
 fe-compare.txt
 promt.txt
+promt2.txt
 structure.txt
 all_code.txt
 mindmap_code_dump.txt
@@ -90,3 +92,5 @@ web/src/all_tsx_files.txt
 all_java_files.txt
 CMD.txt
 WEB_Decription.txt
+all_tsx_files.txt
+promt2.txt

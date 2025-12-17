@@ -1,11 +1,11 @@
 // src/app/providers/AuthProvider.tsx
 import React, { createContext, useCallback, useEffect, useMemo, useState } from "react";
 import { 
-  loadTokens, 
-  saveTokens, 
-  clearTokens, 
-  isExpired, // [MỚI] Import isExpired
-  type Tokens 
+loadTokens, 
+saveTokens, 
+clearTokens, 
+isExpired, // [MỚI] Import isExpired
+type Tokens 
 } from "../../services/authStorage";
 import { signOut } from "../../auth/cognitoDirect"; // Chỉ import signOut
 import AuthModal from "../../features/auth/AuthModal";
@@ -34,6 +34,9 @@ user: Record<string, any> | null;
 isAuthed: boolean;
 login: (initialMode?: 'login' | 'register') => void;
 logout: () => void;
+openChangePassword: () => void;
+closeChangePassword: () => void;
+isChangePasswordOpen: boolean;
 setAuthTokens: (t: Tokens | null) => void;
 ensureFreshAccessToken: () => Promise<string | null>;
 };
@@ -44,6 +47,9 @@ user: null,
 isAuthed: false,
 login: () => {},
 logout: () => {},
+openChangePassword: () => {},
+closeChangePassword: () => {},
+isChangePasswordOpen: false,
 setAuthTokens: () => {},
 ensureFreshAccessToken: async () => null,
 });
@@ -58,6 +64,9 @@ const [user, setUser] = useState<Record<string, any> | null>(() => {
 // State for Auth Modal (Không thay đổi)
 const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
 const [initialAuthMode, setInitialAuthMode] = useState<'login' | 'register'>('login');
+
+// State for Change Password Modal
+const [isChangePasswordOpen, setIsChangePasswordOpen] = useState(false);
 
 const setAuthTokens = useCallback((t: Tokens | null) => {
   setTokensState(t);
@@ -93,35 +102,43 @@ const login = useCallback((initialMode: 'login' | 'register' = 'login') => {
   setIsAuthModalOpen(true);
 }, []);
 
+const openChangePassword = useCallback(() => {
+  setIsChangePasswordOpen(true);
+}, []);
+
+const closeChangePassword = useCallback(() => {
+  setIsChangePasswordOpen(false);
+}, []);
+
 // Logic Logout (Không thay đổi)
 const logout = useCallback(() => {
   signOut();
 }, []);
 
 /**
- * [ĐÃ CẬP NHẬT] Logic làm mới Token (Fix Lỗi Gốc)
- * * Thay thế `getCurrentUserSession()` (gây lỗi domain conflict)
- * bằng `refreshToken()` (gọi /oauth2/token).
- */
+* [ĐÃ CẬP NHẬT] Logic làm mới Token (Fix Lỗi Gốc)
+* * Thay thế `getCurrentUserSession()` (gây lỗi domain conflict)
+* bằng `refreshToken()` (gọi /oauth2/token).
+*/
 const ensureFreshAccessToken = useCallback(async () => {
-  // 1. Lấy token hiện tại từ state (quan trọng, không phải localStorage)
-  const currentTokens = tokens; 
+// 1. Lấy token hiện tại từ state (quan trọng, không phải localStorage)
+const currentTokens = tokens; 
 
-  if (!currentTokens?.access_token) {
-    throw new Error("No access token found.");
-  }
+if (!currentTokens?.access_token) {
+throw new Error("No access token found.");
+}
 
-  // 2. Kiểm tra xem token có SẮP hết hạn không
-  // (isExpired check 30s trước khi hết hạn)
-  if (!isExpired(currentTokens, 30)) {
-    // 2a. Token vẫn còn tốt, trả về
-    return currentTokens.access_token;
-  }
+// 2. Kiểm tra xem token có SẮP hết hạn không
+// (isExpired check 30s trước khi hết hạn)
+if (!isExpired(currentTokens, 30)) {
+// 2a. Token vẫn còn tốt, trả về
+return currentTokens.access_token;
+}
 
-  // 2b. Token đã hết hạn, cần làm mới
-  if (!currentTokens.refresh_token) {
-    throw new Error("No refresh token available.");
-  }
+// 2b. Token đã hết hạn, cần làm mới
+if (!currentTokens.refresh_token) {
+throw new Error("No refresh token available.");
+}
 
   console.log("Access token expired, attempting refresh...");
 
@@ -160,10 +177,13 @@ const value = useMemo(
     isAuthed,
     login,
     logout,
+    openChangePassword,
+    closeChangePassword,
+    isChangePasswordOpen,
     setAuthTokens,
     ensureFreshAccessToken,
   }),
-  [tokens, user, isAuthed, login, logout, setAuthTokens, ensureFreshAccessToken]
+  [tokens, user, isAuthed, login, logout, openChangePassword, closeChangePassword, isChangePasswordOpen, setAuthTokens, ensureFreshAccessToken]
 );
 
 return (

@@ -13,10 +13,7 @@ import RegisterForm from './RegisterForm';
 import ConfirmForm from './ConfirmForm';
 import ForgotForm from './ForgotForm';
 import ResetForm from './ResetForm';
-
-// [MERGE] Sử dụng phiên bản "light mode" từ feature/tt
-// Logic bên trong (handleLogin, handleRegister, v.v.)
-// đã khớp với logic GĐ 1-10 của chúng ta.
+import api from '../../services/api'; // Import API để gọi sync
 
 type Props = {
   isOpen: boolean;
@@ -33,6 +30,7 @@ const AuthModal: React.FC<Props> = ({ isOpen, onClose, initialMode = 'login' }) 
   const [confirmCode, setConfirmCode] = useState('');
   const [resetCode, setResetCode] = useState('');
   const [newPassword, setNewPassword] = useState('');
+  const [confirmNewPassword, setConfirmNewPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -44,6 +42,7 @@ const AuthModal: React.FC<Props> = ({ isOpen, onClose, initialMode = 'login' }) 
     setConfirmCode('');
     setResetCode('');
     setNewPassword('');
+    setConfirmNewPassword('');
     setShowPassword(false);
     setIsLoading(false);
     setErrors({});
@@ -72,6 +71,10 @@ const AuthModal: React.FC<Props> = ({ isOpen, onClose, initialMode = 'login' }) 
         setErrors({ general: "Mật khẩu xác nhận không khớp." });
         return false;
     }
+    if (mode === 'reset' && newPassword !== confirmNewPassword) {
+        setErrors({ general: "Mật khẩu xác nhận không khớp." });
+        return false;
+    }
     return true;
   };
 
@@ -82,15 +85,32 @@ const AuthModal: React.FC<Props> = ({ isOpen, onClose, initialMode = 'login' }) 
     setErrors({});
     
     try {
+        // 1. Login bằng SDK Cognito
         const session = await cognitoDirect.signIn(formData.email, formData.password);
+        
         const tokens: Tokens = {
             id_token: session.getIdToken().getJwtToken(),
             access_token: session.getAccessToken().getJwtToken(),
             refresh_token: session.getRefreshToken().getToken(),
             expires_at: session.getIdToken().getExpiration(), 
         };
+        
+        // 2. Lưu token (Lúc này API Interceptor đã có token để dùng)
         setAuthTokens(tokens);
+
+        // 3. [QUAN TRỌNG] Gọi sync user ngay
+        try {
+            await api.post("/users/sync-cognito");
+            console.log("Synced user successfully");
+        } catch (syncErr) {
+            console.error("Sync user warning:", syncErr);
+            // Không block login nếu sync lỗi, nhưng nên log để debug
+        }
+
         onClose();
+        
+        // [FIX] Chuyển hướng về dashboard sau khi login thành công
+        window.location.href = '/dashboard';
     } catch (err: any) {
         if (err.name === 'UserNotConfirmedException') {
             setUsernameForConfirm(formData.email);
@@ -149,7 +169,7 @@ const AuthModal: React.FC<Props> = ({ isOpen, onClose, initialMode = 'login' }) 
         await cognitoDirect.confirmSignUp(usernameForConfirm, confirmCode);
         setInfoMessage('Xác nhận thành công! Bây giờ bạn có thể đăng nhập.');
         setMode('login');
-        setUsernameForConfirm(''); 
+        // Không xóa usernameForConfirm ngay để user đỡ phải gõ lại email nếu muốn login ngay
     } catch (err: any) {
         let message = 'Mã xác nhận không hợp lệ.';
         if (err.name === 'CodeMismatchException') {
@@ -235,7 +255,25 @@ const AuthModal: React.FC<Props> = ({ isOpen, onClose, initialMode = 'login' }) 
             {mode === 'register' && <RegisterForm formData={formData} errors={errors} showPassword={showPassword} handleChange={handleChange} toggleShowPassword={() => setShowPassword(!showPassword)} isLoading={isLoading} onSubmit={handleRegister} />}
             {mode === 'confirm' && <ConfirmForm confirmCode={confirmCode} errors={errors} isLoading={isLoading} onChange={e => setConfirmCode(e.target.value)} onSubmit={handleConfirm} onResend={handleResend} />}
             {mode === 'forgot' && <ForgotForm formData={formData} errors={errors} isLoading={isLoading} onChange={handleChange} onSubmit={handleForgot} />}
-            {mode === 'reset' && <ResetForm resetCode={resetCode} newPassword={newPassword} errors={errors} showPassword={showPassword} toggleShowPassword={() => setShowPassword(!showPassword)} isLoading={isLoading} onChangeCode={e => setResetCode(e.target.value)} onChangePassword={e => setNewPassword(e.target.value)} onSubmit={handleReset} />}
+            {mode === 'reset' && <ResetForm
+              resetCode={resetCode}
+              newPassword={newPassword}
+              confirmNewPassword={confirmNewPassword}
+              errors={errors}
+              showPassword={showPassword}
+              toggleShowPassword={() => setShowPassword(!showPassword)}
+              isLoading={isLoading}
+              onChangeCode={e => setResetCode(e.target.value)}
+              onChangePassword={e => {
+                setNewPassword(e.target.value);
+                if (errors.newPassword || errors.general) setErrors(prev => ({ ...prev, newPassword: '', general: '' }));
+              }}
+              onChangeConfirm={e => {
+                setConfirmNewPassword(e.target.value);
+                if (errors.confirmNewPassword || errors.general) setErrors(prev => ({ ...prev, confirmNewPassword: '', general: '' }));
+              }}
+              onSubmit={handleReset}
+            />}
 
             {(mode === 'login' || mode === 'register') && (
                 <>
