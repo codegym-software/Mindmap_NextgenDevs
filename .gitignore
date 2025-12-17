@@ -21,7 +21,7 @@ web/.env
 web/.env.*
 !web/.env.example
 web/.eslintcache
-
+*.tsbuildinfo
 # build cache
 web/.parcel-cache/
 web/.turbo/

@@ -31,10 +31,16 @@ const Summary: React.FC<SummaryProps> = ({
   const { style: startStyle } = startVisual;
 
   // Lấy tất cả nodes con của parent
+  // Find parent and its direct children (siblings) — keep them sorted by visual Y to avoid repeated sorts
   const parentNode = nodes.find(n => n.id === summary.parentId);
   if (!parentNode) return null;
   
   const siblings = nodes.filter(n => n.parentId === summary.parentId);
+  const siblingsSorted = siblings.slice().sort((a, b) => {
+    const aV = nodeVisuals.get(a.id)?.style?.y ?? 0;
+    const bV = nodeVisuals.get(b.id)?.style?.y ?? 0;
+    return aV - bV;
+  });
   
   // Xác định side (left/right)
   const side = startStyle.side || 'right';
@@ -51,15 +57,16 @@ const Summary: React.FC<SummaryProps> = ({
 
   // Nếu node bị collapse, dùng chính node đó
   const getLeafNodesInRange = () => {
-    const startIdx = siblings.findIndex(n => n.id === localStartNodeId);
-    const endIdx = siblings.findIndex(n => n.id === localEndNodeId);
+    // Use siblingsSorted to find range indices
+    const startIdx = siblingsSorted.findIndex(n => n.id === localStartNodeId);
+    const endIdx = siblingsSorted.findIndex(n => n.id === localEndNodeId);
     const [minIdx, maxIdx] = [Math.min(startIdx, endIdx), Math.max(startIdx, endIdx)];
 
+    // Collect visible leaf nodes under a node (respect collapsed flag)
     const collectLeafNodes = (nodeId: string): string[] => {
       const node = nodes.find(n => n.id === nodeId);
-      // KHÔNG tìm các node con đã bị ẩn
-      if (node?.collapsed) return [nodeId];
-      
+      if (!node) return [];
+      if (node.collapsed) return [nodeId];
       const children = nodes.filter(n => n.parentId === nodeId);
       if (children.length === 0) return [nodeId];
       return children.flatMap(child => collectLeafNodes(child.id));
@@ -67,7 +74,8 @@ const Summary: React.FC<SummaryProps> = ({
 
     const leafNodes: string[] = [];
     for (let i = minIdx; i <= maxIdx; i++) {
-      leafNodes.push(...collectLeafNodes(siblings[i].id));
+      const sibling = siblingsSorted[i];
+      if (sibling) leafNodes.push(...collectLeafNodes(sibling.id));
     }
     return leafNodes;
   };
@@ -99,15 +107,15 @@ const Summary: React.FC<SummaryProps> = ({
     }
   });
 
-  // Điều chỉnh position cho brace
-  // [CẬP NHẬT] Tính thêm offset dựa trên level để tránh chồng lấn
+  // Determine position for brace and add level offset to avoid overlap when multiple summaries exist
   const braceWidth = 15;
   const basePadding = 20;
-  const levelOffset = level * 20; // Mỗi level cách nhau 20px
+  const levelOffset = level * 20; // pixels per nesting level
 
-  const startX = isLeft 
-    ? braceX - basePadding - levelOffset 
-    : braceX + basePadding + levelOffset;
+  // Fallback if braceX not computed
+  if (!isFinite(braceX)) braceX = (currentStartVisual.style.x + currentEndVisual.style.x) / 2;
+
+  const startX = isLeft ? braceX - basePadding - levelOffset : braceX + basePadding + levelOffset;
 
   const height = endY - startY;
   const midY = (startY + endY) / 2;
@@ -120,23 +128,12 @@ const Summary: React.FC<SummaryProps> = ({
     const xMid = startX + (braceWidth * direction * 1.5);
 
     if (summary.braceStyle === 'square') {
-      return `
-        M ${x1} ${startY}
-        L ${x2} ${startY}
-        L ${x2} ${endY}
-        L ${x1} ${endY}
-      `;
+      return `M ${x1} ${startY} L ${x2} ${startY} L ${x2} ${endY} L ${x1} ${endY}`;
     } else {
       const controlY1 = startY + height * 0.3;
       const controlY2 = endY - height * 0.3;
 
-      return `
-        M ${x1} ${startY}
-        Q ${x2} ${startY}, ${x2} ${controlY1}
-        Q ${x2} ${midY - 5}, ${xMid} ${midY}
-        Q ${x2} ${midY + 5}, ${x2} ${controlY2}
-        Q ${x2} ${endY}, ${x1} ${endY}
-      `;
+      return `M ${x1} ${startY} Q ${x2} ${startY} ${x2} ${controlY1} Q ${x2} ${midY - 5} ${xMid} ${midY} Q ${x2} ${midY + 5} ${x2} ${controlY2} Q ${x2} ${endY} ${x1} ${endY}`;
     }
   };
 
