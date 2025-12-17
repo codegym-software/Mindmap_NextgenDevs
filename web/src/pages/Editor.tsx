@@ -52,6 +52,9 @@ import CursorLayer from '../features/editor/CursorLayer';
 import ShareModal from '../features/collaboration/ShareModal';
 import AccessDeniedScreen from '../features/editor/AccessDeniedScreen';
 import AccessRequestModal from '../features/editor/AccessRequestModal';
+import ChatSidebar from '../features/chat/ChatSidebar';
+
+// --- Stores & Types ---
 import {
   useEditorStore,
   NodeData,
@@ -573,12 +576,12 @@ export default function Editor({ mode = 'edit' }: EditorProps = {}) {
 
   // --- Collaboration: Read-Only Logic ---
   const isReadOnly = useMemo(() => {
-    if (mode === 'share') return true; // Share mode is always read-only
     if (isGuest) return false;
     if (isOwner) return false;
     if (userPermission === 'EDITOR') return false;
+    // Share mode with VIEWER permission or no permission is read-only
     return true;
-  }, [mode, isGuest, isOwner, userPermission]);
+  }, [isGuest, isOwner, userPermission]);
 
   // --- Collaboration: User Info for Realtime ---
   const myName = useMemo(() => {
@@ -1012,6 +1015,7 @@ export default function Editor({ mode = 'edit' }: EditorProps = {}) {
               } else {
                 const publicAccessLevel = data.accessSettings?.publicAccessLevel;
                 if (publicAccessLevel === 'VIEW') setUserPermission('VIEWER');
+                else if (publicAccessLevel === 'EDIT') setUserPermission('EDITOR');
                 else setUserPermission(null);
               }
             }
@@ -3754,6 +3758,24 @@ const handleFitToScreen = useCallback(() => {
         />
         {!presentationMode && <Sidebar />}
 
+
+        <Sidebar />
+
+        {/* ✅ CHAT SIDEBAR */}
+        {isConnected && id && (
+          <ChatSidebar
+            mindmapId={id}
+            sendPatch={sendPatch}
+          />
+        )}
+
+        {mode === 'share' && (
+          <div className="absolute top-14 left-1/2 -translate-x-1/2 bg-blue-100 text-blue-800 px-4 py-1 rounded-full text-xs font-medium z-50 pointer-events-none opacity-80">
+            Chế độ xem (View Only)
+          </div>
+        )}
+
+        {/* Textarea edit node */}
         {editingNodeId &&
           (() => {
             const visual = nodeVisuals.get(editingNodeId!);

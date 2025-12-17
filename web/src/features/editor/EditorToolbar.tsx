@@ -7,8 +7,10 @@ import {
   Spline,
   BracesIcon,
   Presentation,
-  Bell, // Icon chuông
-  PlusSquare // Icon cho Hyperlink (fallback)
+  TextSelect,
+  PlusSquare,
+  Bell, //  icon chuông
+  MessageSquare, // Icon cho Chat
 } from 'lucide-react';
 import UserAvatarMenu from '../auth/UserAvatarMenu';
 import { useEditorStore, NodeData } from '../../app/store/useEditorStore'; 
@@ -19,6 +21,7 @@ import ExportButton from './ExportButton';
 import InsertDropdown from './InsertDropdown';
 import HyperlinkModal from './modals/HyperlinkModal';
 import ImageModal from './modals/ImageModal';
+import { useChatStore } from '../../app/store/useChatStore';
 
 type EditorToolbarProps = {
   onCommitName: () => void;
@@ -47,7 +50,7 @@ type EditorToolbarProps = {
   onUpdateNode: (updates: Partial<NodeData>) => void;
   stageRef?: any;
 
-  // [MỚI - Từ nhánh release]
+  // [MỚI - Từ nhánh release/chat]
   readOnly?: boolean;
   pendingRequestsCount?: number;
   onShowRequests?: () => void;
@@ -110,11 +113,16 @@ const EditorToolbar: React.FC<EditorToolbarProps> = ({
   const currentMindmapId = useEditorStore(s => s.currentMindmapId); 
   const { nodes } = useEditorStore();
 
-  // State cho Modals
+  // --- MERGED STATE START ---
+  // State cho Modals (HEAD)
   const [isLinkModalOpen, setIsLinkModalOpen] = useState(false);
   const [isImageModalOpen, setIsImageModalOpen] = useState(false);
   const [showAiModal, setShowAiModal] = useState(false);
   const [aiPrompt, setAiPrompt] = useState('');
+
+  // Hooks cho Chat (ft/chat)
+  const { toggleChat, unreadCount, isOpen } = useChatStore();
+  // --- MERGED STATE END ---
 
   const setName = (newName: string) => useEditorStore.setState({ 
     currentMindmapName: newName, 
@@ -314,12 +322,39 @@ const EditorToolbar: React.FC<EditorToolbarProps> = ({
                 ? 'opacity-40 cursor-not-allowed'
                 : 'hover:bg-gray-300/50 text-gray-700'
             }`}
-            title={readOnly ? "Chế độ chỉ xem" : isDirty ? "Lưu thay đổi (Ctrl+S)" : "Đã lưu"}
+            title={
+                readOnly
+                  ? 'Bạn đang ở chế độ chỉ xem'
+                  : isDirty
+                  ? 'Lưu thay đổi (Ctrl+S)'
+                  : 'Đã lưu'
+              }
           >
             <Save size={20} />
           </button>
-
+          
           <div className="w-px h-6 bg-gray-300 mx-2" />
+
+          {/* --- NÚT TÍNH NĂNG MỚI (Chat & Bell) --- */}
+
+          {/* 💬 NÚT CHAT */}
+          <button
+            type="button"
+            onClick={toggleChat}
+            className={`relative p-2 rounded-md transition-colors ${
+              isOpen
+                ? 'bg-gray-200 text-blue-600'
+                : 'text-gray-700 hover:bg-gray-300/50'
+            }`}
+            title="Chat thảo luận"
+          >
+            <MessageSquare size={20} />
+            {unreadCount > 0 && (
+              <span className="absolute -top-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-red-500 text-[10px] text-white">
+                {unreadCount}
+              </span>
+            )}
+          </button>
 
           {/* ✅ NÚT CHUÔNG – chỉ hiện khi là Owner */}
           {isOwner && (

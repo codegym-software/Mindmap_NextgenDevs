@@ -3,6 +3,7 @@ package com.example.mindmap.websocket;
 import java.io.IOException;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.time.Instant;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -17,11 +18,15 @@ import com.example.mindmap.websocket.dto.BroadcastPatch;
 import com.example.mindmap.websocket.dto.GenericPatch;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 
 // Dependencies để check quyền
 import com.example.mindmap.features.mindmap.Mindmap;
 import com.example.mindmap.features.mindmap.MindmapRepository;
 import com.example.mindmap.features.collaboration.CollaborationRepository;
+import com.example.mindmap.features.chat.ChatMessage;
+import com.example.mindmap.features.chat.ChatRepository;
 
 @Component
 public class MindmapUpdateHandler extends TextWebSocketHandler {
@@ -31,16 +36,19 @@ public class MindmapUpdateHandler extends TextWebSocketHandler {
     private final ObjectMapper objectMapper;
     private final MindmapRepository mindmapRepository;
     private final CollaborationRepository collaborationRepository;
+    private final ChatRepository chatRepository;
 
     // Cấu trúc: Map<MindmapId, Map<SessionId, Session>>
     private final Map<String, Map<String, WebSocketSession>> mindmapRooms = new ConcurrentHashMap<>();
 
     public MindmapUpdateHandler(ObjectMapper objectMapper,
                                 MindmapRepository mindmapRepository,
-                                CollaborationRepository collaborationRepository) {
+                                CollaborationRepository collaborationRepository,
+                                ChatRepository chatRepository) {
         this.objectMapper = objectMapper;
         this.mindmapRepository = mindmapRepository;
         this.collaborationRepository = collaborationRepository;
+        this.chatRepository = chatRepository;
     }
 
     private String getMindmapId(WebSocketSession session) {
@@ -127,14 +135,43 @@ public class MindmapUpdateHandler extends TextWebSocketHandler {
 
         try {
             GenericPatch patch = objectMapper.readValue(payload, GenericPatch.class);
+            JsonNode payloadNode = patch.payload();
+
+            // ====== HANDLE CHAT PERSISTENT ======
+            if ("CHAT_MESSAGE".equals(patch.type())) {
+
+                String content = payloadNode.has("content")
+                        ? payloadNode.get("content").asText()
+                        : "";
+
+                String senderName = payloadNode.has("senderName")
+                        ? payloadNode.get("senderName").asText()
+                        : "Unknown";
+
+                ChatMessage chatMsg = ChatMessage.builder()
+                        .mindmapId(mindmapId)
+                        .userId(userId)
+                        .senderName(senderName)
+                        .content(content)
+                        .build();
+
+                ChatMessage savedMsg = chatRepository.save(chatMsg);
+
+                // inject server truth → FE
+                if (payloadNode instanceof ObjectNode node) {
+                    node.put("id", savedMsg.getId());
+                    node.put("createdAt", savedMsg.getCreatedAt().toString());
+                }
+            }
+            // ==========================================
 
             BroadcastPatch broadcastMessage = new BroadcastPatch(
                     patch.type(),
-                    patch.payload(),
+                    payloadNode,
                     userId
             );
-
             String messageToSend = objectMapper.writeValueAsString(broadcastMessage);
+
 
             log.debug("WebSocket [User: {}] broadcasting [Type: {}] to [Mindmap: {}]",
                     userId, patch.type(), mindmapId);

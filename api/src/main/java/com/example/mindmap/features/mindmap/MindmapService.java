@@ -90,10 +90,14 @@ public class MindmapService {
     /**
      * Kiểm tra quyền sửa (EDIT):
      * 1. Là Owner
-     * 2. Là Collaborator ĐÃ ĐƯỢC CHẤP NHẬN (ACTIVE) + Quyền EDITOR
+     * 2. Mindmap Public với EDIT access level
+     * 3. Là Collaborator ĐÃ ĐƯỢC CHẤP NHẬN (ACTIVE) + Quyền EDITOR
      */
     public void checkEditPermission(String userId, Mindmap mindmap) {
         if (mindmap.getOwnerId().equals(userId)) return;
+        
+        // Check public EDIT access
+        if (mindmap.getAccessSettings().isPublic() && mindmap.getAccessSettings().getPublicAccessLevel() == Mindmap.PublicAccessLevel.EDIT) return;
         
         collaborationRepository.findByMindmapIdAndUserId(mindmap.getId(), userId)
                 .filter(c -> c.getStatus() == Collaboration.InviteStatus.ACCEPTED) // Phải Active

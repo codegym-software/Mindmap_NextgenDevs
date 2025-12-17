@@ -2,6 +2,8 @@ import { useEffect, useRef, useCallback, useState } from 'react';
 import { useAuth } from './useAuth';
 import { useToast } from './useToast';
 import { EdgeData, useEditorStore } from '../app/store/useEditorStore';
+import { useChatStore } from '../app/store/useChatStore';
+
 
 type BroadcastPatch = {
   type: string;
@@ -47,6 +49,7 @@ export function useRealtime({
   const { addToast } = useToast();
 
   const { setGraph, setPeerInfo, updatePeerCursor, removePeer } = useEditorStore();
+  const addChatMessage = useChatStore((s) => s.addMessage);
 
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimeoutRef = useRef<any>(null);
@@ -185,6 +188,20 @@ export function useRealtime({
                     }),
                   );
                 }
+                break;
+              }
+
+              case 'CHAT_MESSAGE': {
+                if (!payload?.content) break;
+
+                addChatMessage({
+                  id: payload.id, // ID từ DB
+                  userId: senderId,
+                  senderName: payload.senderName || 'Người dùng',
+                  content: payload.content,
+                  createdAt: payload.createdAt || new Date().toISOString(),
+                });
+
                 break;
               }
 
