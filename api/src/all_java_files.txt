@@ -1,0 +1,4076 @@
+** Bạn hãy đọc code phía BE của tôi và đánh giá xem hiện tại luồng hoạt đọng như thế nào, và hiện tại websocket nếu tôi muốn thêm tính năng chat realtim thì có đáp ứng được không; Chat không lưu và DB; **
+** Tôi sẽ gửi bạn code phía FE sau để bạn đánh giá đúng hơn về vấn đề thêm tính năng này nhưng hiện tịa bạn có thể đưa ra các hướng xử lý cho tôi về vấn đề này được không và theo bạn các mindmap khác xử lý vấn đề này như thế nào nhỉ **
+
+==== ./main/java/com/example/mindmap/MindmapApiApplication.java ====
+package com.example.mindmap;
+
+import org.springframework.boot.SpringApplication;
+import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.data.mongodb.config.EnableMongoAuditing; // Enable Auditing
+
+@SpringBootApplication
+@EnableMongoAuditing // Needed for @CreatedDate, @LastModifiedDate if you use them
+public class MindmapApiApplication {
+    public static void main(String[] args) {
+        SpringApplication.run(MindmapApiApplication.class, args);
+    }
+}
+==== ./main/java/com/example/mindmap/websocket/dto/BroadcastPatch.java ====
+package com.example.mindmap.websocket.dto;
+
+import com.fasterxml.jackson.databind.JsonNode;
+
+/**
+ * DTO (Data Transfer Object) mà Backend sẽ broadcast (gửi đi)
+ * cho tất cả các client khác trong phòng.
+ *
+ * Nó bao gồm bản vá gốc (type, payload) VÀ 'senderId'.
+ *
+ * 'senderId' rất quan trọng để FE (ở Giai đoạn 9) có thể
+ * nhận diện tin nhắn này là "của người khác" và áp dụng thay đổi,
+ * thay vì áp dụng lại thay đổi của chính mình.
+ */
+public record BroadcastPatch(
+    String type,
+    JsonNode payload,
+    String senderId
+) {
+}
+==== ./main/java/com/example/mindmap/websocket/dto/GenericPatch.java ====
+package com.example.mindmap.websocket.dto;
+
+import com.fasterxml.jackson.databind.JsonNode;
+
+/**
+ * DTO (Data Transfer Object) chung để nhận tất cả các loại "bản vá" (patch)
+ * từ Frontend qua WebSocket.
+ *
+ * FE sẽ gửi JSON có dạng: {"type": "TÊN_HÀNH_ĐỘNG", "payload": { ... }}
+ *
+ * - 'type': Sẽ được đọc dưới dạng String (ví dụ: "NODE_MOVE").
+ * - 'payload': Sẽ được giữ ở dạng JSON thô (JsonNode) để broadcast
+ * trực tiếp mà không cần Backend hiểu chi tiết bên trong.
+ */
+public record GenericPatch(
+    String type,
+    JsonNode payload
+) {
+    // Sử dụng record (Java 16+) cho DTOs bất biến, ngắn gọn.
+}
+==== ./main/java/com/example/mindmap/websocket/MindmapUpdateHandler.java ====
+package com.example.mindmap.websocket;
+
+import java.io.IOException;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.stereotype.Component;
+import org.springframework.web.socket.CloseStatus;
+import org.springframework.web.socket.TextMessage;
+import org.springframework.web.socket.WebSocketSession;
+import org.springframework.web.socket.handler.TextWebSocketHandler;
+
+// DTOs & JSON
+import com.example.mindmap.websocket.dto.BroadcastPatch;
+import com.example.mindmap.websocket.dto.GenericPatch;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
+
+// Dependencies để check quyền
+import com.example.mindmap.features.mindmap.Mindmap;
+import com.example.mindmap.features.mindmap.MindmapRepository;
+import com.example.mindmap.features.collaboration.CollaborationRepository;
+
+@Component
+public class MindmapUpdateHandler extends TextWebSocketHandler {
+
+    private static final Logger log = LoggerFactory.getLogger(MindmapUpdateHandler.class);
+
+    private final ObjectMapper objectMapper;
+    private final MindmapRepository mindmapRepository;
+    private final CollaborationRepository collaborationRepository;
+
+    // Cấu trúc: Map<MindmapId, Map<SessionId, Session>>
+    private final Map<String, Map<String, WebSocketSession>> mindmapRooms = new ConcurrentHashMap<>();
+
+    public MindmapUpdateHandler(ObjectMapper objectMapper,
+                                MindmapRepository mindmapRepository,
+                                CollaborationRepository collaborationRepository) {
+        this.objectMapper = objectMapper;
+        this.mindmapRepository = mindmapRepository;
+        this.collaborationRepository = collaborationRepository;
+    }
+
+    private String getMindmapId(WebSocketSession session) {
+        String path = session.getUri().getPath(); // /ws/mindmap/abc-123
+        try {
+            return path.substring(path.lastIndexOf('/') + 1);
+        } catch (Exception e) {
+            log.error("Could not extract mindmapId from URI: {}", path);
+            return null;
+        }
+    }
+
+    private String getUserId(WebSocketSession session) {
+        return (String) session.getAttributes().get("userId");
+    }
+
+    @Override
+    public void afterConnectionEstablished(WebSocketSession session) throws Exception {
+        String mindmapId = getMindmapId(session);
+        String userId = getUserId(session);
+
+        if (userId == null || mindmapId == null) {
+            log.warn("Closing connection: No userId found in session or invalid mindmapId. URI: {}", session.getUri());
+            session.close(CloseStatus.POLICY_VIOLATION);
+            return;
+        }
+
+        // === SECURITY CHECK: Kiểm tra quyền truy cập trước khi cho join room ===
+        boolean hasAccess = checkAccess(mindmapId, userId);
+        if (!hasAccess) {
+            log.warn("⛔ WebSocket Rejected: User {} tried to join Mindmap {} without permission.", userId, mindmapId);
+            session.close(CloseStatus.POLICY_VIOLATION);
+            return;
+        }
+
+        mindmapRooms.computeIfAbsent(mindmapId, k -> new ConcurrentHashMap<>()).put(session.getId(), session);
+
+        log.info("WebSocket [User: {}] connected to [Mindmap: {}]. Session: {}. Total sessions in room: {}",
+                userId, mindmapId, session.getId(), mindmapRooms.get(mindmapId).size());
+
+        try {
+            BroadcastPatch joinMessage = new BroadcastPatch(
+                    "USER_JOINED",
+                    objectMapper.createObjectNode().put("userId", userId),
+                    userId
+            );
+            broadcast(mindmapId, session, new TextMessage(objectMapper.writeValueAsString(joinMessage)));
+        } catch (JsonProcessingException e) {
+            log.error("Failed to serialize USER_JOINED message", e);
+        }
+    }
+
+    /**
+     * Hàm kiểm tra quyền nhanh (Logic tương tự MindmapService.checkViewPermission)
+     */
+    private boolean checkAccess(String mindmapId, String userId) {
+        Mindmap mindmap = mindmapRepository.findById(mindmapId).orElse(null);
+        if (mindmap == null) return false;
+
+        // 1. Nếu là Owner -> OK
+        if (mindmap.getOwnerId().equals(userId)) return true;
+
+        // 2. Nếu Mindmap Public (VIEW hoặc EDIT) -> OK
+        // [QUAN TRỌNG] File cũ của bạn thiếu phần "|| lvl == Mindmap.PublicAccessLevel.EDIT" ở dưới
+        if (mindmap.getAccessSettings() != null && mindmap.getAccessSettings().isPublic()) {
+            Mindmap.PublicAccessLevel lvl = mindmap.getAccessSettings().getPublicAccessLevel();
+            if (lvl == Mindmap.PublicAccessLevel.VIEW || lvl == Mindmap.PublicAccessLevel.EDIT) {
+                return true;
+            }
+        }
+
+        // 3. Nếu có trong danh sách Collaborator (cần check status nếu muốn chặt chẽ hơn, ở đây check tồn tại là tạm ổn cho socket)
+        return collaborationRepository.existsByMindmapIdAndUserId(mindmapId, userId);
+    }
+
+    @Override
+    protected void handleTextMessage(WebSocketSession session, TextMessage message) throws Exception {
+        String mindmapId = getMindmapId(session);
+        String userId = getUserId(session);
+
+        if (mindmapId == null || userId == null) return;
+
+        String payload = message.getPayload();
+
+        try {
+            GenericPatch patch = objectMapper.readValue(payload, GenericPatch.class);
+
+            BroadcastPatch broadcastMessage = new BroadcastPatch(
+                    patch.type(),
+                    patch.payload(),
+                    userId
+            );
+
+            String messageToSend = objectMapper.writeValueAsString(broadcastMessage);
+
+            log.debug("WebSocket [User: {}] broadcasting [Type: {}] to [Mindmap: {}]",
+                    userId, patch.type(), mindmapId);
+
+            broadcast(mindmapId, session, new TextMessage(messageToSend));
+
+        } catch (JsonProcessingException e) {
+            log.warn("WebSocket [User: {}] sent invalid JSON to [Mindmap: {}]: {}",
+                    userId, mindmapId, payload, e);
+        }
+    }
+
+    @Override
+    public void afterConnectionClosed(WebSocketSession session, CloseStatus status) throws Exception {
+        String mindmapId = getMindmapId(session);
+        String userId = getUserId(session);
+
+        if (mindmapId == null) {
+            return;
+        }
+
+        Map<String, WebSocketSession> room = mindmapRooms.get(mindmapId);
+        if (room != null) {
+            room.remove(session.getId());
+            if (room.isEmpty()) {
+                mindmapRooms.remove(mindmapId);
+            }
+        }
+
+        log.info("WebSocket [User: {}] disconnected from [Mindmap: {}]. Status: {}. Sessions left: {}",
+                (userId != null ? userId : "unknown"),
+                mindmapId,
+                status.getCode(),
+                (room != null ? room.size() : 0));
+
+        if (userId != null) {
+            try {
+                BroadcastPatch leftMessage = new BroadcastPatch(
+                        "USER_LEFT",
+                        objectMapper.createObjectNode().put("userId", userId),
+                        userId
+                );
+                broadcast(mindmapId, session, new TextMessage(objectMapper.writeValueAsString(leftMessage)));
+            } catch (JsonProcessingException e) {
+                log.error("Failed to serialize USER_LEFT message", e);
+            }
+        }
+    }
+
+    private void broadcast(String mindmapId, WebSocketSession senderSession, TextMessage message) {
+        Map<String, WebSocketSession> room = mindmapRooms.get(mindmapId);
+        if (room == null) {
+            return;
+        }
+
+        for (WebSocketSession session : room.values()) {
+            if (session.isOpen() && !session.getId().equals(senderSession.getId())) {
+                try {
+                    session.sendMessage(message);
+                } catch (IOException e) {
+                    log.error("Failed to send message to session {}: {}", session.getId(), e.getMessage());
+                }
+            }
+        }
+    }
+}
+==== ./main/java/com/example/mindmap/websocket/WebSocketAuthInterceptor.java ====
+// src/main/java/com/example/mindmap/websocket/WebSocketAuthInterceptor.java
+package com.example.mindmap.websocket;
+
+import java.util.Map;
+import org.slf4j.Logger; // [NEW]
+import org.slf4j.LoggerFactory; // [NEW]
+import org.springframework.http.HttpStatus; // [NEW]
+import org.springframework.http.server.ServerHttpRequest;
+import org.springframework.http.server.ServerHttpResponse;
+import org.springframework.security.oauth2.jwt.Jwt; // [NEW]
+import org.springframework.security.oauth2.jwt.JwtDecoder; // [NEW]
+import org.springframework.security.oauth2.jwt.JwtException; // [NEW]
+import org.springframework.stereotype.Component;
+import org.springframework.web.socket.WebSocketHandler;
+import org.springframework.web.socket.server.HandshakeInterceptor;
+import org.springframework.web.util.UriComponentsBuilder; // [NEW]
+
+@Component
+public class WebSocketAuthInterceptor implements HandshakeInterceptor {
+
+     private static final Logger log = LoggerFactory.getLogger(WebSocketAuthInterceptor.class); // [NEW]
+     private final JwtDecoder jwtDecoder; // [NEW]
+
+     // [NEW] Inject JwtDecoder (Bean này đã được tạo trong SecurityConfig)
+     public WebSocketAuthInterceptor(JwtDecoder jwtDecoder) {
+         this.jwtDecoder = jwtDecoder;
+     }
+
+     @Override
+     public boolean beforeHandshake(ServerHttpRequest request, ServerHttpResponse response, WebSocketHandler wsHandler, Map<String, Object> attributes) throws Exception {
+         
+         // [UPDATE] Triển khai logic xác thực JWT (thay thế TODO)
+         try {
+             // 1. Lấy token từ query param (ví dụ: /ws/mindmap/123?token=ey...)
+             String token = UriComponentsBuilder.fromUri(request.getURI()).build()
+                     .getQueryParams()
+                     .getFirst("token");
+
+             if (token == null || token.isBlank()) {
+                 log.warn("WebSocket handshake: Missing token");
+                 response.setStatusCode(HttpStatus.UNAUTHORIZED);
+                 return false;
+             }
+
+             // 2. Giải mã và xác thực token
+             Jwt jwt = jwtDecoder.decode(token);
+             
+             // 3. Lấy userId (sub) và lưu vào attributes của session
+             String userId = jwt.getSubject();
+             if (userId == null) {
+                 log.warn("WebSocket handshake: Token is valid but missing 'sub' (userId) claim");
+                 response.setStatusCode(HttpStatus.UNAUTHORIZED);
+                 return false;
+             }
+             
+             attributes.put("userId", userId);
+             log.info("WebSocket handshake: Authenticated user {}", userId);
+             return true; // Cho phép kết nối
+
+         } catch (JwtException e) {
+             log.warn("WebSocket handshake: Invalid token. {}", e.getMessage());
+             response.setStatusCode(HttpStatus.UNAUTHORIZED);
+             return false; // Từ chối kết nối
+         } catch (Exception e) {
+             log.error("WebSocket handshake: Unexpected error. {}", e.getMessage());
+             response.setStatusCode(HttpStatus.INTERNAL_SERVER_ERROR);
+             return false; // Từ chối kết nối
+         }
+     }
+
+     @Override
+     public void afterHandshake(ServerHttpRequest request, ServerHttpResponse response, WebSocketHandler wsHandler, Exception exception) {
+         // No-op
+     }
+}
+==== ./main/java/com/example/mindmap/core/auth/AudienceValidator.java ====
+package com.example.mindmap.core.auth;
+
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.security.oauth2.core.OAuth2Error;
+import org.springframework.security.oauth2.core.OAuth2TokenValidator;
+import org.springframework.security.oauth2.core.OAuth2TokenValidatorResult;
+import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.stereotype.Component;
+
+import java.util.List;
+import java.util.Objects;
+
+/**
+ * Custom JWT validator to check the 'aud' (audience) or 'client_id' claims.
+ * This ensures that the token was issued for this specific application.
+ */
+@Component
+public class AudienceValidator implements OAuth2TokenValidator<Jwt> {
+
+    @Value("${app.security.audience:}") // Optional audience claim
+    private String audience;
+
+    @Value("${app.security.frontend-client-id}") // Required client_id from Cognito
+    private String frontendClientId;
+
+    @Override
+    public OAuth2TokenValidatorResult validate(Jwt token) {
+        // This is for ID tokens which may have an 'aud' claim
+        List<String> audClaim = token.getAudience();
+        if (audClaim != null && !audClaim.isEmpty() && audience != null && !audience.isBlank()) {
+            if (audClaim.contains(audience)) {
+                return OAuth2TokenValidatorResult.success();
+            }
+            return OAuth2TokenValidatorResult.failure(new OAuth2Error("invalid_token", "The required audience is missing", null));
+        }
+
+        // This is for Access tokens from Cognito which have 'client_id' and 'token_use'
+        String tokenUse = token.getClaimAsString("token_use");
+        String clientId = token.getClaimAsString("client_id");
+        if (Objects.equals(tokenUse, "access") && Objects.equals(clientId, frontendClientId)) {
+            return OAuth2TokenValidatorResult.success();
+        }
+
+        return OAuth2TokenValidatorResult.failure(
+                new OAuth2Error("invalid_token","Neither a valid 'aud' nor a matching (token_use=access & client_id) was found", null)
+        );
+    }
+}
+
+==== ./main/java/com/example/mindmap/core/auth/GuestJwtTokenProvider.java ====
+// src/main/java/com/example/mindmap/core/auth/GuestJwtTokenProvider.java
+package com.example.mindmap.core.auth;
+
+import com.nimbusds.jose.JWSAlgorithm;
+import com.nimbusds.jose.JWSHeader;
+import com.nimbusds.jose.JWSSigner;
+import com.nimbusds.jose.crypto.MACSigner;
+import com.nimbusds.jwt.JWTClaimsSet;
+import com.nimbusds.jwt.SignedJWT;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.security.oauth2.core.OAuth2TokenValidator;
+import org.springframework.security.oauth2.jwt.*;
+import org.springframework.stereotype.Component;
+
+import javax.crypto.SecretKey;
+import javax.crypto.spec.SecretKeySpec;
+import java.time.Instant;
+import java.util.Date;
+import java.util.List;
+
+/**
+ * Tạo và xác thực JWT tùy chỉnh (Local) cho Guest user.
+ */
+@Component
+public class GuestJwtTokenProvider {
+
+    private final String jwtSecret;
+    private final String jwtIssuer;
+    private final long jwtExpirationMs;
+    private final SecretKey secretKey;
+    private final JWSSigner signer;
+
+
+    public GuestJwtTokenProvider(
+            @Value("${app.security.guest-jwt-secret}") String jwtSecret,
+            @Value("${app.security.guest-jwt-issuer}") String jwtIssuer,
+            @Value("${app.security.guest-jwt-expiration-ms:86400000}") long jwtExpirationMs) throws Exception {
+        
+        if (jwtSecret.length() < 32) {
+             throw new IllegalArgumentException("Guest JWT secret must be at least 32 bytes long for HS256");
+        }
+        this.jwtSecret = jwtSecret;
+        this.jwtIssuer = jwtIssuer;
+        this.jwtExpirationMs = jwtExpirationMs;
+        
+        // Cấu hình để ký
+        this.secretKey = new SecretKeySpec(jwtSecret.getBytes(), JWSAlgorithm.HS256.getName());
+        this.signer = new MACSigner(this.secretKey);
+    }
+
+    /**
+     * Tạo một Guest JWT mới cho một userId
+     */
+    public String createToken(String userId) {
+        Instant now = Instant.now();
+        Instant expiry = now.plusMillis(jwtExpirationMs);
+
+        try {
+            JWTClaimsSet claimsSet = new JWTClaimsSet.Builder()
+                    .issuer(jwtIssuer)
+                    .subject(userId)
+                    .issueTime(Date.from(now))
+                    .expirationTime(Date.from(expiry))
+                    .claim("scope", "GUEST") // Thêm scope GUEST
+                    .build();
+
+            SignedJWT signedJWT = new SignedJWT(
+                    new JWSHeader.Builder(JWSAlgorithm.HS256).build(),
+                    claimsSet
+            );
+
+            signedJWT.sign(signer);
+            return signedJWT.serialize();
+            
+        } catch (Exception e) {
+            throw new RuntimeException("Error creating guest JWT", e);
+        }
+    }
+
+    /**
+     * Tạo một JwtDecoder (trình giải mã) mà Spring Security có thể sử dụng
+     * để xác thực Guest JWT.
+     */
+    public JwtDecoder createDecoder() {
+        NimbusJwtDecoder decoder = NimbusJwtDecoder.withSecretKey(this.secretKey).build();
+
+        // Thêm trình xác thực (validator) để kiểm tra issuer
+        OAuth2TokenValidator<Jwt> withIssuer = JwtValidators.createDefaultWithIssuer(jwtIssuer);
+        decoder.setJwtValidator(withIssuer);
+
+        return decoder;
+    }
+}
+
+==== ./main/java/com/example/mindmap/core/auth/AuthUtils.java ====
+package com.example.mindmap.core.auth;
+
+import java.util.Optional;
+
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
+import org.springframework.stereotype.Component;
+
+@Component // Make it a bean for easy injection
+public class AuthUtils {
+
+    public Optional<String> getCurrentUserId() {
+        return Optional.ofNullable(SecurityContextHolder.getContext().getAuthentication())
+                .filter(JwtAuthenticationToken.class::isInstance)
+                .map(JwtAuthenticationToken.class::cast)
+                .map(JwtAuthenticationToken::getToken)
+                .map(Jwt::getSubject); // Assuming 'sub' claim holds the user ID
+    }
+
+     public String getRequiredCurrentUserId() {
+         return getCurrentUserId()
+                 .orElseThrow(() -> new IllegalStateException("Authentication required but not found in SecurityContext"));
+     }
+
+    // Add methods to get email, name if needed directly from token
+    public Optional<String> getCurrentUserEmail() {
+         return Optional.ofNullable(SecurityContextHolder.getContext().getAuthentication())
+                .filter(JwtAuthenticationToken.class::isInstance)
+                .map(JwtAuthenticationToken.class::cast)
+                .map(JwtAuthenticationToken::getToken)
+                .map(jwt -> jwt.getClaimAsString("email"));
+    }
+
+    // You can also return the whole Jwt object if needed
+    public Optional<Jwt> getCurrentJwt() {
+        return Optional.ofNullable(SecurityContextHolder.getContext().getAuthentication())
+                .filter(JwtAuthenticationToken.class::isInstance)
+                .map(JwtAuthenticationToken.class::cast)
+                .map(JwtAuthenticationToken::getToken);
+    }
+}
+==== ./main/java/com/example/mindmap/core/model/Auditable.java ====
+// src/main/java/com/example/mindmap/core/model/Auditable.java
+package com.example.mindmap.core.model;
+
+import java.time.Instant;
+
+import org.springframework.data.annotation.CreatedDate;
+import org.springframework.data.annotation.LastModifiedDate;
+
+import lombok.Data;
+
+@Data
+public abstract class Auditable {
+    @CreatedDate
+    private Instant createdAt;
+
+    @LastModifiedDate
+    private Instant updatedAt;
+}
+==== ./main/java/com/example/mindmap/core/exception/ResourceNotFoundException.java ====
+package com.example.mindmap.core.exception;
+
+import org.springframework.http.HttpStatus;
+import org.springframework.web.bind.annotation.ResponseStatus;
+
+@ResponseStatus(HttpStatus.NOT_FOUND) // Automatically sets response status
+public class ResourceNotFoundException extends RuntimeException {
+    public ResourceNotFoundException(String resourceName, String fieldName, Object fieldValue) {
+        super(String.format("%s not found with %s : '%s'", resourceName, fieldName, fieldValue));
+    }
+
+    public ResourceNotFoundException(String message) {
+        super(message);
+    }
+}
+==== ./main/java/com/example/mindmap/core/exception/GlobalExceptionHandler.java ====
+package com.example.mindmap.core.exception;
+
+import java.net.URI;
+import java.time.Instant;
+import java.util.stream.Collectors;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ProblemDetail;
+import org.springframework.security.oauth2.server.resource.InvalidBearerTokenException;
+import org.springframework.validation.FieldError;
+import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.bind.annotation.ExceptionHandler;
+import org.springframework.web.bind.annotation.RestControllerAdvice;
+import software.amazon.awssdk.services.cognitoidentityprovider.model.CognitoIdentityProviderException; // Mới
+
+@RestControllerAdvice
+public class GlobalExceptionHandler {
+
+    private static final Logger log = LoggerFactory.getLogger(GlobalExceptionHandler.class);
+
+    // --- Mới: Xử lý lỗi Cognito ---
+    @ExceptionHandler(CognitoIdentityProviderException.class)
+    public ProblemDetail handleCognitoException(CognitoIdentityProviderException ex) {
+        log.warn("Cognito Error: {}", ex.awsErrorDetails().errorMessage());
+        
+        HttpStatus status = HttpStatus.BAD_REQUEST; // Mặc định là 400
+        String title = "Cognito Error";
+
+        // Phân loại lỗi thường gặp
+        if (ex.isThrottlingException()) {
+            status = HttpStatus.TOO_MANY_REQUESTS;
+            title = "Rate Limit Exceeded";
+        } else if ("InvalidPasswordException".equals(ex.awsErrorDetails().errorCode())) {
+            status = HttpStatus.BAD_REQUEST;
+            title = "Invalid Password";
+        } else if ("NotAuthorizedException".equals(ex.awsErrorDetails().errorCode())) {
+            status = HttpStatus.UNAUTHORIZED; // Mật khẩu cũ sai cũng ném lỗi này
+            title = "Not Authorized";
+        } else if ("UserNotFoundException".equals(ex.awsErrorDetails().errorCode())) {
+            status = HttpStatus.NOT_FOUND;
+            title = "User Not Found";
+        }
+
+        ProblemDetail problemDetail = ProblemDetail.forStatusAndDetail(status, ex.awsErrorDetails().errorMessage());
+        problemDetail.setTitle(title);
+        problemDetail.setType(URI.create("/errors/cognito-error"));
+        problemDetail.setProperty("timestamp", Instant.now());
+        problemDetail.setProperty("cognitoErrorCode", ex.awsErrorDetails().errorCode());
+        return problemDetail;
+    }
+
+    @ExceptionHandler(InvalidBearerTokenException.class)
+    public ProblemDetail handleInvalidToken(InvalidBearerTokenException ex) {
+        log.warn("Invalid bearer token detected: {}", ex.getMessage());
+        ProblemDetail problemDetail = ProblemDetail.forStatusAndDetail(HttpStatus.UNAUTHORIZED, ex.getMessage());
+        problemDetail.setTitle("Invalid Token");
+        problemDetail.setType(URI.create("/errors/invalid-token"));
+        problemDetail.setProperty("timestamp", Instant.now());
+        return problemDetail;
+    }
+
+    @ExceptionHandler(AccessDeniedException.class)
+    public ProblemDetail handleAccessDenied(AccessDeniedException ex) {
+        log.warn("Access denied: {}", ex.getMessage());
+        ProblemDetail problemDetail = ProblemDetail.forStatusAndDetail(HttpStatus.FORBIDDEN, ex.getMessage());
+        problemDetail.setTitle("Access Denied");
+        problemDetail.setType(URI.create("/errors/access-denied"));
+        problemDetail.setProperty("timestamp", Instant.now());
+        return problemDetail;
+    }
+
+     @ExceptionHandler(org.springframework.security.access.AccessDeniedException.class)
+     public ProblemDetail handleSpringAccessDenied(org.springframework.security.access.AccessDeniedException ex) {
+         log.warn("Access denied (Spring Security): {}", ex.getMessage());
+         ProblemDetail problemDetail = ProblemDetail.forStatusAndDetail(HttpStatus.FORBIDDEN, "You do not have permission to perform this action.");
+         problemDetail.setTitle("Access Denied");
+         problemDetail.setType(URI.create("/errors/access-denied"));
+         problemDetail.setProperty("timestamp", Instant.now());
+         return problemDetail;
+     }
+
+    @ExceptionHandler(ResourceNotFoundException.class)
+    public ProblemDetail handleResourceNotFound(ResourceNotFoundException ex) {
+        log.info("Resource not found: {}", ex.getMessage());
+        ProblemDetail problemDetail = ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND, ex.getMessage());
+        problemDetail.setTitle("Resource Not Found");
+        problemDetail.setType(URI.create("/errors/resource-not-found"));
+        problemDetail.setProperty("timestamp", Instant.now());
+        return problemDetail;
+    }
+
+    @ExceptionHandler(MethodArgumentNotValidException.class)
+    public ProblemDetail handleValidationError(MethodArgumentNotValidException ex) {
+        log.warn("Validation error: {}", ex.getMessage());
+        var errors = ex.getBindingResult().getFieldErrors().stream()
+                .collect(Collectors.toMap(
+                        FieldError::getField,
+                        error -> error.getDefaultMessage() != null ? error.getDefaultMessage() : "Invalid input"
+                ));
+        ProblemDetail problemDetail = ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, "Invalid request parameters");
+        problemDetail.setTitle("Validation Error");
+        problemDetail.setType(URI.create("/errors/validation-error"));
+        problemDetail.setProperty("details", errors);
+        problemDetail.setProperty("timestamp", Instant.now());
+        return problemDetail;
+    }
+
+    @ExceptionHandler(Exception.class)
+    public ProblemDetail handleGenericException(Exception ex) {
+        log.error("An unexpected error occurred: {}", ex.getMessage(), ex);
+        ProblemDetail problemDetail = ProblemDetail.forStatusAndDetail(HttpStatus.INTERNAL_SERVER_ERROR, "An unexpected internal error occurred.");
+        problemDetail.setTitle("Internal Server Error");
+        problemDetail.setType(URI.create("/errors/internal-server-error"));
+        problemDetail.setProperty("timestamp", Instant.now());
+        return problemDetail;
+    }
+}
+
+==== ./main/java/com/example/mindmap/core/exception/AccessDeniedException.java ====
+package com.example.mindmap.core.exception;
+
+import org.springframework.http.HttpStatus;
+import org.springframework.web.bind.annotation.ResponseStatus;
+
+@ResponseStatus(HttpStatus.FORBIDDEN)
+public class AccessDeniedException extends RuntimeException {
+    public AccessDeniedException(String message) {
+        super(message);
+    }
+    public AccessDeniedException(String resourceName, String action) {
+         super(String.format("User does not have permission to %s this %s", action, resourceName));
+     }
+}
+==== ./main/java/com/example/mindmap/config/JacksonConfig.java ====
+package com.example.mindmap.config;
+
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.http.converter.json.Jackson2ObjectMapperBuilder;
+
+import com.fasterxml.jackson.databind.SerializationFeature; // Thêm import
+import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
+
+@Configuration
+public class JacksonConfig {
+
+    @Bean
+    public Jackson2ObjectMapperBuilder jackson2ObjectMapperBuilder() {
+        Jackson2ObjectMapperBuilder builder = new Jackson2ObjectMapperBuilder();
+
+        builder.modules(new JavaTimeModule());
+
+        // Date → ISO-8601
+        builder.featuresToDisable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
+
+        builder.serializerByType(Enum.class, new com.fasterxml.jackson.databind.ser.std.ToStringSerializer());
+        builder.featuresToEnable(SerializationFeature.WRITE_ENUMS_USING_TO_STRING);
+
+
+        return builder;
+    }
+}
+
+==== ./main/java/com/example/mindmap/config/SecurityConfig.java ====
+package com.example.mindmap.config;
+
+import com.example.mindmap.core.auth.AudienceValidator;
+import com.example.mindmap.core.auth.GuestJwtTokenProvider; // Mới
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.Primary; // Mới
+import org.springframework.http.HttpMethod;
+import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
+import org.springframework.security.config.annotation.web.builders.HttpSecurity;
+import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
+import org.springframework.security.config.http.SessionCreationPolicy;
+import org.springframework.security.core.GrantedAuthority;
+import org.springframework.security.oauth2.core.DelegatingOAuth2TokenValidator;
+import org.springframework.security.oauth2.core.OAuth2TokenValidator;
+import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.security.oauth2.jwt.JwtDecoder;
+import org.springframework.security.oauth2.jwt.JwtDecoders; // Mới
+import org.springframework.security.oauth2.jwt.JwtException;
+import org.springframework.security.oauth2.jwt.JwtValidators;
+import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
+import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationConverter;
+import org.springframework.security.oauth2.server.resource.authentication.JwtGrantedAuthoritiesConverter;
+import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.web.cors.CorsConfigurationSource;
+
+import java.util.Collection;
+import java.util.HashMap; // Mới
+import java.util.Map; // Mới
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
+
+@Configuration
+@EnableWebSecurity
+@EnableMethodSecurity(prePostEnabled = true)
+public class SecurityConfig {
+
+    private final CorsConfigurationSource corsConfigurationSource;
+    private final AudienceValidator audienceValidator;
+    private final GuestJwtTokenProvider guestJwtTokenProvider; // Mới
+    private final String jwkSetUri;
+    private final String cognitoIssuerUri;
+    private final String guestIssuerUri; // Mới
+
+    public SecurityConfig(CorsConfigurationSource corsConfigurationSource,
+                          AudienceValidator audienceValidator,
+                          GuestJwtTokenProvider guestJwtTokenProvider, // Mới
+                          @Value("${spring.security.oauth2.resourceserver.jwt.jwk-set-uri}") String jwkSetUri,
+                          @Value("${spring.security.oauth2.resourceserver.jwt.issuer-uri}") String cognitoIssuerUri, // Đổi tên
+                          @Value("${app.security.guest-jwt-issuer}") String guestIssuerUri // Mới
+    ) {
+        this.corsConfigurationSource = corsConfigurationSource;
+        this.audienceValidator = audienceValidator;
+        this.guestJwtTokenProvider = guestJwtTokenProvider; // Mới
+        this.jwkSetUri = jwkSetUri;
+        this.cognitoIssuerUri = cognitoIssuerUri; // Đổi tên
+        this.guestIssuerUri = guestIssuerUri; // Mới
+    }
+
+    @Bean
+    public SecurityFilterChain filterChain(HttpSecurity http, JwtDecoder jwtDecoder) throws Exception { // Inject JwtDecoder
+        http
+            .csrf(csrf -> csrf.disable())
+            .cors(cors -> cors.configurationSource(corsConfigurationSource))
+            .authorizeHttpRequests(authz -> authz
+                .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
+                .requestMatchers("/", "/actuator/**", "/error").permitAll()
+                .requestMatchers("/api/public/**").permitAll()
+                .requestMatchers("/api/auth/guest").permitAll() // Mới: Cho phép endpoint Guest
+                .requestMatchers("/ws/**").permitAll()
+                .requestMatchers("/api/**").authenticated() // Tất cả các /api/** khác cần auth
+                .anyRequest().denyAll()
+            )
+            .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+            .oauth2ResourceServer(oauth2 -> oauth2.jwt(jwt -> jwt
+                .decoder(jwtDecoder) // Sử dụng bean JwtDecoder chính
+                .jwtAuthenticationConverter(jwtAuthenticationConverter())
+            ));
+
+        return http.build();
+    }
+
+    /**
+     * Bean JwtDecoder cho Cognito
+     */
+    @Bean
+    public JwtDecoder cognitoJwtDecoder() {
+        NimbusJwtDecoder decoder = NimbusJwtDecoder.withJwkSetUri(jwkSetUri).build();
+        OAuth2TokenValidator<Jwt> withIssuer = JwtValidators.createDefaultWithIssuer(cognitoIssuerUri);
+        OAuth2TokenValidator<Jwt> withAudience = new DelegatingOAuth2TokenValidator<>(withIssuer, audienceValidator);
+        decoder.setJwtValidator(withAudience);
+        return decoder;
+    }
+
+    /**
+     * Bean JwtDecoder cho Guest (dùng secret key)
+     */
+    @Bean
+    public JwtDecoder guestJwtDecoder() {
+        return guestJwtTokenProvider.createDecoder();
+    }
+
+    /**
+     * Bean JwtDecoder chính.
+     * Đây là một Delegating Decoder, nó sẽ thử giải mã token với từng decoder
+     * dựa trên 'issuer' (iss) claim trong token.
+     */
+    @Bean
+    @Primary
+    public JwtDecoder jwtDecoder(JwtDecoder cognitoJwtDecoder, JwtDecoder guestJwtDecoder) {
+        Map<String, JwtDecoder> decoders = new HashMap<>();
+        decoders.put(cognitoIssuerUri, cognitoJwtDecoder); // Key là issuer của Cognito
+        decoders.put(guestIssuerUri, guestJwtDecoder);     // Key là issuer của Guest
+
+        // Sử dụng JwtDecoders.fromIssuerLocation là cách chuẩn
+        // Nhưng ở đây ta có 2 loại (JwkSet và SecretKey), nên dùng Delegating...
+        // ... tuy nhiên, cách dễ nhất là dùng fromIssuerLocation cho Cognito
+        // và custom cho Guest.
+        
+        // Cách đơn giản và hiệu quả: DelegatingJwtDecoder
+        // Nó sẽ thử từng decoder cho đến khi một cái thành công.
+        // Để tối ưu, nó nên dùng 'iss' claim.
+        // Spring Boot > 2.7 có `JwtDecoderProviderConfiguration`
+        // Cách thủ công:
+        return (token) -> {
+            try {
+                // Thử Cognito trước
+                return cognitoJwtDecoder.decode(token);
+            } catch (JwtException cognitoException) {
+                try {
+                    // Nếu thất bại, thử Guest
+                    return guestJwtDecoder.decode(token);
+                } catch (JwtException guestException) {
+                    // Nếu cả hai thất bại, ném lỗi
+                    throw cognitoException; // Ném lỗi gốc của Cognito
+                }
+            }
+        };
+        
+        // Ghi chú: Một cách làm tốt hơn là đọc 'iss' claim
+        // và chọn decoder tương ứng, nhưng cách trên là đủ dùng.
+    }
+
+
+    @Bean
+    public JwtAuthenticationConverter jwtAuthenticationConverter() {
+        JwtGrantedAuthoritiesConverter scopeAuthoritiesConverter = new JwtGrantedAuthoritiesConverter();
+        scopeAuthoritiesConverter.setAuthorityPrefix("SCOPE_");
+        scopeAuthoritiesConverter.setAuthoritiesClaimName("scope"); // Dùng cho cả Guest (SCOPE_GUEST) và Cognito
+
+        JwtGrantedAuthoritiesConverter groupAuthoritiesConverter = new JwtGrantedAuthoritiesConverter();
+        groupAuthoritiesConverter.setAuthorityPrefix("ROLE_");
+        groupAuthoritiesConverter.setAuthoritiesClaimName("cognito:groups");
+
+        JwtAuthenticationConverter converter = new JwtAuthenticationConverter();
+        converter.setJwtGrantedAuthoritiesConverter(jwt -> {
+            Collection<GrantedAuthority> scopeAuthorities = scopeAuthoritiesConverter.convert(jwt);
+            Collection<GrantedAuthority> groupAuthorities = groupAuthoritiesConverter.convert(jwt);
+            return Stream.concat(scopeAuthorities.stream(), groupAuthorities.stream())
+                         .collect(Collectors.toSet());
+        });
+        return converter;
+    }
+}
+
+==== ./main/java/com/example/mindmap/config/MongoConfig.java ====
+package com.example.mindmap.config;
+
+import java.util.Set;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.mongodb.core.MongoTemplate;
+import org.springframework.data.mongodb.core.index.CompoundIndexDefinition;
+import org.springframework.data.mongodb.core.index.Index;
+import org.springframework.data.mongodb.core.index.IndexOperations;
+
+import jakarta.annotation.PostConstruct;
+
+
+@Configuration
+public class MongoConfig {
+
+    private static final Logger log = LoggerFactory.getLogger(MongoConfig.class);
+    private final MongoTemplate mongoTemplate;
+
+    public MongoConfig(MongoTemplate mongoTemplate) {
+        this.mongoTemplate = mongoTemplate;
+    }
+
+    @PostConstruct // Run after bean initialization
+    public void ensureIndexes() {
+        log.info("Ensuring MongoDB indexes are created...");
+        // Define required indexes for each collection based on @Document annotation
+        
+        // 1. Users Collection
+        ensureCollectionIndexes("users", Set.of(
+                new Index().on("email", Sort.Direction.ASC).unique(),
+                new Index().on("displayName", Sort.Direction.ASC)
+        ));
+
+        // 2. Mindmaps Collection
+        ensureCollectionIndexes("mindmaps", Set.of(
+                new Index().on("name", Sort.Direction.ASC),
+                new Index().on("ownerId", Sort.Direction.ASC),
+                new Index().on("accessSettings.isPublic", Sort.Direction.ASC),
+                new Index().on("workspaceId", Sort.Direction.ASC),
+                new Index().on("tags", Sort.Direction.ASC),
+                new Index().on("updatedAt", Sort.Direction.DESC)
+        ));
+
+        // [REMOVED] Collaborators Collection
+        // Chúng ta đã chuyển sang dùng @CompoundIndexes trong Collaboration.java
+        // Spring Data MongoDB sẽ tự động tạo index khi khởi động.
+        // Việc xóa đoạn code này tránh conflict giữa code và annotation.
+
+        // 3. Editor Themes Collection
+        ensureCollectionIndexes("editor_themes", Set.of(
+                new Index().on("name", Sort.Direction.ASC).unique(),
+                new Index().on("isSystemTheme", Sort.Direction.ASC)
+        ));
+        
+        log.info("MongoDB index check complete.");
+    }
+
+    private void ensureCollectionIndexes(String collectionName, Set<Index> requiredIndexes) {
+        IndexOperations indexOps = mongoTemplate.indexOps(collectionName);
+        // It's generally safe to just call ensureIndex in dev/startup.
+        // For production with zero downtime, more sophisticated index management might be needed.
+        requiredIndexes.forEach(index -> {
+            log.debug("Ensuring index on {}: {}", collectionName, index.getIndexKeys());
+            indexOps.ensureIndex(index);
+        });
+    }
+}
+==== ./main/java/com/example/mindmap/config/CognitoConfig.java ====
+// src/main/java/com/example/mindmap/config/CognitoConfig.java
+package com.example.mindmap.config;
+
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import software.amazon.awssdk.auth.credentials.DefaultCredentialsProvider;
+import software.amazon.awssdk.regions.Region;
+import software.amazon.awssdk.services.cognitoidentityprovider.CognitoIdentityProviderClient;
+
+@Configuration
+public class CognitoConfig {
+
+    @Value("${app.aws.region}") // Bạn cần thêm property này vào application.yml
+    private String awsRegion;
+
+    /**
+     * Cung cấp Cognito Client Bean để tương tác với AWS Cognito.
+     * Nó sẽ tự động tìm credentials (ví dụ: từ instance profile, env variables).
+     */
+    @Bean
+    public CognitoIdentityProviderClient cognitoIdentityProviderClient() {
+        return CognitoIdentityProviderClient.builder()
+                .region(Region.of(awsRegion))
+                .credentialsProvider(DefaultCredentialsProvider.create())
+                .build();
+    }
+}
+
+==== ./main/java/com/example/mindmap/config/WebSocketConfig.java ====
+package com.example.mindmap.config;
+
+import com.example.mindmap.websocket.MindmapUpdateHandler; // Placeholder import
+import com.example.mindmap.websocket.WebSocketAuthInterceptor; // Placeholder import
+import org.springframework.context.annotation.Configuration;
+import org.springframework.web.socket.config.annotation.EnableWebSocket;
+import org.springframework.web.socket.config.annotation.WebSocketConfigurer;
+import org.springframework.web.socket.config.annotation.WebSocketHandlerRegistry;
+
+@Configuration
+@EnableWebSocket
+public class WebSocketConfig implements WebSocketConfigurer {
+
+    private final MindmapUpdateHandler mindmapUpdateHandler;
+    private final WebSocketAuthInterceptor authInterceptor;
+
+    // Inject handlers/interceptors
+    public WebSocketConfig(MindmapUpdateHandler mindmapUpdateHandler, WebSocketAuthInterceptor authInterceptor) {
+        this.mindmapUpdateHandler = mindmapUpdateHandler;
+        this.authInterceptor = authInterceptor;
+    }
+
+    @Override
+    public void registerWebSocketHandlers(WebSocketHandlerRegistry registry) {
+        registry.addHandler(mindmapUpdateHandler, "/ws/mindmap/{mindmapId}") // Endpoint pattern
+                .addInterceptors(authInterceptor) // Secure the connection
+                .setAllowedOrigins("*"); // Configure allowed origins carefully for production!
+                // Consider using SockJS for fallback: .withSockJS();
+    }
+}
+==== ./main/java/com/example/mindmap/config/RateLimitConfig.java ====
+package com.example.mindmap.config;
+
+import com.github.benmanes.caffeine.cache.Cache;
+import com.github.benmanes.caffeine.cache.Caffeine;
+import jakarta.servlet.*;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.boot.web.servlet.FilterRegistrationBean;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.core.Ordered;
+import org.springframework.http.HttpMethod;
+import org.springframework.util.StringUtils;
+
+import java.io.IOException;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicLong;
+
+@Configuration
+public class RateLimitConfig {
+
+    private static final Logger log = LoggerFactory.getLogger(RateLimitConfig.class);
+
+    @Value("${app.rate-limit.requests-per-minute:10000}")
+    private int requestsPerMinute;
+
+    @Value("${app.rate-limit.cache.duration-minutes:10}")
+    private int cacheDurationMinutes;
+
+    @Value("${app.rate-limit.cache.max-size:10000}")
+    private long cacheMaxSize;
+
+    @Bean
+    @ConditionalOnProperty(value = "app.rate-limit.enabled", havingValue = "true", matchIfMissing = true)
+    public FilterRegistrationBean<RateLimitFilter> rateLimitFilter() {
+        // [QUAN TRỌNG] Log ra để biết filter đang chạy
+        log.info("✅ Rate Limit initialized: {} req/min (DEV MODE: HIGH LIMIT)", requestsPerMinute);
+        FilterRegistrationBean<RateLimitFilter> registrationBean =
+                new FilterRegistrationBean<>(new RateLimitFilter(requestsPerMinute, cacheDurationMinutes, cacheMaxSize));
+
+        registrationBean.addUrlPatterns("/api/*");
+        registrationBean.setOrder(Ordered.HIGHEST_PRECEDENCE + 1);
+
+        return registrationBean;
+    }
+
+    private static class RateLimitFilter implements Filter {
+        private final Cache<String, TokenBucket> rateLimitCache;
+        private final int requestsPerMinute;
+
+        public RateLimitFilter(int requestsPerMinute, int cacheDurationMinutes, long cacheMaxSize) {
+            this.requestsPerMinute = requestsPerMinute;
+            this.rateLimitCache = Caffeine.newBuilder()
+                    .expireAfterAccess(cacheDurationMinutes, TimeUnit.MINUTES)
+                    .maximumSize(cacheMaxSize)
+                    .build();
+        }
+
+        @Override
+        public void doFilter(ServletRequest request, ServletResponse response, FilterChain chain)
+                throws IOException, ServletException {
+
+            HttpServletRequest httpRequest = (HttpServletRequest) request;
+            HttpServletResponse httpResponse = (HttpServletResponse) response;
+
+            // 1. Bypass OPTIONS (CORS Pre-flight)
+            if (HttpMethod.OPTIONS.matches(httpRequest.getMethod())) {
+                chain.doFilter(request, response);
+                return;
+            }
+
+            // 2. [FIX LOOP] Để fix lỗi gấp cho bạn, tôi sẽ BYPASS rate limit cho tất cả request
+            // cho đến khi bạn triển khai Production thực sự.
+            // Comment dòng dưới lại nếu muốn bật lại Rate Limit.
+            if (true) { 
+                chain.doFilter(request, response);
+                return;
+            }
+
+            // --- Logic Rate Limit (Tạm thời bị disable bởi đoạn if(true) ở trên) ---
+
+            String clientIp = resolveClientIp(httpRequest);
+            TokenBucket bucket = rateLimitCache.get(clientIp, key -> new TokenBucket(requestsPerMinute));
+
+            if (bucket.tryConsume()) {
+                chain.doFilter(request, response);
+            } else {
+                log.warn("🚫 Rate limit exceeded for IP: {}", clientIp);
+                
+                // [FIX LỖI CORS KHI 429] Bắt buộc phải có header này, nếu không Browser sẽ báo Network Error
+                String origin = httpRequest.getHeader("Origin");
+                if (origin != null) {
+                    httpResponse.setHeader("Access-Control-Allow-Origin", origin);
+                    httpResponse.setHeader("Access-Control-Allow-Credentials", "true");
+                    httpResponse.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS, PATCH");
+                    httpResponse.setHeader("Access-Control-Allow-Headers", "Authorization, Content-Type, Accept");
+                }
+                
+                httpResponse.setStatus(429);
+                httpResponse.setContentType("application/json");
+                httpResponse.getWriter().write(
+                        "{\"error\":\"rate_limit_exceeded\",\"message\":\"Too many requests. Slow down!\"}"
+                );
+            }
+        }
+
+        private String resolveClientIp(HttpServletRequest request) {
+            String xffHeader = request.getHeader("X-Forwarded-For");
+            if (StringUtils.hasText(xffHeader)) {
+                return xffHeader.split(",")[0].trim();
+            }
+            return request.getRemoteAddr();
+        }
+
+        private static class TokenBucket {
+            private final long capacity;
+            private final AtomicLong tokens;
+            private final long nanosToRefill;
+            private volatile long lastRefillNanos;
+
+            public TokenBucket(long capacity) {
+                this.capacity = capacity;
+                this.tokens = new AtomicLong(capacity);
+                this.nanosToRefill = TimeUnit.MINUTES.toNanos(1) / capacity;
+                this.lastRefillNanos = System.nanoTime();
+            }
+
+            public boolean tryConsume() {
+                refill();
+                long currentTokens = tokens.get();
+                return currentTokens > 0 && tokens.compareAndSet(currentTokens, currentTokens - 1);
+            }
+
+            private void refill() {
+                long now = System.nanoTime();
+                long elapsedNanos = now - lastRefillNanos;
+                long tokensToAdd = elapsedNanos / nanosToRefill;
+                if (tokensToAdd > 0) {
+                    tokens.set(Math.min(capacity, tokens.get() + tokensToAdd));
+                    lastRefillNanos = now;
+                }
+            }
+        }
+    }
+}
+
+==== ./main/java/com/example/mindmap/config/CorsConfig.java ====
+package com.example.mindmap.config;
+
+import java.util.List;
+
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.web.cors.CorsConfiguration;
+import org.springframework.web.cors.CorsConfigurationSource;
+import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
+
+@Configuration
+public class CorsConfig {
+
+    // Allow multiple origins from config, split by comma
+    @Value("#{'${app.cors.allowed-origins:http://localhost:3000,http://127.0.0.1:3000}'.split(',')}")
+    private List<String> allowedOrigins;
+
+    @Value("${app.cors.allowed-methods:GET,POST,PUT,DELETE,OPTIONS,PATCH}") // Allow PATCH too
+    private List<String> allowedMethods;
+
+    @Value("${app.cors.allowed-headers:Authorization,Content-Type,Accept,Origin,X-Requested-With}")
+    private List<String> allowedHeaders;
+
+    @Value("${app.cors.exposed-headers:WWW-Authenticate,Authorization}") // As before
+    private List<String> exposedHeaders;
+
+    @Bean
+    public CorsConfigurationSource corsConfigurationSource() {
+        CorsConfiguration config = new CorsConfiguration();
+        config.setAllowedOrigins(allowedOrigins);
+        config.setAllowedMethods(allowedMethods);
+        config.setAllowedHeaders(allowedHeaders);
+        config.setExposedHeaders(exposedHeaders);
+        config.setAllowCredentials(false); // Still false for Bearer tokens
+        config.setMaxAge(3600L); // Cache preflight response for 1 hour
+
+        UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
+        source.registerCorsConfiguration("/api/**", config); // Apply CORS only to /api/** paths
+        source.registerCorsConfiguration("/ws/**", config); // Apply CORS to WebSocket path if needed
+        return source;
+    }
+}
+==== ./main/java/com/example/mindmap/features/collaboration/dto/ShareSettingsRequest.java ====
+// src/main/java/com/example/mindmap/features/collaboration/dto/ShareSettingsRequest.java
+package com.example.mindmap.features.collaboration.dto;
+
+import com.example.mindmap.features.mindmap.Mindmap;
+import jakarta.validation.constraints.NotNull;
+
+public record ShareSettingsRequest(
+        @NotNull
+        Boolean isPublic,
+        
+        @NotNull
+        Mindmap.PublicAccessLevel publicAccessLevel
+) {}
+
+==== ./main/java/com/example/mindmap/features/collaboration/dto/PermissionUpdateRequest.java ====
+// src/main/java/com/example/mindmap/features/collaboration/dto/PermissionUpdateRequest.java
+package com.example.mindmap.features.collaboration.dto;
+
+import com.example.mindmap.features.collaboration.Permission;
+import jakarta.validation.constraints.NotNull;
+
+public record PermissionUpdateRequest(
+        @NotNull
+        Permission permission
+) {}
+
+==== ./main/java/com/example/mindmap/features/collaboration/dto/RequestAccessRequest.java ====
+package com.example.mindmap.features.collaboration.dto;
+
+import com.example.mindmap.features.collaboration.Permission;
+
+public record RequestAccessRequest(
+        Permission requestedPermission // EDITOR hoặc VIEWER
+) {}
+==== ./main/java/com/example/mindmap/features/collaboration/dto/ShareSettingsResponse.java ====
+package com.example.mindmap.features.collaboration.dto;
+
+import com.example.mindmap.features.mindmap.Mindmap;
+
+public record ShareSettingsResponse(
+        String mindmapId,
+        boolean isPublic,
+        Mindmap.PublicAccessLevel publicAccessLevel,
+        String shareLink // Trả về link public (nếu có)
+) {
+    // Helper factory method
+    public static ShareSettingsResponse fromMindmap(Mindmap mindmap, String baseUrl) {
+        String shareLink = null;
+        Mindmap.AccessSettings access = mindmap.getAccessSettings();
+        
+        // Kiểm tra nếu là Public (VIEW hoặc EDIT) thì sinh link
+        if (access.isPublic() && 
+           (access.getPublicAccessLevel() == Mindmap.PublicAccessLevel.VIEW || 
+            access.getPublicAccessLevel() == Mindmap.PublicAccessLevel.EDIT)) {
+            
+            // TODO: Giai đoạn sau nên mã hóa ID này thành token ngắn gọn hơn
+            shareLink = baseUrl + "/share/" + mindmap.getId();
+        }
+        
+        return new ShareSettingsResponse(
+                mindmap.getId(),
+                access.isPublic(),
+                access.getPublicAccessLevel(),
+                shareLink
+        );
+    }
+}
+==== ./main/java/com/example/mindmap/features/collaboration/dto/CollaboratorResponse.java ====
+// src/main/java/com/example/mindmap/features/collaboration/dto/CollaboratorResponse.java
+package com.example.mindmap.features.collaboration.dto;
+
+import com.example.mindmap.features.collaboration.Permission;
+
+public record CollaboratorResponse(
+        String userId,
+        String displayName,
+        String avatarUrl,
+        Permission permission
+) {}
+==== ./main/java/com/example/mindmap/features/collaboration/dto/ApproveAccessRequest.java ====
+package com.example.mindmap.features.collaboration.dto;
+
+import com.example.mindmap.features.collaboration.Permission;
+import jakarta.validation.constraints.NotNull;
+
+public record ApproveAccessRequest(
+        @NotNull
+        Permission permission // Quyền cấp cho user (thường là quyền họ xin hoặc thấp hơn)
+) {}
+==== ./main/java/com/example/mindmap/features/collaboration/dto/InviteRequest.java ====
+// src/main/java/com/example/mindmap/features/collaboration/dto/InviteRequest.java
+package com.example.mindmap.features.collaboration.dto;
+
+import com.example.mindmap.features.collaboration.Permission;
+
+import jakarta.validation.constraints.Email;
+import jakarta.validation.constraints.NotNull;
+
+public record InviteRequest(
+        @NotNull @Email
+        String email,
+        @NotNull
+        Permission permission
+) {}
+==== ./main/java/com/example/mindmap/features/collaboration/CollaborationRepository.java ====
+// src/main/java/com/example/mindmap/features/collaboration/CollaborationRepository.java
+package com.example.mindmap.features.collaboration;
+
+import java.util.List;
+import java.util.Optional;
+
+import org.springframework.data.mongodb.repository.MongoRepository;
+
+public interface CollaborationRepository extends MongoRepository<Collaboration, String> {
+    
+    // Tìm danh sách theo User
+    List<Collaboration> findByUserId(String userId);
+    
+    // Tìm danh sách theo Mindmap
+    List<Collaboration> findByMindmapId(String mindmapId);
+    
+    // [FIX] Thêm method này để sửa lỗi build
+    Optional<Collaboration> findByMindmapIdAndUserId(String mindmapId, String userId);
+
+    // Check tồn tại (trả về true/false)
+    boolean existsByMindmapIdAndUserId(String mindmapId, String userId);
+    
+    // Check quyền chuẩn: Phải đúng userId + mindmapId + Status (ACCEPTED)
+    boolean existsByMindmapIdAndUserIdAndStatus(String mindmapId, String userId, Collaboration.InviteStatus status);
+    
+    // Xóa tất cả collab của 1 mindmap (khi xóa mindmap)
+    void deleteByMindmapId(String mindmapId);
+}
+==== ./main/java/com/example/mindmap/features/collaboration/CollaborationController.java ====
+package com.example.mindmap.features.collaboration;
+
+import com.example.mindmap.features.collaboration.dto.*;
+import jakarta.validation.Valid;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.web.bind.annotation.*;
+
+import java.util.List;
+
+@RestController
+@RequestMapping("/api/mindmaps/{mindmapId}")
+public class CollaborationController {
+
+    private final CollaborationService collaborationService;
+
+    public CollaborationController(CollaborationService collaborationService) {
+        this.collaborationService = collaborationService;
+    }
+
+    // ======================================================================
+    // 1. QUẢN LÝ CHIA SẺ CÔNG KHAI (PUBLIC SHARE SETTINGS)
+    // ======================================================================
+
+    @PutMapping("/share-settings")
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<ShareSettingsResponse> updatePublicShareSettings(
+            @PathVariable String mindmapId,
+            @Valid @RequestBody ShareSettingsRequest request
+    ) {
+        ShareSettingsResponse response = collaborationService.updatePublicShareSettings(mindmapId, request);
+        return ResponseEntity.ok(response);
+    }
+
+    // ======================================================================
+    // 2. QUẢN LÝ COLLABORATOR (CRUD)
+    // ======================================================================
+
+    /**
+     * Lấy danh sách collaborator của mindmap.
+     */
+    @GetMapping("/collaborators")
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<List<CollaboratorResponse>> getCollaborators(
+            @PathVariable String mindmapId
+    ) {
+        List<CollaboratorResponse> collaborators = collaborationService.getCollaborators(mindmapId);
+        return ResponseEntity.ok(collaborators);
+    }
+
+    /**
+     * Mời collaborator mới bằng email (Invite).
+     */
+    @PostMapping("/collaborators")
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<CollaboratorResponse> addCollaborator(
+            @PathVariable String mindmapId,
+            @Valid @RequestBody InviteRequest request
+    ) {
+        CollaboratorResponse collaborator = collaborationService.addCollaborator(mindmapId, request);
+        return new ResponseEntity<>(collaborator, HttpStatus.CREATED);
+    }
+
+    /**
+     * Cập nhật quyền của collaborator (EDITOR / VIEWER).
+     */
+    @PutMapping("/collaborators/{userId}")
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<CollaboratorResponse> updateCollaboratorPermission(
+            @PathVariable String mindmapId,
+            @PathVariable String userId,
+            @Valid @RequestBody PermissionUpdateRequest request
+    ) {
+        CollaboratorResponse updated = collaborationService.updateCollaboratorPermission(mindmapId, userId, request);
+        return ResponseEntity.ok(updated);
+    }
+
+    /**
+     * Xóa collaborator khỏi mindmap.
+     */
+    @DeleteMapping("/collaborators/{userId}")
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<Void> removeCollaborator(
+            @PathVariable String mindmapId,
+            @PathVariable String userId
+    ) {
+        collaborationService.removeCollaborator(mindmapId, userId);
+        return ResponseEntity.noContent().build();
+    }
+
+    // ======================================================================
+    // 3. QUẢN LÝ LIFECYCLE (REQUEST / APPROVE / REJECT) - [MỚI]
+    // ======================================================================
+
+    /**
+     * User tự xin quyền truy cập vào Mindmap (Request Access).
+     * Body (optional): chứa requestedPermission (EDITOR/VIEWER). Mặc định là VIEWER.
+     */
+    @PostMapping("/request-access")
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<Void> requestAccess(
+            @PathVariable String mindmapId,
+            @RequestBody(required = false) RequestAccessRequest body
+    ) {
+        Permission requestedPerm = (body != null && body.requestedPermission() != null)
+                ? body.requestedPermission()
+                : Permission.VIEWER; // Default là Viewer nếu không gửi body
+
+        collaborationService.requestAccess(mindmapId, requestedPerm);
+        return ResponseEntity.accepted().build();
+    }
+
+    /**
+     * Owner duyệt yêu cầu -> chuyển trạng thái thành ACCEPTED (ACTIVE).
+     */
+    @PostMapping("/requests/{userId}/approve")
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<Void> approveRequest(
+            @PathVariable String mindmapId,
+            @PathVariable String userId,
+            @Valid @RequestBody ApproveAccessRequest body
+    ) {
+        collaborationService.approveRequest(mindmapId, userId, body.permission());
+        return ResponseEntity.ok().build();
+    }
+
+    /**
+     * Owner từ chối yêu cầu -> chuyển trạng thái thành REJECTED.
+     */
+    @PostMapping("/requests/{userId}/reject")
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<Void> rejectRequest(
+            @PathVariable String mindmapId,
+            @PathVariable String userId
+    ) {
+        collaborationService.rejectRequest(mindmapId, userId);
+        return ResponseEntity.ok().build();
+    }
+
+        // [MỚI] API lấy danh sách yêu cầu đang chờ (để hiển thị icon chuông)
+    @GetMapping("/requests")
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<List<AccessRequest>> getPendingRequests(@PathVariable String mindmapId) {
+        return ResponseEntity.ok(collaborationService.getPendingRequests(mindmapId));
+    }
+}
+==== ./main/java/com/example/mindmap/features/collaboration/Collaboration.java ====
+package com.example.mindmap.features.collaboration;
+
+import com.example.mindmap.core.model.Auditable;
+import lombok.*;
+import org.springframework.data.annotation.Id;
+import org.springframework.data.mongodb.core.index.CompoundIndex;
+import org.springframework.data.mongodb.core.index.CompoundIndexes;
+import org.springframework.data.mongodb.core.mapping.Document;
+
+import java.time.Instant;
+
+@Data
+@Builder // Thêm Builder pattern để dễ khởi tạo object
+@NoArgsConstructor
+@AllArgsConstructor
+@EqualsAndHashCode(callSuper = false)
+@Document(collection = "collaborators")
+// ✅ CẤU HÌNH INDEXING TRỰC TIẾP TẠI ĐÂY
+@CompoundIndexes({
+        // 1. Đảm bảo tính duy nhất: 1 User chỉ có 1 quyền trong 1 Mindmap
+        @CompoundIndex(name = "mindmap_user_unique", def = "{'mindmapId': 1, 'userId': 1}", unique = true),
+        
+        // 2. Tối ưu Query: Tìm danh sách request đang chờ (PENDING) của 1 Mindmap
+        @CompoundIndex(name = "mindmap_status_idx", def = "{'mindmapId': 1, 'status': 1}"),
+        
+        // 3. Tối ưu Query: Tìm danh sách các Mindmap mà User này đang tham gia hoặc đang xin vào
+        @CompoundIndex(name = "user_status_idx", def = "{'userId': 1, 'status': 1}")
+})
+public class Collaboration extends Auditable {
+    @Id
+    private String id;
+
+    private String mindmapId;
+    private String userId;
+
+    private Permission permission; // Quyền hiện tại (nếu ACTIVE) hoặc quyền dự kiến (nếu PENDING)
+
+    @Builder.Default
+    private InviteStatus status = InviteStatus.PENDING;
+
+    // --- CÁC TRƯỜNG BỔ SUNG CHO LOGIC REQUEST ACCESS & INVITE ---
+
+    // Phân loại: Được mời (INVITE) hay Tự xin vào (REQUEST_ACCESS)
+    private InviteType type;
+
+    // Nếu là xin quyền, người dùng muốn quyền gì? (Thường là VIEWER hoặc EDITOR)
+    private Permission requestedPermission;
+
+    // Ai là người mời (nếu type = INVITE) -> Lưu userId của Owner/Editor mời
+    private String invitedBy;
+
+    // Ai là người duyệt/từ chối (nếu type = REQUEST_ACCESS) -> Lưu userId của Owner
+    private String decidedBy;
+    
+    // Thời điểm duyệt/từ chối
+    private Instant decidedAt;
+
+    public enum InviteStatus {
+        PENDING,  // Đang chờ duyệt (Request) hoặc Chờ chấp nhận (Invite)
+        ACCEPTED, // Đã tham gia
+        REJECTED  // Đã bị từ chối
+    }
+
+    public enum InviteType {
+        INVITE,         // Owner chủ động mời qua email
+        REQUEST_ACCESS  // User click link và bấm "Request Access"
+    }
+}
+
+==== ./main/java/com/example/mindmap/features/collaboration/Permission.java ====
+// src/main/java/com/example/mindmap/features/collaboration/Permission.java
+package com.example.mindmap.features.collaboration;
+
+public enum Permission {
+    OWNER,
+    EDITOR,
+    VIEWER
+}
+==== ./main/java/com/example/mindmap/features/collaboration/AccessRequest.java ====
+package com.example.mindmap.features.collaboration;
+
+import com.example.mindmap.core.model.Auditable;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Data;
+import lombok.NoArgsConstructor;
+import org.springframework.data.annotation.Id;
+import org.springframework.data.mongodb.core.index.CompoundIndex;
+import org.springframework.data.mongodb.core.index.CompoundIndexes;
+import org.springframework.data.mongodb.core.mapping.Document;
+
+@Data
+@Builder
+@NoArgsConstructor
+@AllArgsConstructor
+@Document(collection = "access_requests")
+@CompoundIndexes({
+    // Mỗi user chỉ có 1 request đang chờ cho 1 mindmap
+    @CompoundIndex(name = "mindmap_user_request_idx", def = "{'mindmapId': 1, 'userId': 1}", unique = true)
+})
+public class AccessRequest extends Auditable {
+    @Id
+    private String id;
+
+    private String mindmapId;
+    private String userId; // Người xin quyền
+    
+    private Permission requestedPermission; // EDITOR hoặc VIEWER
+    
+    // Thông tin phụ để hiển thị nhanh trên FE mà không cần join bảng User
+    private String requesterEmail;
+    private String requesterName;
+    private String requesterAvatar;
+}
+==== ./main/java/com/example/mindmap/features/collaboration/CollaborationService.java ====
+package com.example.mindmap.features.collaboration;
+
+import com.example.mindmap.core.auth.AuthUtils;
+import com.example.mindmap.core.exception.AccessDeniedException;
+import com.example.mindmap.core.exception.ResourceNotFoundException;
+import com.example.mindmap.features.collaboration.dto.*;
+import com.example.mindmap.features.mindmap.Mindmap;
+import com.example.mindmap.features.mindmap.MindmapRepository;
+import com.example.mindmap.features.mindmap.MindmapService;
+import com.example.mindmap.features.user.User;
+import com.example.mindmap.features.user.UserRepository;
+import com.example.mindmap.features.user.UserService;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.time.Instant;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.function.Function;
+import java.util.stream.Collectors;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+@Service
+public class CollaborationService {
+
+    private final CollaborationRepository collaborationRepository;
+    private final MindmapService mindmapService;
+    private final MindmapRepository mindmapRepository;
+    private final UserRepository userRepository;
+    private final UserService userService;
+    private final AuthUtils authUtils;
+
+    // ✅ NEW: MongoDB queue for access requests
+    private final AccessRequestRepository accessRequestRepository;
+
+    private static final Logger log = LoggerFactory.getLogger(CollaborationService.class);
+
+    @Value("${app.frontend-base-url:http://localhost:3000}")
+    private String frontendBaseUrl;
+
+    public CollaborationService(CollaborationRepository collaborationRepository,
+                                MindmapService mindmapService,
+                                MindmapRepository mindmapRepository,
+                                UserRepository userRepository,
+                                UserService userService,
+                                AuthUtils authUtils,
+                                AccessRequestRepository accessRequestRepository) {
+        this.collaborationRepository = collaborationRepository;
+        this.mindmapService = mindmapService;
+        this.mindmapRepository = mindmapRepository;
+        this.userRepository = userRepository;
+        this.userService = userService;
+        this.authUtils = authUtils;
+        this.accessRequestRepository = accessRequestRepository;
+    }
+
+    // ===================================================================
+    // 1. CẬP NHẬT CÀI ĐẶT CHIA SẺ CÔNG KHAI
+    // ===================================================================
+    @Transactional
+    public ShareSettingsResponse updatePublicShareSettings(String mindmapId, ShareSettingsRequest request) {
+        String currentUserId = authUtils.getRequiredCurrentUserId();
+        Mindmap mindmap = mindmapService.findMindmapById(mindmapId);
+
+        if (!mindmap.getOwnerId().equals(currentUserId)) {
+            throw new AccessDeniedException("Only the mindmap owner can change share settings.");
+        }
+
+        Mindmap.AccessSettings settings = mindmap.getAccessSettings();
+        settings.setPublic(request.isPublic());
+
+        if (!request.isPublic()) {
+            settings.setPublicAccessLevel(Mindmap.PublicAccessLevel.DISABLED);
+        } else {
+            if (request.publicAccessLevel() == Mindmap.PublicAccessLevel.DISABLED) {
+                throw new IllegalArgumentException("Cannot set public access to DISABLED when isPublic is true.");
+            }
+            settings.setPublicAccessLevel(request.publicAccessLevel());
+        }
+
+        Mindmap savedMindmap = mindmapRepository.save(mindmap);
+        return ShareSettingsResponse.fromMindmap(savedMindmap, frontendBaseUrl);
+    }
+
+    // ===================================================================
+    // 2. CẬP NHẬT QUYỀN CỦA NGƯỜI HỢP TÁC (UPDATE PERMISSION)
+    // ===================================================================
+    @Transactional
+    public CollaboratorResponse updateCollaboratorPermission(String mindmapId,
+                                                             String collaboratorId,
+                                                             PermissionUpdateRequest request) {
+        String currentUserId = authUtils.getRequiredCurrentUserId();
+        Mindmap mindmap = mindmapService.findMindmapById(mindmapId);
+
+        if (!mindmap.getOwnerId().equals(currentUserId)) {
+            throw new AccessDeniedException("Only the mindmap owner can change permissions.");
+        }
+
+        if (request.permission() == Permission.OWNER) {
+            throw new IllegalArgumentException("Cannot assign OWNER permission.");
+        }
+
+        if (collaboratorId.equals(currentUserId)) {
+            throw new IllegalArgumentException("Owner cannot change their own permissions.");
+        }
+
+        Collaboration collaboration = collaborationRepository
+                .findByMindmapIdAndUserId(mindmapId, collaboratorId)
+                .orElseThrow(() -> new ResourceNotFoundException("Collaboration", "user_id", collaboratorId));
+
+        collaboration.setPermission(request.permission());
+
+        // Nếu đang ở trạng thái Pending/Rejected mà Owner chủ động set quyền -> coi như Approve luôn
+        if (collaboration.getStatus() != Collaboration.InviteStatus.ACCEPTED) {
+            collaboration.setStatus(Collaboration.InviteStatus.ACCEPTED);
+            collaboration.setDecidedBy(currentUserId);
+            collaboration.setDecidedAt(Instant.now());
+        }
+
+        collaborationRepository.save(collaboration);
+
+        User user = userRepository.findById(collaboratorId)
+                .orElseThrow(() -> new ResourceNotFoundException("User", "id", collaboratorId));
+
+        return new CollaboratorResponse(
+                user.getId(),
+                user.getDisplayName(),
+                user.getAvatarUrl(),
+                collaboration.getPermission()
+        );
+    }
+
+    // ===================================================================
+    // 3. MỜI NGƯỜI DÙNG MỚI (INVITE)
+    // ===================================================================
+    @Transactional
+    public CollaboratorResponse addCollaborator(String mindmapId, InviteRequest request) {
+        String currentUserId = authUtils.getRequiredCurrentUserId();
+        Mindmap mindmap = mindmapService.findMindmapById(mindmapId);
+
+        if (!mindmap.getOwnerId().equals(currentUserId)) {
+            throw new AccessDeniedException("Only the mindmap owner can add collaborators.");
+        }
+
+        if (request.permission() == Permission.OWNER) {
+            throw new IllegalArgumentException("Cannot assign OWNER permission.");
+        }
+
+        // Lấy hoặc tạo user nếu chưa tồn tại (Logic Safe Invite)
+        User userToInvite = userService.getOrCreateUserByEmail(request.email());
+
+        if (userToInvite.getId().equals(currentUserId)) {
+            throw new IllegalArgumentException("Cannot invite yourself.");
+        }
+
+        Collaboration collaboration = collaborationRepository
+                .findByMindmapIdAndUserId(mindmapId, userToInvite.getId())
+                .orElse(new Collaboration());
+
+        collaboration.setMindmapId(mindmapId);
+        collaboration.setUserId(userToInvite.getId());
+        collaboration.setPermission(request.permission());
+
+        // [QUAN TRỌNG] Owner mời trực tiếp -> Trạng thái là ACCEPTED (ACTIVE) luôn
+        collaboration.setStatus(Collaboration.InviteStatus.ACCEPTED);
+        collaboration.setType(Collaboration.InviteType.INVITE);
+        collaboration.setInvitedBy(currentUserId);
+
+        // Reset thông tin duyệt cũ (nếu có)
+        collaboration.setDecidedBy(currentUserId);
+        collaboration.setDecidedAt(Instant.now());
+
+        collaborationRepository.save(collaboration);
+
+        return new CollaboratorResponse(
+                userToInvite.getId(),
+                userToInvite.getDisplayName(),
+                userToInvite.getAvatarUrl(),
+                request.permission()
+        );
+    }
+
+    // ===================================================================
+    // 4. XÓA NGƯỜI HỢP TÁC (REMOVE)
+    // ===================================================================
+    @Transactional
+    public void removeCollaborator(String mindmapId, String collaboratorId) {
+        String currentUserId = authUtils.getRequiredCurrentUserId();
+        Mindmap mindmap = mindmapService.findMindmapById(mindmapId);
+
+        if (!mindmap.getOwnerId().equals(currentUserId)) {
+            throw new AccessDeniedException("Only the mindmap owner can remove collaborators.");
+        }
+
+        if (collaboratorId.equals(currentUserId)) {
+            throw new IllegalArgumentException("Owner cannot remove themselves.");
+        }
+
+        Collaboration collaboration = collaborationRepository
+                .findByMindmapIdAndUserId(mindmapId, collaboratorId)
+                .orElseThrow(() -> new ResourceNotFoundException("Collaboration", "user_id", collaboratorId));
+
+        collaborationRepository.delete(collaboration);
+    }
+
+    // ===================================================================
+    // 5. LẤY DANH SÁCH COLLABORATOR (CHỈ LẤY ACTIVE)
+    // ===================================================================
+    @Transactional(readOnly = true)
+    public List<CollaboratorResponse> getCollaborators(String mindmapId) {
+        String currentUserId = authUtils.getRequiredCurrentUserId();
+        Mindmap mindmap = mindmapService.findMindmapById(mindmapId);
+
+        mindmapService.checkViewPermission(currentUserId, mindmap);
+
+        List<Collaboration> collaborations = collaborationRepository.findByMindmapId(mindmapId);
+
+        List<String> userIds = collaborations.stream()
+                .map(Collaboration::getUserId)
+                .toList();
+
+        Map<String, User> userMap = userRepository.findAllById(userIds).stream()
+                .collect(Collectors.toMap(User::getId, Function.identity()));
+
+        return collaborations.stream()
+                // [QUAN TRỌNG] Chỉ trả về user đã được chấp nhận (Active)
+                .filter(c -> c.getStatus() == Collaboration.InviteStatus.ACCEPTED)
+                .map(c -> {
+                    User user = userMap.get(c.getUserId());
+                    if (user == null) return null;
+                    return new CollaboratorResponse(
+                            user.getId(),
+                            user.getDisplayName(),
+                            user.getAvatarUrl(),
+                            c.getPermission()
+                    );
+                })
+                .filter(Objects::nonNull)
+                .toList();
+    }
+
+    // ===================================================================
+    // 6. YÊU CẦU QUYỀN TRUY CẬP (REQUEST ACCESS) - ✅ DÙNG MONGODB QUEUE
+    // ===================================================================
+    @Transactional
+    public void requestAccess(String mindmapId, Permission requestedPerm) {
+        String currentUserId = authUtils.getRequiredCurrentUserId();
+        Mindmap mindmap = mindmapService.findMindmapById(mindmapId);
+
+        // Owner không cần xin quyền
+        if (mindmap.getOwnerId().equals(currentUserId)) return;
+
+        // 1) Đã là collaborator (ACCEPTED) thì thôi
+        collaborationRepository.findByMindmapIdAndUserId(mindmapId, currentUserId)
+                .ifPresent(collab -> {
+                    if (collab.getStatus() == Collaboration.InviteStatus.ACCEPTED) {
+                        // throw runtime để “thoát sớm” khỏi lambda
+                        throw new EarlyReturnRuntime();
+                    }
+                });
+        // Nếu đã EarlyReturn thì return
+        if (EarlyReturnRuntime.consumeIfThrown()) return;
+
+        // 2) Đã có request đang chờ duyệt?
+        if (accessRequestRepository.findByMindmapIdAndUserId(mindmapId, currentUserId).isPresent()) {
+            throw new IllegalArgumentException("Yêu cầu của bạn đang chờ duyệt.");
+        }
+
+        // 3) Tạo request mới + cache info user để owner hiển thị list
+        User user = userRepository.findById(currentUserId)
+                .orElseThrow(() -> new ResourceNotFoundException("User", "id", currentUserId));
+
+        AccessRequest request = AccessRequest.builder()
+                .mindmapId(mindmapId)
+                .userId(currentUserId)
+                .requestedPermission(requestedPerm)
+                .requesterEmail(user.getEmail())
+                .requesterName(user.getDisplayName())
+                .requesterAvatar(user.getAvatarUrl())
+                .build();
+
+        accessRequestRepository.save(request);
+        log.info("User {} requested {} access to mindmap {}", currentUserId, requestedPerm, mindmapId);
+
+        // TODO: bắn websocket notify owner
+    }
+
+    // ===================================================================
+    // 7. DUYỆT YÊU CẦU (APPROVE) - ✅ XOÁ REQUEST + UPSERT COLLAB ACCEPTED
+    // ===================================================================
+    @Transactional
+    public void approveRequest(String mindmapId, String requesterId, Permission permissionToGrant) {
+        String currentOwnerId = authUtils.getRequiredCurrentUserId();
+        Mindmap mindmap = mindmapService.findMindmapById(mindmapId);
+
+        if (!mindmap.getOwnerId().equals(currentOwnerId)) {
+            throw new AccessDeniedException("Chỉ chủ sở hữu mới được duyệt.");
+        }
+
+        // 1) Xoá request khỏi queue Mongo
+        accessRequestRepository.deleteByMindmapIdAndUserId(mindmapId, requesterId);
+
+        // 2) Upsert Collaboration -> ACCEPTED
+        Collaboration collab = collaborationRepository.findByMindmapIdAndUserId(mindmapId, requesterId)
+                .orElse(Collaboration.builder()
+                        .mindmapId(mindmapId)
+                        .userId(requesterId)
+                        .type(Collaboration.InviteType.REQUEST_ACCESS)
+                        .build());
+
+        collab.setPermission(permissionToGrant);
+        collab.setStatus(Collaboration.InviteStatus.ACCEPTED);
+        collab.setDecidedBy(currentOwnerId);
+        collab.setDecidedAt(Instant.now());
+
+        collaborationRepository.save(collab);
+        log.info("Owner {} approved access for {} with permission {}", currentOwnerId, requesterId, permissionToGrant);
+    }
+
+    // ===================================================================
+    // 8. TỪ CHỐI YÊU CẦU (REJECT) - ✅ CHỈ XOÁ REQUEST
+    // ===================================================================
+    @Transactional
+    public void rejectRequest(String mindmapId, String requesterId) {
+        String currentOwnerId = authUtils.getRequiredCurrentUserId();
+        Mindmap mindmap = mindmapService.findMindmapById(mindmapId);
+
+        if (!mindmap.getOwnerId().equals(currentOwnerId)) {
+            throw new AccessDeniedException("Chỉ chủ sở hữu mới được từ chối.");
+        }
+
+        // Chỉ cần xoá request khỏi queue là coi như reject
+        accessRequestRepository.deleteByMindmapIdAndUserId(mindmapId, requesterId);
+        log.info("Owner {} rejected access for {}", currentOwnerId, requesterId);
+    }
+
+    // ===================================================================
+    // 9. [MỚI] LẤY DANH SÁCH YÊU CẦU (CHO OWNER)
+    // ===================================================================
+    @Transactional(readOnly = true)
+    public List<AccessRequest> getPendingRequests(String mindmapId) {
+        String currentUserId = authUtils.getRequiredCurrentUserId();
+        Mindmap mindmap = mindmapService.findMindmapById(mindmapId);
+
+        if (!mindmap.getOwnerId().equals(currentUserId)) {
+            throw new AccessDeniedException("Bạn không có quyền xem danh sách yêu cầu.");
+        }
+
+        return accessRequestRepository.findByMindmapId(mindmapId);
+    }
+
+    /**
+     * Trick nhỏ để thoát sớm khỏi lambda ifPresent mà vẫn giữ code “ít đụng repo”.
+     * Bạn có thể thay bằng existsBy... nếu repo của bạn đã có method đó.
+     */
+    private static final class EarlyReturnRuntime extends RuntimeException {
+        private static final ThreadLocal<Boolean> thrown = ThreadLocal.withInitial(() -> false);
+
+        private EarlyReturnRuntime() {
+            thrown.set(true);
+        }
+
+        static boolean consumeIfThrown() {
+            boolean v = thrown.get();
+            thrown.set(false);
+            return v;
+        }
+    }
+}
+
+==== ./main/java/com/example/mindmap/features/collaboration/AccessRequestRepository.java ====
+package com.example.mindmap.features.collaboration;
+
+import org.springframework.data.mongodb.repository.MongoRepository;
+import java.util.List;
+import java.util.Optional;
+
+public interface AccessRequestRepository extends MongoRepository<AccessRequest, String> {
+    List<AccessRequest> findByMindmapId(String mindmapId);
+    Optional<AccessRequest> findByMindmapIdAndUserId(String mindmapId, String userId);
+    void deleteByMindmapIdAndUserId(String mindmapId, String userId);
+}
+==== ./main/java/com/example/mindmap/features/gen_ai/dto/GenAiRequest.java ====
+package com.example.mindmap.features.gen_ai.dto;
+
+==== ./main/java/com/example/mindmap/features/gen_ai/dto/GenAiResponse.java ====
+package com.example.mindmap.features.gen_ai.dto;
+
+==== ./main/java/com/example/mindmap/features/gen_ai/GenAiService.java ====
+package com.example.mindmap.features.gen_ai;
+
+==== ./main/java/com/example/mindmap/features/gen_ai/LlmClient.java ====
+package com.example.mindmap.features.gen_ai;
+
+==== ./main/java/com/example/mindmap/features/gen_ai/GenAiController.java ====
+// src/main/java/com/example/mindmap/features/gen_ai/GenAiController.java
+package com.example.mindmap.features.gen_ai;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
+
+@RestController
+@RequestMapping("/api/generate")
+public class GenAiController {
+    // Endpoints for GenAI will go here
+    // e.g., POST /mindmap-from-text
+}
+==== ./main/java/com/example/mindmap/features/auth/dto/GuestSessionResponse.java ====
+// src/main/java/com/example/mindmap/features/auth/dto/GuestSessionResponse.java
+package com.example.mindmap.features.auth.dto;
+
+import com.example.mindmap.features.user.User;
+
+public record GuestSessionResponse(
+        String token,
+        String userId,
+        String displayName,
+        User.UserStatus status
+) {}
+
+==== ./main/java/com/example/mindmap/features/auth/AuthController.java ====
+// src/main/java/com/example/mindmap/features/auth/AuthController.java
+package com.example.mindmap.features.auth;
+
+import com.example.mindmap.features.auth.dto.GuestSessionResponse;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
+
+@RestController
+@RequestMapping("/api/auth") // Endpoint này sẽ được permitAll trong SecurityConfig
+public class AuthController {
+
+    private final AuthService authService;
+
+    public AuthController(AuthService authService) {
+        this.authService = authService;
+    }
+
+    /**
+     * Endpoint #25: Tạo một phiên làm việc cho khách (Guest).
+     * Trả về một Guest JWT và thông tin user guest.
+     */
+    @PostMapping("/guest")
+    public ResponseEntity<GuestSessionResponse> createGuestSession() {
+        return ResponseEntity.ok(authService.createGuestSession());
+    }
+}
+
+==== ./main/java/com/example/mindmap/features/auth/AuthService.java ====
+// src/main/java/com/example/mindmap/features/auth/AuthService.java
+package com.example.mindmap.features.auth;
+
+import com.example.mindmap.features.auth.dto.GuestSessionResponse;
+import com.example.mindmap.features.user.User;
+import com.example.mindmap.features.user.UserRepository;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+import com.example.mindmap.core.auth.GuestJwtTokenProvider;
+
+import java.net.URLEncoder; // [NEW] Import
+import java.nio.charset.StandardCharsets; // [NEW] Import
+import java.util.UUID;
+
+@Service
+public class AuthService {
+
+    private final UserRepository userRepository;
+    private final GuestJwtTokenProvider guestJwtTokenProvider;
+
+    public AuthService(UserRepository userRepository, GuestJwtTokenProvider guestJwtTokenProvider) {
+        this.userRepository = userRepository;
+        this.guestJwtTokenProvider = guestJwtTokenProvider;
+    }
+
+    /**
+     * Tạo một user GUEST mới trong DB và tạo một Guest JWT cho user đó.
+     */
+    @Transactional
+    public GuestSessionResponse createGuestSession() {
+        // 1. Tạo user GUEST mới
+        User guestUser = new User();
+        String guestId = "guest_" + UUID.randomUUID().toString();
+        guestUser.setId(guestId);
+        guestUser.setStatus(User.UserStatus.GUEST);
+        guestUser.setDisplayName("Guest User");
+        guestUser.setEmail(guestId + "@guest.local"); // Email giả, unique
+        
+        // [FIX] Thêm avatar default khi tạo Guest
+        guestUser.setAvatarUrl(createDefaultAvatarUrl("Guest User"));
+
+        User savedUser = userRepository.save(guestUser);
+
+        // 2. Tạo Guest JWT
+        String token = guestJwtTokenProvider.createToken(savedUser.getId());
+
+        // 3. Trả về session
+        return new GuestSessionResponse(
+                token,
+                savedUser.getId(),
+                savedUser.getDisplayName(),
+                savedUser.getStatus()
+        );
+    }
+
+    /**
+     * [NEW] Helper tạo URL avatar default
+     */
+    private String createDefaultAvatarUrl(String displayName) {
+        try {
+            String encodedName = URLEncoder.encode(displayName, StandardCharsets.UTF_8.name());
+            return "https://ui-avatars.com/api/?name=" + encodedName;
+        } catch (Exception e) {
+            // Fallback an toàn nếu encode lỗi (rất hiếm với UTF-8)
+            return "https://ui-avatars.com/api/?name=User";
+        }
+    }
+}
+==== ./main/java/com/example/mindmap/features/editor_theme/dto/EditorThemeDto.java ====
+package com.example.mindmap.features.editor_theme.dto;
+
+import com.example.mindmap.features.editor_theme.EditorTheme;
+
+// DTO này dùng để GỬI data theme cho frontend
+// Sử dụng record để đảm bảo tính bất biến
+public record EditorThemeDto(
+        String id,
+        String name,
+        String description,
+        EditorTheme.EditorThemeConfig config,
+        boolean isSystemTheme,
+        String createdBy
+) {
+}
+
+==== ./main/java/com/example/mindmap/features/editor_theme/EditorThemeService.java ====
+package com.example.mindmap.features.editor_theme;
+
+import com.example.mindmap.core.auth.AuthUtils;
+import com.example.mindmap.core.exception.ResourceNotFoundException;
+import com.example.mindmap.features.editor_theme.dto.EditorThemeDto;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.util.List;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
+
+@Service
+public class EditorThemeService {
+
+    private final EditorThemeRepository editorThemeRepository;
+    private final AuthUtils authUtils;
+
+    public EditorThemeService(EditorThemeRepository editorThemeRepository, AuthUtils authUtils) {
+        this.editorThemeRepository = editorThemeRepository;
+        this.authUtils = authUtils;
+    }
+
+    /**
+     * Lấy tất cả các theme hệ thống VÀ theme của người dùng hiện tại
+     */
+    @Transactional(readOnly = true)
+    public List<EditorThemeDto> getAvailableThemesForCurrentUser() {
+        String currentUserId = authUtils.getRequiredCurrentUserId();
+
+        List<EditorTheme> systemThemes = editorThemeRepository.findByIsSystemTheme(true);
+        List<EditorTheme> userThemes = editorThemeRepository.findByCreatedBy(currentUserId);
+
+        return Stream.concat(systemThemes.stream(), userThemes.stream())
+                .map(this::mapToDto)
+                .collect(Collectors.toList());
+    }
+
+    /**
+     * Lấy một theme cụ thể bằng ID
+     */
+    @Transactional(readOnly = true)
+    public EditorThemeDto getThemeById(String id) {
+        EditorTheme theme = editorThemeRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("EditorTheme", "id", id));
+
+        // TODO: Thêm logic kiểm tra quyền:
+        // Hoặc là theme hệ thống, hoặc là do người dùng tạo
+        // if (!theme.isSystemTheme() && !theme.getCreatedBy().equals(authUtils.getRequiredCurrentUserId())) {
+        //    throw new AccessDeniedException("You do not have permission to view this theme.");
+        // }
+
+        return mapToDto(theme);
+    }
+
+    // (Các phương thức Create, Update, Delete có thể được thêm vào sau)
+
+    /**
+     * Hàm helper để chuyển đổi Entity (Model) sang DTO
+     */
+    private EditorThemeDto mapToDto(EditorTheme theme) {
+        return new EditorThemeDto(
+                theme.getId(),
+                theme.getName(),
+                theme.getDescription(),
+                theme.getConfig(),
+                theme.isSystemTheme(),
+                theme.getCreatedBy()
+        );
+    }
+}
+
+==== ./main/java/com/example/mindmap/features/editor_theme/EditorTheme.java ====
+package com.example.mindmap.features.editor_theme;
+
+import com.example.mindmap.core.model.Auditable;
+import lombok.Data;
+import lombok.EqualsAndHashCode;
+import org.springframework.data.annotation.Id;
+import org.springframework.data.mongodb.core.index.Indexed;
+import org.springframework.data.mongodb.core.mapping.Document;
+
+// Dựa trên schema bạn cung cấp
+@Data
+@EqualsAndHashCode(callSuper = false)
+@Document("editor_themes")
+public class EditorTheme extends Auditable {
+
+    @Id
+    private String id;
+
+    @Indexed(unique = true)
+    private String name;
+
+    private String description;
+
+    private EditorThemeConfig config; // Object chứa cấu hình chi tiết
+
+    private boolean isSystemTheme; // true nếu là theme hệ thống
+
+    private String createdBy; // userId nếu do người dùng tạo
+
+    // --- Inner Classes cho cấu hình ---
+
+    @Data
+    public static class EditorThemeConfig {
+        private Background background;
+        private Grid grid;
+        private NodeStyleConfig nodeDefaults; // Đổi tên để tránh trùng lặp với NodeStyle của content
+        private EdgeStyle edgeDefaults;
+    }
+
+    @Data
+    public static class Background {
+        private String type; // 'color', 'gradient', 'image'
+        private String value;
+    }
+
+    @Data
+    public static class Grid {
+        private boolean enabled;
+        private String color;
+        private int spacing;
+    }
+
+    @Data
+    public static class NodeStyleConfig {
+        private String color;
+        private String font;
+        private String textAlign;
+    }
+
+    @Data
+    public static class EdgeStyle {
+        private String color;
+        private int thickness;
+        private String type; // 'bezier', 'straight'
+    }
+}
+
+==== ./main/java/com/example/mindmap/features/editor_theme/EditorThemeRepository.java ====
+package com.example.mindmap.features.editor_theme;
+
+import org.springframework.data.mongodb.repository.MongoRepository;
+import org.springframework.stereotype.Repository;
+
+import java.util.List;
+import java.util.Optional;
+
+@Repository
+public interface EditorThemeRepository extends MongoRepository<EditorTheme, String> {
+
+    // Tìm các theme hệ thống (dùng chung)
+    List<EditorTheme> findByIsSystemTheme(boolean isSystemTheme);
+
+    // Tìm các theme do người dùng cụ thể tạo
+    List<EditorTheme> findByCreatedBy(String userId);
+
+    // Tìm theme bằng tên (tên là unique)
+    Optional<EditorTheme> findByName(String name);
+}
+
+==== ./main/java/com/example/mindmap/features/editor_theme/EditorThemeController.java ====
+package com.example.mindmap.features.editor_theme;
+
+import com.example.mindmap.features.editor_theme.dto.EditorThemeDto;
+import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
+
+import java.util.List;
+
+@RestController
+@RequestMapping("/api/editor-themes")
+public class EditorThemeController {
+
+    private final EditorThemeService editorThemeService;
+
+    public EditorThemeController(EditorThemeService editorThemeService) {
+        this.editorThemeService = editorThemeService;
+    }
+
+    /**
+     * Lấy danh sách các theme có sẵn cho người dùng (system themes + user's custom themes)
+     */
+    @GetMapping
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<List<EditorThemeDto>> getAvailableThemes() {
+        return ResponseEntity.ok(editorThemeService.getAvailableThemesForCurrentUser());
+    }
+
+    /**
+     * Lấy chi tiết một theme bằng ID
+     */
+    @GetMapping("/{id}")
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<EditorThemeDto> getThemeById(@PathVariable String id) {
+        return ResponseEntity.ok(editorThemeService.getThemeById(id));
+    }
+
+    // (Các endpoint POST, PUT, DELETE để tạo/cập nhật theme có thể thêm sau)
+}
+
+==== ./main/java/com/example/mindmap/features/user/dto/UserSettingsDto.java ====
+package com.example.mindmap.features.user.dto;
+
+import jakarta.validation.constraints.Size;
+
+public record UserSettingsDto(
+        String defaultEditorThemeId, // ID referencing editor_themes
+
+        @Size(min = 2, max = 10) // e.g., "en", "vi", "en-US"
+        String language,
+
+        // [UPDATE] Đã có từ file gốc
+        String colorMode,
+
+        // [FIX] Thêm preferredLayout vào DTO
+        String preferredLayout
+) {}
+==== ./main/java/com/example/mindmap/features/user/dto/UserProfileDto.java ====
+package com.example.mindmap.features.user.dto;
+
+import jakarta.validation.constraints.Email;
+import jakarta.validation.constraints.Size;
+// Using Records for immutable DTOs (Java 16+)
+public record UserProfileDto(
+    String id, // Usually read-only from client perspective
+
+    @Email
+    String email, // Read-only
+
+    @Size(min = 1, max = 100)
+    String displayName,
+
+    @Size(max = 2048) // Allow longer URLs
+    // @URL // Consider adding URL validation if needed
+    String avatarUrl
+) {}
+==== ./main/java/com/example/mindmap/features/user/dto/PasswordChangeRequest.java ====
+// src/main/java/com/example/mindmap/features/user/dto/PasswordChangeRequest.java
+package com.example.mindmap.features.user.dto;
+
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Size;
+
+public record PasswordChangeRequest(
+        @NotBlank
+        String oldPassword,
+
+        @NotBlank
+        @Size(min = 8, max = 100, message = "Password must be between 8 and 100 characters")
+        // TODO: Thêm regex cho độ phức tạp nếu Cognito yêu cầu
+        String newPassword
+) {}
+
+==== ./main/java/com/example/mindmap/features/user/UserService.java ====
+package com.example.mindmap.features.user;
+
+import com.example.mindmap.core.auth.AuthUtils;
+import com.example.mindmap.core.exception.ResourceNotFoundException;
+import com.example.mindmap.features.collaboration.Collaboration;
+import com.example.mindmap.features.collaboration.CollaborationRepository;
+import com.example.mindmap.features.user.dto.*;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+import software.amazon.awssdk.services.cognitoidentityprovider.CognitoIdentityProviderClient;
+import software.amazon.awssdk.services.cognitoidentityprovider.model.AttributeType;
+import software.amazon.awssdk.services.cognitoidentityprovider.model.ChangePasswordRequest;
+import software.amazon.awssdk.services.cognitoidentityprovider.model.CognitoIdentityProviderException;
+import software.amazon.awssdk.services.cognitoidentityprovider.model.ListUsersRequest;
+import software.amazon.awssdk.services.cognitoidentityprovider.model.ListUsersResponse;
+import software.amazon.awssdk.services.cognitoidentityprovider.model.UserType;
+
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
+import java.util.List;
+import java.util.Optional;
+import java.util.UUID;
+
+@Service
+public class UserService {
+
+    private static final Logger log = LoggerFactory.getLogger(UserService.class);
+
+    private final UserRepository userRepository;
+    private final CollaborationRepository collaborationRepository;
+    private final AuthUtils authUtils;
+    private final CognitoIdentityProviderClient cognitoClient;
+
+    @Value("${app.security.cognito-user-pool-id}")
+    private String userPoolId;
+
+    public UserService(UserRepository userRepository,
+                       CollaborationRepository collaborationRepository,
+                       AuthUtils authUtils,
+                       CognitoIdentityProviderClient cognitoClient) {
+        this.userRepository = userRepository;
+        this.collaborationRepository = collaborationRepository;
+        this.authUtils = authUtils;
+        this.cognitoClient = cognitoClient;
+    }
+
+    // ===================================================================
+    // SAFE INVITE: MỜI USER QUA EMAIL (DÙ CHƯA TỪNG LOGIN)
+    // ===================================================================
+
+    /**
+     * Logic Mời Nâng cao (Safe Invite):
+     * 1. Tìm trong DB.
+     * 2. Tìm trên Cognito.
+     * 3. Nếu lỗi hoặc không thấy -> Tạo User PENDING (ID tạm).
+     */
+    @Transactional
+    public User getOrCreateUserByEmail(String email) {
+        return userRepository.findByEmail(email)
+                .orElseGet(() -> {
+                    try {
+                        // Thử kéo từ Cognito về (ID thật)
+                        return fetchUserFromCognitoAndCreateLocal(email);
+                    } catch (Exception e) {
+                        // Fallback: không gọi được AWS hoặc chưa có user trên Cognito
+                        log.warn("Cognito lookup failed/not found for {}. Creating PENDING user.", email, e);
+                        return createPendingUser(email);
+                    }
+                });
+    }
+
+    /**
+     * Tạo user tạm với trạng thái PENDING_VERIFICATION.
+     * Dùng khi mời người chưa đăng ký Cognito hoặc lỗi gọi AWS.
+     */
+    private User createPendingUser(String email) {
+        User newUser = new User();
+        newUser.setId(UUID.randomUUID().toString()); // ID tạm thời
+        newUser.setEmail(email);
+        String displayName = email != null ? email.split("@")[0] : "User";
+        newUser.setDisplayName(displayName);
+        newUser.setAvatarUrl(createDefaultAvatarUrl(displayName));
+        newUser.setStatus(User.UserStatus.PENDING_VERIFICATION);
+        newUser.setSettings(new User.UserSettings());
+        // cognitoUsername để null (chưa có)
+        return userRepository.save(newUser);
+    }
+
+    /**
+     * Kéo thông tin user từ Cognito theo email và lưu local với ID thật.
+     */
+    private User fetchUserFromCognitoAndCreateLocal(String email) {
+        ListUsersRequest request = ListUsersRequest.builder()
+                .userPoolId(userPoolId)
+                .filter("email = \"" + email + "\"")
+                .limit(1)
+                .build();
+
+        ListUsersResponse response = cognitoClient.listUsers(request);
+
+        if (response.users().isEmpty()) {
+            throw new ResourceNotFoundException("User not found in Cognito");
+        }
+
+        UserType cognitoUser = response.users().get(0);
+
+        // ✅ LẤY sub TỪ attributes
+        String realUuid = null;
+        String displayName = email != null ? email.split("@")[0] : "User";
+
+        for (AttributeType attr : cognitoUser.attributes()) {
+            switch (attr.name()) {
+                case "sub" -> realUuid = attr.value();
+                case "name" -> displayName = attr.value();
+            }
+        }
+
+        if (realUuid == null) {
+            throw new IllegalStateException("Cognito user is missing 'sub' attribute");
+        }
+
+        log.info("Syncing user from Cognito to local DB - Email: {}, UUID(sub): {}", email, realUuid);
+
+        User newUser = new User();
+        newUser.setId(realUuid);                    // 👈 ID = sub
+        newUser.setEmail(email);
+        newUser.setDisplayName(displayName);
+        newUser.setAvatarUrl(createDefaultAvatarUrl(displayName));
+        newUser.setCognitoUsername(cognitoUser.username()); // 👈 username vẫn lưu riêng
+        newUser.setStatus(User.UserStatus.ACTIVE);
+        newUser.setSettings(new User.UserSettings());
+
+        return userRepository.save(newUser);
+    }
+
+    // ===================================================================
+    // SMART SYNC & MERGE KHI LOGIN QUA JWT
+    // ===================================================================
+
+    /**
+     * Logic Đồng bộ khi Login (Smart Sync & Merge):
+     * - Nếu đã có user với ID thật → update thông tin.
+     * - Nếu chưa có nhưng tồn tại user tạm theo email → merge:
+     *   + Chuyển mọi Collaboration từ ID tạm sang ID thật.
+     *   + Xóa user tạm, tạo user thật.
+     * - Nếu hoàn toàn mới → tạo user mới.
+     */
+    @Transactional
+    public User syncUserFromJwt(Jwt jwt) {
+        String realUserId = jwt.getSubject(); // UUID từ Cognito (chân lý)
+        if (realUserId == null) {
+            throw new IllegalArgumentException("JWT 'sub' claim is missing.");
+        }
+
+        String email = jwt.getClaimAsString("email");
+        String name = jwt.getClaimAsString("name");
+        String username = jwt.getClaimAsString("username");
+        String picture = jwt.getClaimAsString("picture");
+
+        String displayName = Optional.ofNullable(name)
+                .orElseGet(() -> Optional.ofNullable(username)
+                        .orElseGet(() -> Optional.ofNullable(email)
+                                .map(e -> e.split("@")[0])
+                                .orElse("User")));
+
+        // 1. Tìm xem user đã tồn tại bằng ID thật chưa
+        Optional<User> existingUserById = userRepository.findById(realUserId);
+        if (existingUserById.isPresent()) {
+            User user = existingUserById.get();
+            boolean changed = false;
+
+            if (email != null && !email.equals(user.getEmail())) {
+                user.setEmail(email);
+                changed = true;
+            }
+            if (!displayName.equals(user.getDisplayName())) {
+                user.setDisplayName(displayName);
+                changed = true;
+            }
+            if (picture != null && !picture.equals(user.getAvatarUrl())) {
+                user.setAvatarUrl(picture);
+                changed = true;
+            }
+            if (username != null && !username.equals(user.getCognitoUsername())) {
+                user.setCognitoUsername(username);
+                changed = true;
+            }
+            if (user.getStatus() == null || user.getStatus() == User.UserStatus.PENDING_VERIFICATION) {
+                user.setStatus(User.UserStatus.ACTIVE);
+                changed = true;
+            }
+
+            return changed ? userRepository.save(user) : user;
+        }
+
+        // 2. Nếu chưa có ID thật, kiểm tra xem có Email trùng không (Do được mời trước đó)
+        if (email != null) {
+            Optional<User> existingUserByEmail = userRepository.findByEmail(email);
+            if (existingUserByEmail.isPresent()) {
+                // == PHÁT HIỆN USER TẠM / USER ĐƯỢC MỜI ==
+                User pendingUser = existingUserByEmail.get();
+                String tempId = pendingUser.getId();
+
+                log.info("Merging PENDING user [{}] into REAL user [{}]", tempId, realUserId);
+
+                // A. Migrate quyền (Collaborations) từ ID tạm -> ID thật
+                List<Collaboration> pendingCollabs = collaborationRepository.findByUserId(tempId);
+                for (Collaboration col : pendingCollabs) {
+                    col.setUserId(realUserId);
+                }
+                collaborationRepository.saveAll(pendingCollabs);
+
+                // B. Xóa user tạm
+                userRepository.deleteById(tempId);
+
+                // C. Tạo User thật (để lần sau login sẽ vào case 1)
+                User realUser = new User();
+                realUser.setId(realUserId);
+                realUser.setEmail(email);
+                realUser.setDisplayName(displayName);
+                realUser.setAvatarUrl(picture != null && !picture.isBlank()
+                        ? picture
+                        : createDefaultAvatarUrl(displayName));
+                realUser.setCognitoUsername(username);
+                realUser.setStatus(User.UserStatus.ACTIVE);
+                realUser.setSettings(
+                        pendingUser.getSettings() != null
+                                ? pendingUser.getSettings()
+                                : new User.UserSettings()
+                );
+
+                return userRepository.save(realUser);
+            }
+        }
+
+        // 3. User mới tinh -> Tạo mới
+        log.info("First-time login sync for user ID: {}", realUserId);
+        User newUser = new User();
+        newUser.setId(realUserId);
+        newUser.setEmail(email);
+        newUser.setDisplayName(displayName);
+        newUser.setAvatarUrl(picture != null && !picture.isBlank()
+                ? picture
+                : createDefaultAvatarUrl(displayName));
+        newUser.setCognitoUsername(username);
+        newUser.setStatus(User.UserStatus.ACTIVE);
+        newUser.setSettings(new User.UserSettings());
+
+        return userRepository.save(newUser);
+    }
+
+    // ===================================================================
+    // [MỚI] ADMIN TOOL: SYNC TOÀN BỘ USER TỪ COGNITO VỀ MONGODB
+    // ===================================================================
+
+    /**
+     * Admin tool: quét toàn bộ user trong Cognito User Pool và đồng bộ về MongoDB.
+     * - ID local = sub của Cognito.
+     * - Upsert (tạo mới nếu chưa có, update nếu đã tồn tại).
+     */
+    @Transactional
+    public String syncAllCognitoUsers() {
+        int createdCount = 0;
+        int updatedCount = 0;
+        String paginationToken = null;
+
+        do {
+            // 1. Gọi Cognito lấy danh sách (phân trang)
+            ListUsersRequest.Builder requestBuilder = ListUsersRequest.builder()
+                    .userPoolId(userPoolId)
+                    .limit(60); // Max limit của AWS
+
+            if (paginationToken != null) {
+                requestBuilder.paginationToken(paginationToken);
+            }
+
+            ListUsersResponse response = cognitoClient.listUsers(requestBuilder.build());
+            paginationToken = response.paginationToken();
+
+            // 2. Duyệt qua từng user và lưu vào DB
+            for (UserType cognitoUser : response.users()) {
+                try {
+                    String sub = null;
+                    String email = null;
+                    String name = "User";
+
+                    // Trích xuất attributes
+                    for (AttributeType attr : cognitoUser.attributes()) {
+                        switch (attr.name()) {
+                            case "sub" -> sub = attr.value();
+                            case "email" -> email = attr.value();
+                            case "name" -> name = attr.value();
+                            // Fallback nếu không có name
+                            case "given_name" -> name = attr.value();
+                        }
+                    }
+
+                    if (sub == null) continue; // Bỏ qua nếu user lỗi không có sub
+
+                    // 3. Upsert vào MongoDB
+                    Optional<User> existingUser = userRepository.findById(sub);
+
+                    if (existingUser.isPresent()) {
+                        // Update nếu thông tin thay đổi
+                        User u = existingUser.get();
+                        boolean changed = false;
+
+                        if (email != null && !email.equals(u.getEmail())) {
+                            u.setEmail(email);
+                            changed = true;
+                        }
+                        if (!name.equals(u.getDisplayName())) {
+                            u.setDisplayName(name);
+                            changed = true;
+                        }
+                        if (u.getCognitoUsername() == null) {
+                            u.setCognitoUsername(cognitoUser.username());
+                            changed = true;
+                        }
+
+                        if (changed) {
+                            userRepository.save(u);
+                            updatedCount++;
+                        }
+                    } else {
+                        // Create mới
+                        User newUser = new User();
+                        newUser.setId(sub); // QUAN TRỌNG: ID phải khớp sub của Cognito
+                        newUser.setEmail(email);
+                        newUser.setDisplayName(name);
+                        newUser.setCognitoUsername(cognitoUser.username());
+                        newUser.setAvatarUrl(createDefaultAvatarUrl(name));
+                        newUser.setStatus(User.UserStatus.ACTIVE);
+                        newUser.setSettings(new User.UserSettings());
+
+                        userRepository.save(newUser);
+                        createdCount++;
+                    }
+
+                } catch (Exception e) {
+                    log.error("Error syncing user {}", cognitoUser.username(), e);
+                }
+            }
+
+        } while (paginationToken != null); // Lặp cho đến khi hết trang
+
+        log.info("Sync complete. Created: {}, Updated: {}", createdCount, updatedCount);
+        return String.format("Sync complete. Created: %d, Updated: %d users.", createdCount, updatedCount);
+    }
+
+    // ===================================================================
+    // CÁC HÀM CŨ - PASSWORD, PROFILE, SETTINGS
+    // ===================================================================
+
+    public void changeCurrentUserPassword(PasswordChangeRequest request) {
+        String accessToken = authUtils.getCurrentJwt()
+                .map(Jwt::getTokenValue)
+                .orElseThrow(() -> new IllegalStateException("Access token not found in SecurityContext"));
+
+        ChangePasswordRequest cognitoRequest = ChangePasswordRequest.builder()
+                .accessToken(accessToken)
+                .previousPassword(request.oldPassword())
+                .proposedPassword(request.newPassword())
+                .build();
+
+        try {
+            cognitoClient.changePassword(cognitoRequest);
+            log.info("Password changed successfully");
+        } catch (CognitoIdentityProviderException e) {
+            log.warn("Failed to change password: {}", e.awsErrorDetails().errorMessage());
+            throw e;
+        }
+    }
+
+    /**
+     * Lấy profile user hiện tại – luôn gọi syncUserFromJwt để DB luôn nhất quán.
+     */
+    public UserProfileDto getCurrentUserProfile() {
+        Jwt jwt = authUtils.getCurrentJwt()
+                .orElseThrow(() -> new IllegalStateException("JWT token not found"));
+        User user = syncUserFromJwt(jwt);
+        return mapToProfileDto(user);
+    }
+
+    @Transactional
+    public UserProfileDto updateCurrentUserProfile(UserProfileDto profileUpdate) {
+        String userId = authUtils.getRequiredCurrentUserId();
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new ResourceNotFoundException("User", "id", userId));
+
+        if (user.getStatus() == User.UserStatus.GUEST && profileUpdate.email() != null) {
+            throw new AccessDeniedException("Guest users cannot change their email.");
+        }
+
+        boolean updated = false;
+
+        if (profileUpdate.displayName() != null
+                && !profileUpdate.displayName().equals(user.getDisplayName())) {
+            user.setDisplayName(profileUpdate.displayName());
+            updated = true;
+        }
+        if (profileUpdate.avatarUrl() != null
+                && !profileUpdate.avatarUrl().equals(user.getAvatarUrl())) {
+            user.setAvatarUrl(profileUpdate.avatarUrl());
+            updated = true;
+        }
+
+        if (updated) {
+            user = userRepository.save(user);
+            log.info("Profile updated for user {}", userId);
+        }
+
+        return mapToProfileDto(user);
+    }
+
+    @Transactional(readOnly = true)
+    public UserSettingsDto getCurrentUserSettings() {
+        String userId = authUtils.getRequiredCurrentUserId();
+        User user = findUserById(userId);
+        return mapToSettingsDto(user.getSettings());
+    }
+
+    @Transactional
+    public UserSettingsDto updateUserSettings(UserSettingsDto settingsUpdate) {
+        String userId = authUtils.getRequiredCurrentUserId();
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new ResourceNotFoundException("User", "id", userId));
+
+        User.UserSettings s = user.getSettings() != null
+                ? user.getSettings()
+                : new User.UserSettings();
+
+        boolean updated = false;
+
+        if (settingsUpdate.defaultEditorThemeId() != null
+                && !settingsUpdate.defaultEditorThemeId().equals(s.getDefaultEditorThemeId())) {
+            s.setDefaultEditorThemeId(settingsUpdate.defaultEditorThemeId());
+            updated = true;
+        }
+        if (settingsUpdate.language() != null
+                && !settingsUpdate.language().equals(s.getLanguage())) {
+            s.setLanguage(settingsUpdate.language());
+            updated = true;
+        }
+        if (settingsUpdate.colorMode() != null
+                && !settingsUpdate.colorMode().equals(s.getColorMode())) {
+            s.setColorMode(settingsUpdate.colorMode());
+            updated = true;
+        }
+        if (settingsUpdate.preferredLayout() != null
+                && !settingsUpdate.preferredLayout().equals(s.getPreferredLayout())) {
+            s.setPreferredLayout(settingsUpdate.preferredLayout());
+            updated = true;
+        }
+
+        if (updated) {
+            user.setSettings(s);
+            user = userRepository.save(user);
+            log.info("Settings updated for user {}", userId);
+        }
+
+        return mapToSettingsDto(s);
+    }
+
+    public User findUserById(String userId) {
+        return userRepository.findById(userId)
+                .orElseThrow(() -> new ResourceNotFoundException("User", "id", userId));
+    }
+
+    // ===================================================================
+    // MAPPER & HELPER
+    // ===================================================================
+
+    private UserProfileDto mapToProfileDto(User user) {
+        return new UserProfileDto(
+                user.getId(),
+                user.getEmail(),
+                user.getDisplayName(),
+                user.getAvatarUrl()
+        );
+    }
+
+    private UserSettingsDto mapToSettingsDto(User.UserSettings settings) {
+        User.UserSettings s = settings != null ? settings : new User.UserSettings();
+        return new UserSettingsDto(
+                s.getDefaultEditorThemeId(),
+                s.getLanguage(),
+                s.getColorMode(),
+                s.getPreferredLayout()
+        );
+    }
+
+    private String createDefaultAvatarUrl(String displayName) {
+        try {
+            String encoded = URLEncoder.encode(displayName, StandardCharsets.UTF_8);
+            return "https://ui-avatars.com/api/?name=" + encoded;
+        } catch (Exception e) {
+            return "https://ui-avatars.com/api/?name=User";
+        }
+    }
+}
+
+==== ./main/java/com/example/mindmap/features/user/User.java ====
+package com.example.mindmap.features.user;
+
+import com.example.mindmap.core.model.Auditable; // [UPDATE] Import Auditable
+import lombok.Data;
+import lombok.EqualsAndHashCode; // [UPDATE] Import
+import lombok.NoArgsConstructor;
+import org.springframework.data.annotation.Id;
+import org.springframework.data.mongodb.core.index.Indexed;
+import org.springframework.data.mongodb.core.mapping.Document;
+
+/**
+ * User document được lưu trong collection "users" của MongoDB.
+ * Đại diện một tài khoản người dùng (bao gồm Guest user và Cognito user).
+ * [FIX] Kế thừa Auditable để tự động hóa createdAt/updatedAt
+ */
+@Data
+@NoArgsConstructor
+@Document("users")
+@EqualsAndHashCode(callSuper = false) // [UPDATE] Thêm vào
+public class User extends Auditable { // [UPDATE] Kế thừa Auditable
+
+    /**
+     * ID người dùng.
+     * - Nếu là user đăng nhập qua Cognito: Cognito Sub ID.
+     * - Nếu là user guest: tự sinh UUID.
+     */
+    @Id
+    private String id;
+
+    /**
+     * Email của người dùng.
+     * @Indexed(unique = true, sparse = true):
+     *  - unique: đảm bảo email không bị duplicate giữa các user thật.
+     *  - sparse: cho phép các user không có email (Guest): không bị lỗi duplicate.
+     */
+    @Indexed(unique = true, sparse = true)
+    private String email;
+
+    /**
+     * Tên hiển thị của user trong hệ thống.
+     * Dùng để show avatar/name trên UI.
+     */
+    @Indexed
+    private String displayName;
+
+    /**
+     * URL đến avatar của user (lưu trên S3 hoặc external storage).
+     */
+    private String avatarUrl;
+
+    /**
+     * Username do Cognito quản lý, không phải email.
+     * Dùng khi cần kết nối Cognito API.
+     */
+    private String cognitoUsername;
+
+    /**
+     * Trạng thái của user (ACTIVE / INACTIVE / PENDING_VERIFICATION / GUEST).
+     * Mặc định ACTIVE.
+     */
+    private UserStatus status = UserStatus.ACTIVE;
+
+    /**
+     * Settings cá nhân của user (ngôn ngữ, theme sáng/tối).
+     */
+    private UserSettings settings = new UserSettings();
+
+    // [UPDATE] Xóa 2 trường createdAt và updatedAt (đã được Auditable quản lý)
+
+    /**
+     * Sub-object chứa cấu hình cá nhân hóa của user.
+     */
+    @Data
+    public static class UserSettings {
+
+        /**
+         * Theme editor mặc định (nếu user đang dùng editor Mindmap hoặc Markdown).
+         * Ví dụ: "monokai", "github-dark", "solarized".
+         */
+        private String defaultEditorThemeId;
+
+        /**
+         * Ngôn ngữ giao diện UI của user.
+         * Mặc định tiếng Việt.
+         */
+        private String language = "vi"; // [FIX] Cập nhật default theo yêu cầu
+
+        /**
+         * Theme sáng tối của giao diện mindmap / dashboard.
+         * Giá trị hợp lệ:
+         * - "light": giao diện sáng
+         * - "dark": giao diện tối
+         * - "system": tự theo theme của OS
+         */
+        private String colorMode = "light";
+
+        /**
+         * [FIX] Gợi ý layout mặc định.
+         * "FREEFORM" | "TREE" | "HORIZONTAL" | "RADIAL"
+         */
+        private String preferredLayout = "FREEFORM";
+    }
+
+    /**
+     * Enum phân loại trạng thái tài khoản user.
+     */
+    public enum UserStatus {
+        ACTIVE,                // User hoạt động
+        INACTIVE,              // Không sử dụng (tạm khóa)
+        PENDING_VERIFICATION,  // Đã đăng ký nhưng chưa xác thực email
+        GUEST                  // Không yêu cầu email / Cognito
+    }
+}
+==== ./main/java/com/example/mindmap/features/user/UserRepository.java ====
+// src/main/java/com/example/mindmap/features/user/UserRepository.java
+package com.example.mindmap.features.user;
+
+import java.util.Optional;
+
+import org.springframework.data.mongodb.repository.MongoRepository;
+
+public interface UserRepository extends MongoRepository<User, String> {
+    Optional<User> findByEmail(String email);
+}
+==== ./main/java/com/example/mindmap/features/user/UserController.java ====
+package com.example.mindmap.features.user;
+
+import com.example.mindmap.features.user.dto.PasswordChangeRequest;
+import com.example.mindmap.features.user.dto.UserProfileDto;
+import com.example.mindmap.features.user.dto.UserSettingsDto;
+import jakarta.validation.Valid;
+import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.web.bind.annotation.*;
+
+@RestController
+@RequestMapping("/api/users")
+public class UserController {
+
+    private final UserService userService;
+
+    public UserController(UserService userService) {
+        this.userService = userService;
+    }
+
+    // ===================================================================
+    // PROFILE
+    // ===================================================================
+
+    // Get current logged-in user's profile
+    @GetMapping("/me")
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<UserProfileDto> getMyProfile() {
+        return ResponseEntity.ok(userService.getCurrentUserProfile());
+    }
+
+    // Update current logged-in user's profile (e.g., displayName, avatarUrl)
+    @PutMapping("/me")
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<UserProfileDto> updateMyProfile(
+            @Valid @RequestBody UserProfileDto profileUpdate
+    ) {
+        return ResponseEntity.ok(userService.updateCurrentUserProfile(profileUpdate));
+    }
+
+    // ===================================================================
+    // PASSWORD
+    // ===================================================================
+
+    /**
+     * Endpoint #15: Thay đổi mật khẩu của user hiện tại.
+     * Chỉ áp dụng cho user Cognito, không áp dụng cho GUEST.
+     */
+    @PutMapping("/me/password")
+    @PreAuthorize("isAuthenticated() and !hasAuthority('SCOPE_GUEST')")
+    public ResponseEntity<Void> changeMyPassword(
+            @Valid @RequestBody PasswordChangeRequest request
+    ) {
+        userService.changeCurrentUserPassword(request);
+        return ResponseEntity.ok().build();
+    }
+
+    // ===================================================================
+    // SETTINGS
+    // ===================================================================
+
+    @GetMapping("/me/settings")
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<UserSettingsDto> getMySettings() {
+        return ResponseEntity.ok(userService.getCurrentUserSettings());
+    }
+
+    @PutMapping("/me/settings")
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<UserSettingsDto> updateMySettings(
+            @Valid @RequestBody UserSettingsDto settingsUpdate
+    ) {
+        return ResponseEntity.ok(userService.updateUserSettings(settingsUpdate));
+    }
+
+    // ===================================================================
+    // ADMIN / DEV TOOLS
+    // ===================================================================
+
+    /**
+     * [MỚI] Endpoint dành cho Admin/Dev để đồng bộ dữ liệu.
+     * Tạm thời mở quyền isAuthenticated() để bạn dễ gọi.
+     * Sau này nên đổi thành hasRole('ADMIN').
+     */
+    @PostMapping("/sync-cognito")
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<String> syncCognitoUsers() {
+        String result = userService.syncAllCognitoUsers();
+        return ResponseEntity.ok(result);
+    }
+}
+
+==== ./main/java/com/example/mindmap/features/mindmap/MindmapController.java ====
+// src/main/java/com/example/mindmap/features/mindmap/MindmapController.java
+package com.example.mindmap.features.mindmap;
+
+import java.util.List;
+
+import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
+
+import com.example.mindmap.features.mindmap.dto.MindmapCreateRequest;
+import com.example.mindmap.features.mindmap.dto.MindmapDetailResponse;
+import com.example.mindmap.features.mindmap.dto.MindmapSummaryResponse;
+import com.example.mindmap.features.mindmap.dto.MindmapSyncRequest;
+import com.example.mindmap.features.mindmap.dto.MindmapUpdateRequest; // [FIX] Import
+
+import jakarta.validation.Valid;
+
+/**
+ * REST Controller quản lý các Mindmap.
+ * Bao gồm CRUD cơ bản, nhân bản và xuất mindmap dưới dạng text.
+ */
+@RestController
+@RequestMapping("/api/mindmaps")
+public class MindmapController {
+
+    private final MindmapService mindmapService;
+
+    public MindmapController(MindmapService mindmapService) {
+        this.mindmapService = mindmapService;
+    }
+
+    /**
+     * Lấy danh sách mindmap của user hiện tại.
+     * Hỗ trợ tìm kiếm qua query param "search".
+     */
+    @GetMapping
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<List<MindmapSummaryResponse>> listMindmapsForCurrentUser(
+            @RequestParam(required = false) String search
+    ) {
+        List<MindmapSummaryResponse> mindmaps = mindmapService.listForCurrentUser(search);
+        return ResponseEntity.ok(mindmaps);
+    }
+
+    /**
+     * [FIX] Tạo mới một mindmap.
+     * Đổi DTO từ MindmapCreateRequest -> MindmapUpdateRequest để nhận 'content'.
+     */
+    @PostMapping
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<MindmapDetailResponse> createMindmap(
+            @Valid @RequestBody MindmapUpdateRequest request // <-- FIX LỖI
+    ) {
+        MindmapDetailResponse createdMindmap = mindmapService.createMindmap(request);
+        return new ResponseEntity<>(createdMindmap, HttpStatus.CREATED);
+    }
+
+    /**
+     * Lấy thông tin chi tiết một mindmap theo id.
+     */
+    @GetMapping("/{id}")
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<MindmapDetailResponse> getMindmapById(@PathVariable String id) {
+        MindmapDetailResponse mindmap = mindmapService.getMindmapForCurrentUser(id);
+        return ResponseEntity.ok(mindmap);
+    }
+
+    /**
+     * Cập nhật một mindmap theo id.
+     */
+    @PutMapping("/{id}")
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<MindmapDetailResponse> updateMindmap(
+            @PathVariable String id,
+            @Valid @RequestBody MindmapUpdateRequest request
+    ) {
+        MindmapDetailResponse updatedMindmap = mindmapService.updateMindmap(id, request);
+        return ResponseEntity.ok(updatedMindmap);
+    }
+
+    /**
+     * Xóa một mindmap theo id.
+     */
+    @DeleteMapping("/{id}")
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<Void> deleteMindmap(@PathVariable String id) {
+        mindmapService.deleteMindmap(id);
+        return ResponseEntity.noContent().build();
+    }
+
+    /**
+     * Nhân bản một mindmap.
+     * Owner của bản sao là user hiện tại.
+     */
+    @PostMapping("/{id}/duplicate")
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<MindmapDetailResponse> duplicateMindmap(@PathVariable String id) {
+        MindmapDetailResponse duplicatedMindmap = mindmapService.duplicateMindmap(id);
+        return new ResponseEntity<>(duplicatedMindmap, HttpStatus.CREATED);
+    }
+
+    /**
+     * Xuất mindmap dưới dạng plain text.
+     */
+    @GetMapping(value = "/{id}/export/text", produces = MediaType.TEXT_PLAIN_VALUE)
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<String> exportMindmapAsText(@PathVariable String id) {
+        String text = mindmapService.exportMindmapAsText(id);
+        return ResponseEntity.ok(text);
+    }
+    /**
+     * [MỚI] Endpoint đồng bộ (sync) mindmap của Guest
+     * khi họ đăng nhập.
+     */
+    @PostMapping("/sync")
+    @PreAuthorize("isAuthenticated() and !hasAuthority('SCOPE_GUEST')") // Chỉ user đã đăng nhập (không phải Guest)
+    public ResponseEntity<List<MindmapSummaryResponse>> syncGuestMindmaps(
+            @Valid @RequestBody List<MindmapSyncRequest> requestList
+    ) {
+        List<MindmapSummaryResponse> syncedMindmaps = mindmapService.syncGuestMindmaps(requestList);
+        // Trả về 201 Created và danh sách tóm tắt các mindmap đã được tạo
+        return new ResponseEntity<>(syncedMindmaps, HttpStatus.CREATED);
+    }
+
+    // --- Các Endpoint cho Giai đoạn 3 (Embed/SaaS) sẽ được triển khai sau ---
+}
+==== ./main/java/com/example/mindmap/features/mindmap/dto/MindmapSummaryResponse.java ====
+// src/main/java/com/example/mindmap/features/mindmap/dto/MindmapSummaryResponse.java
+package com.example.mindmap.features.mindmap.dto;
+
+import java.time.Instant;
+import java.util.List;
+
+import com.example.mindmap.features.mindmap.Mindmap;
+
+public record MindmapSummaryResponse(
+        String id,
+        String name,
+        String ownerId,
+        Instant updatedAt,
+        List<String> tags,
+        Mindmap.AccessSettings accessSettings
+) {}
+==== ./main/java/com/example/mindmap/features/mindmap/dto/MindmapSyncRequest.java ====
+package com.example.mindmap.features.mindmap.dto;
+
+import com.example.mindmap.features.mindmap.content.MindmapContent;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
+import java.time.Instant;
+
+/**
+ * DTO (Data Transfer Object) dùng để nhận dữ liệu
+ * khi người dùng Guest đồng bộ (sync) mindmap lên server.
+ *
+ * Chứa các trường mà FE (dataMapper.ts) gửi lên.
+ */
+public record MindmapSyncRequest(
+        @NotBlank
+        String name,
+
+        @NotNull
+        MindmapContent content,
+
+        // Chúng ta nhận 'createdAt' (String ISO) từ guest
+        // để giữ lại ngày tạo gốc
+        String createdAt
+) {}
+==== ./main/java/com/example/mindmap/features/mindmap/dto/MindmapDetailResponse.java ====
+// src/main/java/com/example/mindmap/features/mindmap/dto/MindmapDetailResponse.java
+package com.example.mindmap.features.mindmap.dto;
+
+import com.example.mindmap.features.collaboration.dto.CollaboratorResponse;
+import com.example.mindmap.features.mindmap.Mindmap;
+import com.example.mindmap.features.mindmap.content.MindmapContent;
+import java.time.Instant;
+import java.util.List;
+
+// SỬA LỖI (Vấn đề #3): Thêm 4 trường còn thiếu
+public record MindmapDetailResponse(
+        String id,
+        String name,
+        String ownerId,
+        MindmapContent content,
+        Instant updatedAt,
+        List<String> tags,
+        Mindmap.AccessSettings accessSettings,
+        List<CollaboratorResponse> collaborators,
+
+        // 4 trường được thêm vào:
+        String workspaceId,
+        String lastEditedBy,
+        Instant createdAt,
+        Long version
+) {}
+
+==== ./main/java/com/example/mindmap/features/mindmap/dto/MindmapCreateRequest.java ====
+// src/main/java/com/example/mindmap/features/mindmap/dto/MindmapCreateRequest.java
+package com.example.mindmap.features.mindmap.dto;
+
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Size;
+
+public record MindmapCreateRequest(
+        @NotBlank @Size(max = 200)
+        String name
+) {}
+==== ./main/java/com/example/mindmap/features/mindmap/dto/MindmapUpdateRequest.java ====
+// src/main/java/com/example/mindmap/features/mindmap/dto/MindmapUpdateRequest.java
+package com.example.mindmap.features.mindmap.dto;
+
+import com.example.mindmap.features.mindmap.content.MindmapContent;
+
+import jakarta.validation.constraints.Size;
+
+public record MindmapUpdateRequest(
+        @Size(max = 200)
+        String name,
+        MindmapContent content
+) {}
+==== ./main/java/com/example/mindmap/features/mindmap/MindmapRepository.java ====
+// src/main/java/com/example/mindmap/features/mindmap/MindmapRepository.java
+package com.example.mindmap.features.mindmap;
+
+import java.util.List;
+
+import org.springframework.data.mongodb.repository.MongoRepository;
+
+public interface MindmapRepository extends MongoRepository<Mindmap, String> {
+    List<Mindmap> findByOwnerIdOrderByUpdatedAtDesc(String ownerId);
+    List<Mindmap> findByIdInOrderByUpdatedAtDesc(List<String> ids);
+}
+==== ./main/java/com/example/mindmap/features/mindmap/MindmapService.java ====
+package com.example.mindmap.features.mindmap;
+
+import com.example.mindmap.core.auth.AuthUtils;
+import com.example.mindmap.core.exception.AccessDeniedException;
+import com.example.mindmap.core.exception.ResourceNotFoundException;
+import com.example.mindmap.features.collaboration.Collaboration;
+import com.example.mindmap.features.collaboration.CollaborationRepository;
+import com.example.mindmap.features.collaboration.Permission;
+import com.example.mindmap.features.collaboration.dto.CollaboratorResponse;
+import com.example.mindmap.features.mindmap.content.EdgeData;
+import com.example.mindmap.features.mindmap.content.MindmapContent;
+import com.example.mindmap.features.mindmap.content.NodeData;
+import com.example.mindmap.features.mindmap.content.NodeStyle;
+import com.example.mindmap.features.mindmap.dto.MindmapDetailResponse;
+import com.example.mindmap.features.mindmap.dto.MindmapSummaryResponse;
+import com.example.mindmap.features.mindmap.dto.MindmapSyncRequest;
+import com.example.mindmap.features.mindmap.dto.MindmapUpdateRequest;
+import com.example.mindmap.features.user.User;
+import com.example.mindmap.features.user.UserRepository;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.StringUtils;
+
+import java.time.Instant;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.function.Function;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
+
+@Service
+public class MindmapService {
+
+    private static final Logger log = LoggerFactory.getLogger(MindmapService.class);
+
+    private final MindmapRepository mindmapRepository;
+    private final CollaborationRepository collaborationRepository;
+    private final UserRepository userRepository;
+    private final AuthUtils authUtils;
+    
+    private static final String ROOT_NODE_ID = "root";
+
+    public MindmapService(MindmapRepository mindmapRepository, CollaborationRepository collaborationRepository, UserRepository userRepository, AuthUtils authUtils) {
+        this.mindmapRepository = mindmapRepository;
+        this.collaborationRepository = collaborationRepository;
+        this.userRepository = userRepository;
+        this.authUtils = authUtils;
+    }
+
+    // ===================================================================
+    // MAIN API METHODS
+    // ===================================================================
+
+    @Transactional(readOnly = true)
+    public MindmapDetailResponse getMindmapForCurrentUser(String id) {
+        String userId = authUtils.getRequiredCurrentUserId();
+        Mindmap mindmap = findMindmapById(id);
+        checkViewPermission(userId, mindmap);
+        return toDetailResponse(mindmap);
+    }
+
+    /**
+     * Kiểm tra quyền xem (VIEW):
+     * 1. Là Owner
+     * 2. Mindmap Public (chế độ VIEW)
+     * 3. Là Collaborator ĐÃ ĐƯỢC CHẤP NHẬN (ACTIVE)
+     */
+    public void checkViewPermission(String userId, Mindmap mindmap) {
+        if (mindmap.getOwnerId().equals(userId)) return;
+        
+        if (mindmap.getAccessSettings().isPublic() && mindmap.getAccessSettings().getPublicAccessLevel() == Mindmap.PublicAccessLevel.VIEW) return;
+        
+        // [QUAN TRỌNG] Phải check cả status ACCEPTED
+        boolean hasActiveCollab = collaborationRepository.existsByMindmapIdAndUserIdAndStatus(
+                mindmap.getId(), 
+                userId, 
+                Collaboration.InviteStatus.ACCEPTED
+        );
+        
+        if (hasActiveCollab) return;
+
+        throw new AccessDeniedException("mindmap", "view");
+    }
+
+    /**
+     * Kiểm tra quyền sửa (EDIT):
+     * 1. Là Owner
+     * 2. Là Collaborator ĐÃ ĐƯỢC CHẤP NHẬN (ACTIVE) + Quyền EDITOR
+     */
+    public void checkEditPermission(String userId, Mindmap mindmap) {
+        if (mindmap.getOwnerId().equals(userId)) return;
+        
+        collaborationRepository.findByMindmapIdAndUserId(mindmap.getId(), userId)
+                .filter(c -> c.getStatus() == Collaboration.InviteStatus.ACCEPTED) // Phải Active
+                .filter(c -> c.getPermission() == Permission.EDITOR)               // Phải là Editor
+                .orElseThrow(() -> new AccessDeniedException("mindmap", "edit"));
+    }
+
+    // ===================================================================
+    // CRUD OPERATIONS
+    // ===================================================================
+
+    @Transactional
+    public MindmapDetailResponse createMindmap(MindmapUpdateRequest request) {
+        String userId = authUtils.getRequiredCurrentUserId();
+        Mindmap mindmap = new Mindmap();
+        mindmap.setName(request.name());
+        mindmap.setOwnerId(userId);
+        mindmap.setLastEditedBy(userId);
+
+        if (request.content() != null && request.content().getNodes() != null && !request.content().getNodes().isEmpty()) {
+            mindmap.setContent(request.content());
+        } else {
+            mindmap.setContent(createDefaultContent());
+        }
+
+        Mindmap savedMindmap = mindmapRepository.save(mindmap);
+        return toDetailResponse(savedMindmap);
+    }
+
+    @Transactional
+    public MindmapDetailResponse updateMindmap(String id, MindmapUpdateRequest request) {
+        String userId = authUtils.getRequiredCurrentUserId();
+        Mindmap mindmap = findMindmapById(id);
+        checkEditPermission(userId, mindmap);
+
+        if (request.name() != null && !request.name().isBlank()) {
+            mindmap.setName(request.name().trim());
+        }
+        if (request.content() != null) {
+            mindmap.setContent(request.content());
+        }
+        mindmap.setLastEditedBy(userId);
+        Mindmap updatedMindmap = mindmapRepository.save(mindmap);
+        return toDetailResponse(updatedMindmap);
+    }
+
+    @Transactional
+    public void deleteMindmap(String id) {
+        String userId = authUtils.getRequiredCurrentUserId();
+        Mindmap mindmap = findMindmapById(id);
+        if (!mindmap.getOwnerId().equals(userId)) {
+            throw new AccessDeniedException("mindmap", "delete");
+        }
+        collaborationRepository.deleteByMindmapId(id);
+        mindmapRepository.deleteById(id);
+    }
+
+    @Transactional
+    public MindmapDetailResponse duplicateMindmap(String originalMindmapId) {
+        String currentUserId = authUtils.getRequiredCurrentUserId();
+        Mindmap originalMindmap = findMindmapById(originalMindmapId);
+        checkViewPermission(currentUserId, originalMindmap);
+        
+        Mindmap newMindmap = new Mindmap();
+        newMindmap.setName("Copy of " + originalMindmap.getName());
+        newMindmap.setOwnerId(currentUserId);
+        newMindmap.setLastEditedBy(currentUserId);
+        
+        MindmapContent originalContent = originalMindmap.getContent();
+        if (originalContent != null) {
+            MindmapContent newContent = new MindmapContent();
+            newContent.setLayoutMode(originalContent.getLayoutMode());
+            if (originalContent.getNodes() != null) {
+                List<NodeData> newNodes = originalContent.getNodes().stream()
+                        .map(this::deepCopyNodeData)
+                        .collect(Collectors.toList());
+                newContent.setNodes(newNodes);
+            }
+            if (originalContent.getEdges() != null) {
+                List<EdgeData> newEdges = originalContent.getEdges().stream()
+                        .map(this::deepCopyEdgeData)
+                        .collect(Collectors.toList());
+                newContent.setEdges(newEdges);
+            }
+            newMindmap.setContent(newContent);
+        } else {
+             newMindmap.setContent(createDefaultContent());
+        }
+        
+        Mindmap savedMindmap = mindmapRepository.save(newMindmap);
+        return toDetailResponse(savedMindmap);
+    }
+
+    @Transactional(readOnly = true)
+    public List<MindmapSummaryResponse> listForCurrentUser(String search) {
+        String userId = authUtils.getRequiredCurrentUserId();
+        List<Mindmap> owned = mindmapRepository.findByOwnerIdOrderByUpdatedAtDesc(userId);
+        
+        // Lấy các mindmap được chia sẻ (chỉ tính những cái đã ACCEPTED)
+        List<String> collaboratedMapIds = collaborationRepository.findByUserId(userId).stream()
+                .filter(c -> c.getStatus() == Collaboration.InviteStatus.ACCEPTED) // [FIX] Chỉ hiện map đã active
+                .map(Collaboration::getMindmapId)
+                .collect(Collectors.toList());
+                
+        List<Mindmap> collaborated = mindmapRepository.findByIdInOrderByUpdatedAtDesc(collaboratedMapIds);
+
+        return Stream.concat(owned.stream(), collaborated.stream())
+                .distinct()
+                .filter(mindmap -> !StringUtils.hasText(search) || 
+                        mindmap.getName().toLowerCase().contains(search.toLowerCase()))
+                .map(this::toSummaryResponse)
+                .collect(Collectors.toList());
+    }
+
+    @Transactional(readOnly = true)
+    public String exportMindmapAsText(String id) {
+        String currentUserId = authUtils.getRequiredCurrentUserId();
+        Mindmap mindmap = findMindmapById(id);
+        checkViewPermission(currentUserId, mindmap);
+        
+        MindmapContent content = mindmap.getContent();
+        if (content == null || content.getNodes() == null || content.getNodes().isEmpty()) {
+            return mindmap.getName();
+        }
+        
+        Map<String, List<String>> childrenMap = new HashMap<>();
+        if (content.getEdges() != null) {
+            for (EdgeData edge : content.getEdges()) {
+                childrenMap.computeIfAbsent(edge.getFrom(), k -> new ArrayList<>()).add(edge.getTo());
+            }
+        }
+        
+        Map<String, NodeData> nodesMap = content.getNodes().stream()
+                .collect(Collectors.toMap(NodeData::getId, Function.identity()));
+        
+        if (!nodesMap.containsKey(ROOT_NODE_ID)) {
+             return mindmap.getName() + "\n(Error: Root node not found)";
+        }
+
+        StringBuilder sb = new StringBuilder();
+        sb.append(mindmap.getName()).append("\n");
+        buildTextTreeRecursive(ROOT_NODE_ID, nodesMap, childrenMap, sb, 0);
+        
+        return sb.toString();
+    }
+
+    @Transactional
+    public List<MindmapSummaryResponse> syncGuestMindmaps(List<MindmapSyncRequest> requests) {
+        String currentUserId = authUtils.getRequiredCurrentUserId();
+        List<Mindmap> newMindmaps = new ArrayList<>();
+        
+        for (MindmapSyncRequest request : requests) {
+            Mindmap mindmap = new Mindmap();
+            mindmap.setName(request.name());
+            mindmap.setOwnerId(currentUserId);
+            mindmap.setLastEditedBy(currentUserId);
+            mindmap.setContent(request.content());
+            try {
+                Instant guestCreatedAt = Instant.parse(request.createdAt());
+                mindmap.setCreatedAt(guestCreatedAt);
+            } catch (Exception e) {
+                log.warn("Invalid guest createdAt format '{}'. Defaulting to now.", request.createdAt());
+            }
+            newMindmaps.add(mindmap);
+        }
+        
+        List<Mindmap> savedMindmaps = mindmapRepository.saveAll(newMindmaps);
+        return savedMindmaps.stream()
+                .map(this::toSummaryResponse)
+                .collect(Collectors.toList());
+    }
+
+    // ===================================================================
+    // HELPER METHODS
+    // ===================================================================
+
+    public Mindmap findMindmapById(String id) {
+        return mindmapRepository.findById(id)
+            .orElseThrow(() -> new ResourceNotFoundException("Mindmap", "id", id));
+    }
+
+    private MindmapContent createDefaultContent() {
+        MindmapContent content = new MindmapContent();
+        NodeData root = new NodeData();
+        root.setId(ROOT_NODE_ID);  
+        root.setText("Chủ đề chính");
+        root.setX(0);
+        root.setY(0);
+        content.setNodes(List.of(root));  
+        content.setEdges(Collections.emptyList());
+        content.setLayoutMode("FREEFORM");
+        return content;
+    }
+
+    private MindmapSummaryResponse toSummaryResponse(Mindmap mindmap) {
+        return new MindmapSummaryResponse(mindmap.getId(), mindmap.getName(), mindmap.getOwnerId(), mindmap.getUpdatedAt(), mindmap.getTags(), mindmap.getAccessSettings());
+    }
+
+    private MindmapDetailResponse toDetailResponse(Mindmap mindmap) {
+        // Lấy danh sách collaborator (chỉ ACTIVE mới trả về cho client hiển thị)
+        List<Collaboration> collaborations = collaborationRepository.findByMindmapId(mindmap.getId()).stream()
+                .filter(c -> c.getStatus() == Collaboration.InviteStatus.ACCEPTED) // [FIX] Filter Active
+                .collect(Collectors.toList());
+                
+        List<String> userIds = collaborations.stream().map(Collaboration::getUserId).collect(Collectors.toList());
+        userIds.add(mindmap.getOwnerId());
+        
+        Map<String, User> userMap = userRepository.findAllById(userIds).stream()
+                .collect(Collectors.toMap(User::getId, Function.identity()));
+        
+        User owner = userMap.get(mindmap.getOwnerId());
+        List<CollaboratorResponse> collaboratorResponses = collaborations.stream()
+                .map(c -> {
+                    User user = userMap.get(c.getUserId());
+                    if (user == null) return null;
+                    return new CollaboratorResponse(user.getId(), user.getDisplayName(), user.getAvatarUrl(), c.getPermission());
+                })
+                .filter(java.util.Objects::nonNull)
+                .collect(Collectors.toList());
+        
+        if (owner != null) {
+            collaboratorResponses.add(0, new CollaboratorResponse(owner.getId(), owner.getDisplayName(), owner.getAvatarUrl(), Permission.OWNER));
+        }
+
+        return new MindmapDetailResponse(mindmap.getId(),
+                mindmap.getName(),
+                mindmap.getOwnerId(),
+                mindmap.getContent(),
+                mindmap.getUpdatedAt(),
+                mindmap.getTags(),
+                mindmap.getAccessSettings(),
+                collaboratorResponses,
+                mindmap.getWorkspaceId(),
+                mindmap.getLastEditedBy(),
+                mindmap.getCreatedAt(),
+                mindmap.getVersion()
+        );
+    }
+
+    private void buildTextTreeRecursive(String nodeId, Map<String, NodeData> nodesMap, Map<String, List<String>> childrenMap, StringBuilder sb, int depth) {
+        NodeData node = nodesMap.get(nodeId);
+        if (node == null) return;
+        
+        if (!nodeId.equals(ROOT_NODE_ID)) {
+            sb.append("    ".repeat(depth - 1));
+            sb.append("- ");
+            sb.append(node.getText() != null ? node.getText() : "[Trống]");
+            sb.append("\n");
+        }
+        
+        List<String> childrenIds = childrenMap.getOrDefault(nodeId, Collections.emptyList());
+        int nextDepth = nodeId.equals(ROOT_NODE_ID) ? 1 : depth + 1;
+
+        for (String childId : childrenIds) {
+            buildTextTreeRecursive(childId, nodesMap, childrenMap, sb, nextDepth);
+        }
+    }
+
+    private NodeData deepCopyNodeData(NodeData original) {
+        if (original == null) return null;
+        NodeData copy = new NodeData();
+        copy.setId(original.getId());
+        copy.setText(original.getText());
+        copy.setX(original.getX());
+        copy.setY(original.getY());
+        copy.setParentId(original.getParentId());
+        copy.setCollapsed(original.isCollapsed());
+        copy.setHyperlink(original.getHyperlink());
+        copy.setNotes(original.getNotes());
+        
+        if (original.getStyle() != null) {
+            NodeStyle originalStyle = original.getStyle();
+            NodeStyle newStyle = new NodeStyle();
+            newStyle.setColor(originalStyle.getColor());
+            newStyle.setFont(originalStyle.getFont());
+            newStyle.setIsBold(originalStyle.getIsBold());
+            newStyle.setIsItalic(originalStyle.getIsItalic());
+            newStyle.setTextAlign(originalStyle.getTextAlign());
+            copy.setStyle(newStyle);
+        } else {
+            copy.setStyle(new NodeStyle());
+        }
+        
+        copy.setExternalReference(original.getExternalReference());
+        return copy;
+    }
+    
+    private EdgeData deepCopyEdgeData(EdgeData original) {
+        if (original == null) return null;
+        EdgeData copy = new EdgeData();
+        copy.setFrom(original.getFrom());
+        copy.setTo(original.getTo());
+        return copy;
+    }
+}
+==== ./main/java/com/example/mindmap/features/mindmap/content/MindmapContent.java ====
+package com.example.mindmap.features.mindmap.content;
+
+import java.util.List;
+
+import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonValue;
+import lombok.Data;
+
+/**
+ * MindmapContent là cấu trúc chính chứa toàn bộ nội dung của 1 Mindmap.
+ * - Lưu danh sách Node và Edge để FE render bằng Konva hoặc bất kỳ canvas engine nào.
+ * - Không phụ thuộc MongoDB annotation vì đây là sub-object nằm trong collection mindmaps.
+ */
+@Data
+public class MindmapContent {
+
+    /**
+     * Chế độ layout của Mindmap.
+     * FE sẽ xử lý khác nhau dựa trên layoutMode:
+     * - FREEFORM: Người dùng tự do kéo thả node (giống Miro, Figjam, Excalidraw)
+     * - TREE_RIGHT: Render dạng cây từ trái sang phải (mindmap truyền thống)
+     * - TREE_LEFT: Render dạng cây từ phải sang trái
+     * - ORG_CHART: Sơ đồ tổ chức (cây từ trên xuống dưới)
+     *
+     * Mặc định = "FREEFORM".
+     */
+    private String layoutMode = "FREEFORM";
+
+    /** Danh sách node trong mindmap */
+    private List<NodeData> nodes;
+
+    /** Danh sách các liên kết giữa node với node */
+    private List<EdgeData> edges;
+    
+    private GlobalSettings globalSettings = new GlobalSettings(); 
+
+
+    /** Theme của mindmap (light | dark) */
+    private MindmapTheme theme = MindmapTheme.LIGHT;
+
+    /**
+     * Enum MindmapTheme hỗ trợ deserialize từ string "light"/"dark"
+     */
+    public enum MindmapTheme {
+        LIGHT,
+        DARK;
+
+        @JsonCreator
+        public static MindmapTheme from(String value) {
+            return MindmapTheme.valueOf(value.toUpperCase());
+        }
+
+        @JsonValue
+        public String toValue() {
+            return this.name().toLowerCase();
+        }
+    }
+}
+
+==== ./main/java/com/example/mindmap/features/mindmap/content/NodeStyle.java ====
+// src/main/java/com/example/mindmap/features/mindmap/content/NodeStyle.java
+
+package com.example.mindmap.features.mindmap.content;
+
+import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonFormat;
+import lombok.Data;
+
+@Data
+public class NodeStyle {
+    private String color; // e.g., "#RRGGBB"
+    private String font;  // e.g., "Arial"
+    private Boolean isBold = false;
+    private Boolean isItalic = false;
+    private TextAlign textAlign = TextAlign.CENTER;
+
+    // ✅ CHỈ đặt JsonFormat ở đây, trên ENUM
+    @JsonFormat(shape = JsonFormat.Shape.STRING)
+    public enum TextAlign {
+        LEFT,
+        CENTER,
+        RIGHT,
+        JUSTIFY;
+
+        @JsonCreator
+        public static TextAlign from(String value) {
+            return TextAlign.valueOf(value.toUpperCase());
+        }
+    }
+}
+
+==== ./main/java/com/example/mindmap/features/mindmap/content/EdgeData.java ====
+// src/main/java/com/example/mindmap/features/mindmap/content/EdgeData.java
+package com.example.mindmap.features.mindmap.content;
+
+import lombok.Data;
+
+@Data
+public class EdgeData {
+    private String from;
+    private String to;
+}
+==== ./main/java/com/example/mindmap/features/mindmap/content/NodeData.java ====
+package com.example.mindmap.features.mindmap.content;
+
+import lombok.Data;
+
+/**
+ * NodeData đại diện cho 1 node trong Mindmap.
+ * Chứa tất cả thông tin cần thiết để FE render và BE quản lý logic.
+ *
+ * ✅ Có id để FE nhận diện node (Konva, canvas, drag & drop)
+ * ✅ Hỗ trợ quan hệ cha-con bằng parentId
+ * ✅ Hỗ trợ style riêng trên mỗi node
+ * ✅ Có thể chứa metadata mở rộng như hyperlink, notes, externalReference
+ */
+
+@Data
+public class NodeData {
+
+    /**
+     * ID duy nhất của node.
+     * FE sẽ tự sinh UUID và gửi lên BE trong update request.
+     * Đây là key để BE xác định node khi update / delete.
+     */
+    private String id;
+
+    /**
+     * Nội dung text hiển thị trong node.
+     */
+    private String text;
+
+    /**
+     * Tọa độ node trên canvas (FE xử lý, BE chỉ lưu trữ).
+     */
+    private double x;
+    private double y;
+
+    /**
+     * ID của node cha (nếu null → node root).
+     * FE/BE dựa trên parentId để xây dựng cấu trúc cây.
+     */
+    private String parentId;
+
+    /**
+     * [FIX] Khởi tạo style để không bao giờ bị null.
+     *
+     * Style riêng của node, ví dụ:
+     * - màu nền
+     * - màu chữ
+     * - fontSize
+     * - border radius
+     *
+     * Nếu null → FE kế thừa style theo theme của Mindmap.
+     */
+    private NodeStyle style = new NodeStyle(); // <-- FIX LỖI GỐC RỄ
+
+    /**
+     * FLAG: Node có đang bị thu gọn branch hay không.
+     * FE dùng để ẩn con cháu của node nếu collapsed = true.
+     */
+    private boolean isCollapsed = false;
+
+    /**
+     * Siêu liên kết (optional).
+     * FE click vào node có hyperlink → mở external URL.
+     */
+    private String hyperlink;
+
+    /**
+     * Ghi chú nội dung chi tiết hơn ngoài text ngắn trên node.
+     * Dùng cho các Mindmap có nhiều ghi chú (radial notes).
+     */
+    private String notes;
+
+    /**
+     * Tham chiếu liên kết tới hệ thống khác (Jira, Confluence, SaaS...).
+     */
+    private ExternalReference externalReference;
+
+    /**
+     * Metadata dùng cho liên kết hệ thống ngoài.
+     * Ví dụ: liên kết Jira ticket → TASK-123
+     */
+    @Data
+    public static class ExternalReference {
+        private String provider; // Ex: "jira", "github-repo", "notion"
+        private String id;       // Ex: "TASK-123", "DOC-456"
+        private String url;      // FE dùng url như fallback để mở nhanh
+    }
+}
+==== ./main/java/com/example/mindmap/features/mindmap/content/MindmapTheme.java ====
+// src/main/java/com/example/mindmap/features/mindmap/content/MindmapTheme.java
+package com.example.mindmap.features.mindmap.content;
+
+import lombok.Data;
+
+@Data
+public class MindmapTheme {
+    private String background; // Theme name, e.g., "dark_grid"
+    private String connectionType; // e.g., "curved" or "straight"
+}
+==== ./main/java/com/example/mindmap/features/mindmap/content/GlobalSettings.java ====
+package com.example.mindmap.features.mindmap.content;
+
+import lombok.Data;
+
+@Data
+public class GlobalSettings {
+    private String fontFamily;
+    private Integer branchLineWidth;
+    private Boolean isColoredBranch;
+    private String globalBranchColor;
+    private String backgroundColor;
+    private String activeColorThemeId;
+}
+==== ./main/java/com/example/mindmap/features/mindmap/Mindmap.java ====
+package com.example.mindmap.features.mindmap;
+
+import java.util.List;
+import java.util.ArrayList;
+
+import org.springframework.data.annotation.Id;
+import org.springframework.data.annotation.Version;
+import org.springframework.data.mongodb.core.index.Indexed;
+import org.springframework.data.mongodb.core.mapping.Document;
+
+import com.example.mindmap.core.model.Auditable;
+import com.example.mindmap.features.mindmap.content.MindmapContent;
+
+import jakarta.validation.constraints.NotBlank;
+import lombok.Data;
+import lombok.EqualsAndHashCode;
+
+@Data
+@EqualsAndHashCode(callSuper = false)
+@Document("mindmaps")
+public class Mindmap extends Auditable {
+    @Id
+    private String id;
+
+    @NotBlank
+    private String name;
+
+    @Indexed
+    private String ownerId;
+
+    private MindmapContent content = new MindmapContent();
+
+    private AccessSettings accessSettings = new AccessSettings();
+
+    private String workspaceId;
+
+    @Indexed
+    private List<String> tags = new ArrayList<>();
+
+    private String lastEditedBy;
+
+    @Version
+    private Long version;
+
+    // ==========================================
+    // INNER CLASSES & ENUMS (UPDATED FOR PHASE 3 & 4)
+    // ==========================================
+
+    @Data
+    public static class AccessSettings {
+        private boolean isPublic = false;
+
+        // Level truy cập công khai: DISABLED, VIEW, hoặc EDIT
+        private PublicAccessLevel publicAccessLevel = PublicAccessLevel.DISABLED;
+
+        // Cấu hình hiển thị trong Workspace (Chuẩn bị cho Giai đoạn 4)
+        private WorkspaceVisibility workspaceVisibility = WorkspaceVisibility.PRIVATE;
+    }
+
+    /**
+     * Mức độ truy cập qua Public Link
+     */
+    public enum PublicAccessLevel {
+        DISABLED, // Không public (an toàn nhất để default)
+        VIEW,     // Ai có link cũng xem được
+        EDIT      // Ai có link (và đã login) cũng sửa được
+    }
+
+    /**
+     * Mức độ hiển thị trong Workspace (Team)
+     */
+    public enum WorkspaceVisibility {
+        PRIVATE,        // Chỉ owner và người được mời
+        WORKSPACE_VIEW, // Tất cả thành viên workspace được xem
+        WORKSPACE_EDIT  // Tất cả thành viên workspace được sửa
+    }
+}
