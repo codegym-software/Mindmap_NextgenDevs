@@ -335,9 +335,6 @@ const EditorToolbar: React.FC<EditorToolbarProps> = ({
           
           <div className="w-px h-6 bg-gray-300 mx-2" />
 
-          {/* --- NÚT TÍNH NĂNG MỚI (Chat & Bell) --- */}
-
-          {/* 💬 NÚT CHAT */}
           <button
             type="button"
             onClick={toggleChat}
@@ -356,7 +353,6 @@ const EditorToolbar: React.FC<EditorToolbarProps> = ({
             )}
           </button>
 
-          {/* ✅ NÚT CHUÔNG – chỉ hiện khi là Owner */}
           {isOwner && (
             <button
               type="button"
@@ -381,6 +377,8 @@ const EditorToolbar: React.FC<EditorToolbarProps> = ({
 
           <button onClick={onShare} className="p-2 rounded-md hover:bg-gray-300/50 text-gray-700" title="Chia sẻ"><Share2 size={20} /></button>
           
+          <div className="w-px h-6 bg-gray-300 mx-2" />
+
           <ExportButton 
             nodes={useEditorStore.getState().nodes}
             edges={useEditorStore.getState().edges}
