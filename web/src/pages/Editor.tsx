@@ -86,6 +86,7 @@ const GUEST_BUCKET = 'mm_guest_docs';
 const PADDING_X = 20,
   PADDING_Y = 12;
 const LINE_HEIGHT_MULTIPLIER = 1.3;
+const IMAGE_WIDTH = 200; // Fixed width for images in nodes
 
 const BRANCH_COLORS_PALETTE = [
   '#14B8A6', 
@@ -376,19 +377,28 @@ function calculateNodeBox(node: NodeData, style: NodeData) {
     wrappedLines.length * finalLineHeight + PADDING_Y * 2
   );
 
+  // Với shape underline, h hiện đang lấy theo text; nhưng node thực tế cần đủ chỗ cho ảnh + khoảng cách
+  // Lưu ý: h ở đây là chiều cao "thân" để layout; totalH bổ sung thêm ảnh phía trên.
+
   let imageHeight = 0;
   let imageWidthDisplay = 0;
    
   if (imageUrl) {
-    // Nếu có ảnh, node sẽ rộng ra hoặc ảnh fit theo width của node
-    // Mặc định ảnh sẽ fit width của node (trừ padding)
-    imageWidthDisplay = w - (PADDING_X * 2) - (borderWidth * 2);
-    // Giả sử tỉ lệ 16:9 hoặc lấy tỉ lệ thật nếu đã lưu trong node
-    // Ở đây tạm tính chiều cao ảnh khoảng 2/3 chiều rộng hiển thị cho đẹp nếu chưa load xong
-    // Nếu đã có imageHeight từ store (sau khi load) thì dùng
-    imageHeight = imageWidthDisplay * 0.6; 
+    // [FIX] Cố định kích thước ảnh thay vì phụ thuộc vào node width
+    imageWidthDisplay = IMAGE_WIDTH;
+    
+    // Tính chiều cao dựa trên tỉ lệ ảnh thực
     if (style.imageHeight && style.imageWidth) {
        imageHeight = (style.imageHeight / style.imageWidth) * imageWidthDisplay;
+    } else {
+       // Fallback: Giả sử tỉ lệ 3:2 khi chưa load xong
+       imageHeight = imageWidthDisplay * 0.66;
+    }
+    
+    // Node width phải đủ rộng để chứa ảnh + padding
+    const minWidthForImage = imageWidthDisplay + (PADDING_X * 2) + (borderWidth * 2);
+    if (w < minWidthForImage) {
+      w = minWidthForImage;
     }
   }
 
@@ -396,7 +406,7 @@ function calculateNodeBox(node: NodeData, style: NodeData) {
   // Nếu textHeight đã bao gồm padding, ta chỉ cần cộng thêm ảnh
   let totalH = h;
   if (imageUrl) {
-      totalH = h + imageHeight + 10;
+      totalH = h + imageHeight + 10; // khoảng cách 10px giữa ảnh và text
   }
 
   return { 
@@ -409,20 +419,43 @@ function calculateNodeBox(node: NodeData, style: NodeData) {
   };
 }
 
-// const URLImage = ({ src, x, y, width, height, onImageLoad }: any) => {
-//   const [image] = useImage(src);
-//   
-//   useEffect(() => {
-//     if (image && onImageLoad) {
-//       onImageLoad(image.width, image.height);
-//     }
-//   }, [image, onImageLoad]); 
+const useKonvaImage = (src: string): [HTMLImageElement | null] => {
+  const [image, setImage] = useState<HTMLImageElement | null>(null);
 
-//   if (!image) return null;
-//   return <KonvaImage image={image} x={x} y={y} width={width} height={height} cornerRadius={4} />;
-// };
+  useEffect(() => {
+    if (!src) {
+      setImage(null);
+      return;
+    }
+    const img = new window.Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => setImage(img);
+    img.onerror = () => setImage(null);
+    img.src = src;
+    return () => {
+      img.onload = null;
+      img.onerror = null;
+    };
+  }, [src]);
 
-export default function Editor({ mode = 'edit' }: EditorProps = {}) {
+  return [image];
+};
+
+const URLImage = ({ src, x, y, width, height, onImageLoad }: any) => {
+  const [image] = useKonvaImage(src);
+  
+  
+  React.useEffect(() => {
+    if (image && onImageLoad) {
+      onImageLoad(image.width, image.height);
+    }
+  }, [image, onImageLoad]); 
+
+  if (!image) return null;
+  return <KonvaImage image={image} x={x} y={y} width={width} height={height} cornerRadius={4} />;
+};
+
+export default function Editor({ mode = 'edit' }: EditorProps) {
   const { id } = useParams<{ id?: string }>();
   const navigate = useNavigate();
   const { addToast } = useToast();
@@ -450,8 +483,8 @@ export default function Editor({ mode = 'edit' }: EditorProps = {}) {
     edges,
     setGraph,
     applyUserAction,
-    undo,
-    redo,
+    undo: storeUndo,
+    redo: storeRedo,
     clear: clearHistory,
     globalStructure,
     globalFont,
@@ -476,6 +509,21 @@ export default function Editor({ mode = 'edit' }: EditorProps = {}) {
   const pushHistory = useCallback((newNodes: NodeData[], newEdges: EdgeData[]) => {
     applyUserAction(newNodes, newEdges);
   }, [applyUserAction]);
+
+  // Wrap undo/redo to trigger layout after state change
+  const undo = useCallback(() => {
+    storeUndo();
+    setTimeout(() => {
+      handleLayoutRef.current?.();
+    }, 50);
+  }, [storeUndo]);
+
+  const redo = useCallback(() => {
+    storeRedo();
+    setTimeout(() => {
+      handleLayoutRef.current?.();
+    }, 50);
+  }, [storeRedo]);
 
   const handleToggleBoundary = () => {
     if (selectedNodeIds.length === 1) {
@@ -525,7 +573,7 @@ export default function Editor({ mode = 'edit' }: EditorProps = {}) {
     // Xóa label node nếu có
     if (relationship.labelNodeId) {
       const newNodes = nodes.filter(n => n.id !== relationship.labelNodeId);
-      setGraph(newNodes, edges);
+      applyUserAction(newNodes, edges);
     }
     
     removeRelationship(id);
@@ -543,7 +591,7 @@ export default function Editor({ mode = 'edit' }: EditorProps = {}) {
     const newNodes = nodes.map(n => 
       n.id === nodeId ? { ...n, boundary: false } : n
     );
-    setGraph(newNodes, edges);
+    applyUserAction(newNodes, edges);
     setSelectedBoundaryId(null);
     debouncedPersistData();
   };
@@ -600,6 +648,8 @@ export default function Editor({ mode = 'edit' }: EditorProps = {}) {
 
   const stageRef = useRef<any>(null);
   const canvasContainerRef = useRef<HTMLDivElement>(null);
+  const handleLayoutRef = useRef<() => void>();
+  
   const [canvasContainerWidth, setCanvasContainerWidth] = useState<number>(0);
     useEffect(() => {
       const updateWidth = () => {
@@ -1508,13 +1558,30 @@ const handleLayout = useCallback(
             return node.subtreeHeight;
           }
           let childrenTotalHeight = 0;
+          let maxChildShift = 0; // Track maximum shift amount from underline children
+          
           node.children.forEach((child, index) => {
             childrenTotalHeight += calculateSubtreeHeights(child);
             if (index > 0) {
               childrenTotalHeight += VERTICAL_GAP;
             }
+            
+            // [UNDERLINE SHIFT COMPENSATION] Check if child will be shifted up
+            const childStyle = computedNodeStyles.get(child.id);
+            if (childStyle?.shape === 'underline' && child.id !== 'root') {
+              const childVisual = nodeVisuals.get(child.id);
+              if (childVisual) {
+                const imageH = childVisual.box.imageHeight || 0;
+                const imageGap = imageH > 0 ? 10 : 0;
+                const textBlockHeight = Math.max(childVisual.box.h - imageH - imageGap, 0);
+                const shiftAmount = (textBlockHeight > 0 ? textBlockHeight : childVisual.box.h) / 2;
+                maxChildShift = Math.max(maxChildShift, shiftAmount);
+              }
+            }
           });
-          node.subtreeHeight = Math.max(selfHeight, childrenTotalHeight) + boundaryPaddingVertical;
+          
+          // Add the shift compensation to subtreeHeight
+          node.subtreeHeight = Math.max(selfHeight, childrenTotalHeight) + boundaryPaddingVertical + maxChildShift;
           return node.subtreeHeight;
         };
         const positionBranch = (
@@ -1802,19 +1869,34 @@ const handleLayout = useCallback(
         
         const [minIdx, maxIdx] = [Math.min(startIdx, endIdx), Math.max(startIdx, endIdx)];
         
-        // Collect leaf nodes
+        const subtreeNodes = new Set<string>();
         const collectLeafNodes = (nodeId: string): string[] => {
           const node = newNodes.find(n => n.id === nodeId);
+          if (node) subtreeNodes.add(nodeId);
           if (node?.collapsed) return [nodeId];
           const children = newNodes.filter(n => n.parentId === nodeId);
           if (children.length === 0) return [nodeId];
           return children.flatMap(child => collectLeafNodes(child.id));
         };
-        
+
         const leafNodes: string[] = [];
         for (let i = minIdx; i <= maxIdx; i++) {
           leafNodes.push(...collectLeafNodes(siblings[i].id));
         }
+
+        // Include summary nodes of descendants so parent summaries sit outside them
+        summaries.forEach((s) => {
+          if (s.summaryNodeId && subtreeNodes.has(s.parentId)) {
+            leafNodes.push(s.summaryNodeId);
+          }
+        });
+
+        // Include summary nodes of descendants so parent summaries sit outside them
+        summaries.forEach((s) => {
+          if (s.summaryNodeId && subtreeNodes.has(s.parentId)) {
+            leafNodes.push(s.summaryNodeId);
+          }
+        });
         
         // Calculate brace position
         const firstNode = newNodes.find(n => n.id === summary.startNodeId);
@@ -1868,10 +1950,29 @@ const handleLayout = useCallback(
       const outwardBase = 80;
       const outwardStep = 28;
 
+      // Calculate depth for each summary (how deep is the parentId in the tree)
+      const calculateDepth = (nodeId: string): number => {
+        let depth = 0;
+        let currentId = nodeId;
+        while (currentId !== 'root') {
+          const parentEdge = edges.find(e => e.to === currentId);
+          if (!parentEdge) break;
+          currentId = parentEdge.from;
+          depth++;
+        }
+        return depth;
+      };
+
       grouped.forEach(group => {
-        group.sort((a, b) => b.spanHeight - a.spanHeight); 
+        // Sort by depth: deeper summaries (children) come first (level 0), shallower (parents) get higher levels
+        group.sort((a, b) => {
+          const depthA = calculateDepth(a.summary.parentId);
+          const depthB = calculateDepth(b.summary.parentId);
+          return depthB - depthA; // Deeper first (higher depth value = closer to leaves)
+        });
+        
         group.forEach((layout, idx) => {
-          const level = group.length - idx - 1; 
+          const level = idx; // First in sorted array (deepest) = level 0, next = level 1, etc.
           summaryLayoutLevelsRef.current.set(layout.summary.id, level);
           const { summary, direction, xMid, midY, firstNodeSide } = layout;
           const summaryNodeIndex = newNodes.findIndex(n => n.id === summary.summaryNodeId);
@@ -1959,7 +2060,14 @@ const handleLayout = useCallback(
         if (nodeStyle?.shape === 'underline' && node.id !== 'root') {
           const visual = nodeVisuals.get(node.id);
           if (visual) {
-            return { ...node, y: node.y - visual.box.h / 2 };
+            // Khi node có ảnh, không dịch toàn bộ chiều cao (bao gồm ảnh) lên trên
+            // để tránh kéo node quá cao và chồng lên node khác. Chỉ dịch dựa trên
+            // phần text (box height trừ ảnh + khoảng cách giữa ảnh và text).
+            const imageH = visual.box.imageHeight || 0;
+            const imageGap = imageH > 0 ? 10 : 0;
+            const textBlockHeight = Math.max(visual.box.h - imageH - imageGap, 0);
+            const shiftBase = textBlockHeight > 0 ? textBlockHeight : visual.box.h;
+            return { ...node, y: node.y - shiftBase / 2 };
           }
         }
         return node;
@@ -1978,6 +2086,11 @@ const handleLayout = useCallback(
     },
     [nodeVisuals, setGraph, edges] 
   );
+
+  // Update ref after handleLayout is defined
+  React.useEffect(() => {
+    handleLayoutRef.current = handleLayout;
+  }, [handleLayout]);
 
   
 
@@ -2467,7 +2580,7 @@ const handleFitToScreen = useCallback(() => {
         const newNodes = nodes.map((n) =>
           n.id === editingNodeId ? { ...n, nodeText: newText } : n
         );
-        setGraph(newNodes, edges);
+        applyUserAction(newNodes, edges);
         justStoppedEditingRef.current = true; 
         useEditorStore.setState({ isDirty: true });
         
@@ -2639,8 +2752,7 @@ const handleFitToScreen = useCallback(() => {
     const newNodes = [...updatedNodes, newNodeData];
     const newEdges = [...edges, newEdgeData];
 
-    pushHistory(nodes, edges);
-    setGraph(newNodes, newEdges);
+    applyUserAction(newNodes, newEdges);
     
     // [FIX YÊU CẦU 1] Call layout immediately to get correct position, then animate
     // Smart viewport: ensure new node is visible without full fit-to-screen
@@ -2748,8 +2860,7 @@ const handleFitToScreen = useCallback(() => {
     const newNodes = [...nodes, newNodeData];
     const newEdges = [...edges, newEdgeData];
 
-    pushHistory(nodes, edges);
-    setGraph(newNodes, newEdges);
+    applyUserAction(newNodes, newEdges);
     
     // [FIX YÊU CẦU 1] Call layout immediately to get correct position, then animate
     // Smart viewport: ensure new node is visible without full fit-to-screen
@@ -2798,7 +2909,7 @@ const handleFitToScreen = useCallback(() => {
       const newEdges = edges.filter(
         (e) => !nodesToDelete.has(e.from) && !nodesToDelete.has(e.to)
       );
-      setGraph(newNodes, newEdges);
+      applyUserAction(newNodes, newEdges);
       setSelectedNodeIds([]);
       setTimeout(() => handleLayout(), 50);
       debouncedPersistData();
@@ -2819,8 +2930,9 @@ const handleFitToScreen = useCallback(() => {
     const STYLE_KEYS: Array<keyof NodeData> = [
       'shape', 'color', 'borderColor', 'borderWidth', 'borderStyle',
       'fontFamily', 'fontSize', 'fontWeight', 'fontStyle', 'textDecoration', 'textAlign', 'textColor', 'textCase', 'nodeLength',
-      'branchColor', 'branchLineStyle', 'branchLineEnd', 'branchLineThickness'
-    ];
+      'branchColor', 'branchLineStyle', 'branchLineEnd', 'branchLineThickness',
+      'imageUrl', 'imageHeight', 'imageWidth'
+    ];;
     const isStyleUpdate = Object.keys(updates).some(k => STYLE_KEYS.includes(k as keyof NodeData));
 
     if (updates.branchColor !== undefined) {
@@ -2833,7 +2945,18 @@ const handleFitToScreen = useCallback(() => {
       selectedNodeIds.forEach(id => updateBranchColorRecursive(id, updates.branchColor as string));
     }
     
-    newNodes = newNodes.map(n => idSet.has(n.id) ? { ...n, ...updates } : n);
+    newNodes = newNodes.map(n => {
+      if (idSet.has(n.id)) {
+        const updated = { ...n, ...updates };
+        // [FIX] Khi xóa ảnh (imageUrl = undefined), cũng xóa dimensions
+        if (updates.imageUrl === undefined) {
+          delete updated.imageWidth;
+          delete updated.imageHeight;
+        }
+        return updated;
+      }
+      return n;
+    });
     
     if (isStyleUpdate) {
       const lockRec = (nodeId: string) => {
@@ -2843,16 +2966,20 @@ const handleFitToScreen = useCallback(() => {
       selectedNodeIds.forEach(id => lockRec(id));
     }
 
-    setGraph(newNodes, edges);
+    applyUserAction(newNodes, edges);
     
     // [OPTIMIZATION] Dirty Checking - chỉ layout khi có thay đổi dimension
     // Theo spec: fontSize, padding, borderWidth, nodeLength ảnh hưởng đến kích thước
     const needsLayout = updates.nodeLength !== undefined || 
                         updates.fontSize !== undefined || 
-                        updates.borderWidth !== undefined;
+                        updates.borderWidth !== undefined ||
+                        'imageUrl' in updates || // Khi chèn/xóa ảnh cần layout ngay (dùng 'in' để catch cả undefined)
+                        updates.imageHeight !== undefined ||
+                        updates.imageWidth !== undefined;
     
     if (needsLayout) {
-      setTimeout(() => handleLayout(), 50);
+      // Set flag để useEffect trigger layout sau khi nodeVisuals update
+      pendingLayoutRef.current = true;
     }
     
     // Lưu ngay lập tức khi thay đổi style node
@@ -2957,6 +3084,14 @@ const handleFitToScreen = useCallback(() => {
         handleAddSibling(singleSelectedId);
       } else if (e.key === 'Delete' || e.key === 'Backspace') {
         e.preventDefault();
+        // Ctrl/Cmd + Delete = chỉ xóa ảnh trong node (nếu có)
+        if ((e.ctrlKey || e.metaKey) && !e.shiftKey) {
+          const node = nodes.find(n => n.id === singleSelectedId);
+          if (node?.imageUrl) {
+            handleUpdateNode({ imageUrl: undefined, imageHeight: undefined, imageWidth: undefined });
+            return;
+          }
+        }
         handleDeleteNode(); 
       } else if (e.key === 'F2') {
         e.preventDefault();
@@ -3177,16 +3312,21 @@ const handleFitToScreen = useCallback(() => {
         setGraph(newNodes, edges);
         debouncedPersistData();
        
+        // Set flag để useEffect trigger layout sau khi nodeVisuals update
         pendingLayoutRef.current = true;
     }
-  }, [setGraph, debouncedPersistData]); 
+  }, [setGraph, debouncedPersistData]);
 
+  // Trigger layout when nodeVisuals changes after image load
   useEffect(() => {
-    if (pendingLayoutRef.current) {
-      handleLayout(); 
+    if (pendingLayoutRef.current && isDataLoaded) {
       pendingLayoutRef.current = false;
+      // Đợi thêm 1 frame để đảm bảo nodeVisuals đã update xong
+      requestAnimationFrame(() => {
+        handleLayout();
+      });
     }
-  }, [handleLayout]);
+  }, [nodeVisuals, isDataLoaded, handleLayout]);
 
   useEffect(() => {
     if (isDataLoaded) {
@@ -3417,7 +3557,7 @@ const handleFitToScreen = useCallback(() => {
         }));
         const finalEdges = [...otherEdges, ...newSortedEdges];
 
-        setGraph(updatedNodes, finalEdges);
+        applyUserAction(updatedNodes, finalEdges);
       } else {
         let siblings = updatedNodes.filter(n => n.parentId === newParentId && n.id !== draggedNodeId);
         siblings.sort((a, b) => (nodeVisuals.get(a.id)?.style.y || 0) - (nodeVisuals.get(b.id)?.style.y || 0));
@@ -3434,7 +3574,7 @@ const handleFitToScreen = useCallback(() => {
         }));
         const finalEdges = [...otherEdges, ...newSortedEdges];
 
-        setGraph(updatedNodes, finalEdges);
+        applyUserAction(updatedNodes, finalEdges);
       }
 
       sendPatch('NODE_REPARENT', { nodeId: draggedNodeId, newParentId, x: finalX, y: finalY, side: newSide });
@@ -3466,7 +3606,7 @@ const handleFitToScreen = useCallback(() => {
           return n;
         });
 
-        setGraph(newNodes, newEdges);
+        applyUserAction(newNodes, newEdges);
 
         sendPatch('NODE_MOVE', { id: draggedNodeId, x: finalX, y: finalY });
 
@@ -3501,7 +3641,7 @@ const handleFitToScreen = useCallback(() => {
         };
         assignRec(childId);
       });
-      setGraph(newNodes, edges);
+      applyUserAction(newNodes, edges);
     } else {
       const newNodes = nodes.map(n => {
         if (n.styleLocked) return n;
@@ -3513,7 +3653,7 @@ const handleFitToScreen = useCallback(() => {
           borderColor: undefined 
         };
       });
-      setGraph(newNodes, edges);
+      applyUserAction(newNodes, edges);
     }
     debouncedPersistData();
     sendPatch('LINE_COLOR_TOGGLE', { state });
@@ -3557,7 +3697,7 @@ const handleFitToScreen = useCallback(() => {
       };
     });
     
-    setGraph(newNodes, edges);
+    applyUserAction(newNodes, edges);
     useEditorStore.setState({ isDirty: true });
     
     // Lưu ngay lập tức
@@ -3601,7 +3741,7 @@ const handleFitToScreen = useCallback(() => {
       return n;
     });
     
-    setGraph(newNodes, edges);
+    applyUserAction(newNodes, edges);
     setTimeout(() => handleLayout(), 50);
     
     // Lưu ngay lập tức
@@ -3646,7 +3786,7 @@ const handleFitToScreen = useCallback(() => {
     const newNodes = nodes.map((n) =>
       idSet.has(n.id) ? { ...n, ...styleClipboard } : n
     );
-    setGraph(newNodes, edges);
+    applyUserAction(newNodes, edges);
     
     // Chỉ trigger layout nếu style ảnh hưởng đến dimension (fontSize, padding, border)
     // Theo spec: màu sắc chỉ cần Repaint
@@ -3682,7 +3822,7 @@ const handleFitToScreen = useCallback(() => {
     const newNodes = nodes.map((n) =>
       idSet.has(n.id) ? { ...n, ...resetStyle } : n
     );
-    setGraph(newNodes, edges);
+    applyUserAction(newNodes, edges);
     
     // Chỉ layout nếu có thay đổi dimension
     if (needsLayout) {
@@ -3771,7 +3911,7 @@ const handleFitToScreen = useCallback(() => {
           const newNodes = nodes.map(n => 
             n.id === nodeId ? { ...n, collapsed: !n.collapsed } : n
           );
-          setGraph(newNodes, edges);
+          applyUserAction(newNodes, edges);
           
           // Sau khi layout, giữ node ở cùng vị trí screen
           setTimeout(() => {
@@ -4082,6 +4222,7 @@ const handleFitToScreen = useCallback(() => {
           onAddSibling={handleToolbarAddSibling}
           onSetHyperlink={handleSetHyperlink}
           onUpdateNode={handleUpdateNode}
+          onRemoveImage={() => handleUpdateNode({ imageUrl: undefined, imageHeight: undefined, imageWidth: undefined })}
           onToggleBoundary={handleToggleBoundary}
           onAddRelationship={handleAddRelationship}
           onAddSummary={handleAddSummary}
@@ -4469,7 +4610,7 @@ const handleFitToScreen = useCallback(() => {
               };
 
               const newNodes = [...nodes, newNodeData];
-              setGraph(newNodes, edges);
+              applyUserAction(newNodes, edges);
               startEditing(newId);
               debouncedPersistData();
               sendPatch('NODE_CREATE', { node: newNodeData, edge: null });
@@ -4702,6 +4843,7 @@ const handleFitToScreen = useCallback(() => {
                   nodeVisuals={nodeVisuals}
                   isSelected={selectedSummaryId === sum.id}
                   level={summaryLayoutLevelsRef.current.get(sum.id) || 0}
+                  summaries={summaries}
                   onUpdateRange={handleUpdateSummaryRange}
                   onClick={() => {
                     setSelectedSummaryId(sum.id);
@@ -4813,6 +4955,17 @@ const handleFitToScreen = useCallback(() => {
                               lineCap="round"
                               listening={false}
                             />
+
+                            {style.imageUrl && imageHeight > 0 && (
+                              <URLImage
+                                src={style.imageUrl}
+                                x={-imageWidthDisplay / 2}
+                                y={-h / 2 + PADDING_Y}
+                                width={imageWidthDisplay}
+                                height={imageHeight}
+                                onImageLoad={(imgW: number, imgH: number) => handleImageLoad(node.id, imgW, imgH)}
+                              />
+                            )}
                           </>
                         );
                       }
@@ -4823,18 +4976,16 @@ const handleFitToScreen = useCallback(() => {
                             <Rect {...shapeProps} cornerRadius={style.shape === 'roundedRect' ? 8 : 0} />
                           )}
                           
-                          {/* Tạm comment URLImage do useImage không available
-                          {style.imageUrl && (
+                          {style.imageUrl && imageHeight > 0 && (
                             <URLImage 
                               src={style.imageUrl}
-                              x={-w/2 + (style.borderWidth || 0) + PADDING_X} 
-                              y={-h/2 + (style.borderWidth || 0) + PADDING_Y} 
+                              x={-imageWidthDisplay / 2} 
+                              y={-h/2 + PADDING_Y} 
                               width={imageWidthDisplay}
                               height={imageHeight}
                               onImageLoad={(imgW: number, imgH: number) => handleImageLoad(node.id, imgW, imgH)}
                             />
                           )}
-                          */}
                         </>
                       );
                     })()}
@@ -4842,14 +4993,14 @@ const handleFitToScreen = useCallback(() => {
                     <Text
                       visible={editingNodeId !== node.id}
                       text={node.id === 'root' ? (textToRender || '(...)').toUpperCase() : (textToRender || '(...)')}
-                      width={w} 
-                      height={style.imageUrl ? (h - imageHeight - 10) : h} 
-                      offsetX={w / 2} 
-                      offsetY={style.imageUrl ? (h / 2) - imageHeight - 10 : h / 2} 
+                      x={-w/2 + PADDING_X}
+                      y={style.imageUrl && imageHeight > 0 ? (-h/2 + PADDING_Y + imageHeight + 10) : (-h/2 + PADDING_Y)}
+                      width={w - PADDING_X * 2} 
+                      height={style.imageUrl && imageHeight > 0 ? (h - imageHeight - 10 - PADDING_Y * 2) : (h - PADDING_Y * 2)} 
                       align={(style.textAlign || 'CENTER').toLowerCase() as 'left' | 'center' | 'right'}
                       verticalAlign="middle"
                       fill={style.textColor}
-                      padding={PADDING_Y} listening={false}
+                      listening={false}
                       fontSize={finalFontSize}
                       fontStyle={combinedFontStyle}
                       fontFamily={style.fontFamily}
@@ -5205,4 +5356,3 @@ const handleFitToScreen = useCallback(() => {
     </>
   );
 }
-

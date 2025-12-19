@@ -48,6 +48,7 @@ type EditorToolbarProps = {
   onAddRelationship: () => void;
   onAddSummary: () => void;
   onUpdateNode: (updates: Partial<NodeData>) => void;
+  onRemoveImage?: () => void;
   stageRef?: any;
 
   // [MỚI - Từ nhánh release/chat]
@@ -98,6 +99,7 @@ const EditorToolbar: React.FC<EditorToolbarProps> = ({
   onAddRelationship,
   onAddSummary,
   onUpdateNode,
+  onRemoveImage,
   stageRef,
   // Props mới
   readOnly = false,
@@ -174,8 +176,13 @@ const EditorToolbar: React.FC<EditorToolbarProps> = ({
     onUpdateNode({ hyperlink: url });
   };
 
-  const handleConfirmImage = (url: string) => {
+  const handleConfirmImage = (url: string | undefined) => {
     onUpdateNode({ imageUrl: url });
+  };
+
+  const handleRemoveImage = () => {
+    if (!selectedNode?.imageUrl) return;
+    onRemoveImage ? onRemoveImage() : onUpdateNode({ imageUrl: undefined, imageHeight: undefined, imageWidth: undefined });
   };
 
   // Presentation mode effect
@@ -245,21 +252,21 @@ const EditorToolbar: React.FC<EditorToolbarProps> = ({
               <BoxSelect size={20} />
             </ToolbarButton>
             
-            <ToolbarButton
+            {/* <ToolbarButton
               onClick={onAddRelationship}
               disabled={!isSingleNodeFocused}
               title="Tạo mối quan hệ (Relationship)"
             >
               <Spline size={20} />
-            </ToolbarButton>
+            </ToolbarButton> */}
             
-            <ToolbarButton
+            {/* <ToolbarButton
               onClick={onAddSummary}
               disabled={!isSingleNodeFocused}
               title="Tạo tóm tắt (Summary)"
             >
               <BracesIcon size={20} />
-            </ToolbarButton>
+            </ToolbarButton> */}
             
             <div className="w-px h-6 bg-gray-300 mx-2" />
             
@@ -267,6 +274,8 @@ const EditorToolbar: React.FC<EditorToolbarProps> = ({
               disabled={!isSingleNodeFocused}
               onInsertLink={() => setIsLinkModalOpen(true)}
               onInsertImage={() => setIsImageModalOpen(true)}
+              onRemoveImage={selectedNode?.imageUrl ? handleRemoveImage : undefined}
+              hasImage={!!selectedNode?.imageUrl}
             />
 
             {/* AI Button Placeholder */}
@@ -278,14 +287,24 @@ const EditorToolbar: React.FC<EditorToolbarProps> = ({
         {/* 3. PHẦN PHẢI: Zoom, Undo, Save, Chuông, Share... */}
         <div className="flex items-center gap-2 flex-shrink-0">
           
-          {/* Undo/Redo - Ẩn khi readOnly */}
-          {!readOnly && (
-            <>
-              <button onClick={onUndo} className="p-2 rounded-md hover:bg-gray-300/50 text-gray-700" title="Hoàn tác (Ctrl+Z)"><Undo size={20} /></button>
-              <button onClick={onRedo} className="p-2 rounded-md hover:bg-gray-300/50 text-gray-700" title="Làm lại (Ctrl+Y)"><Redo size={20} /></button>
-              <div className="w-px h-6 bg-gray-300 mx-2" />
-            </>
-          )}
+          {/* Undo/Redo - Luôn hiển thị */}
+          <button 
+            onClick={onUndo} 
+            disabled={readOnly}
+            className={`p-2 rounded-md ${readOnly ? 'opacity-40 cursor-not-allowed' : 'hover:bg-gray-300/50'} text-gray-700`} 
+            title={readOnly ? 'Bạn đang ở chế độ chỉ xem' : 'Hoàn tác (Ctrl+Z)'}
+          >
+            <Undo size={20} />
+          </button>
+          <button 
+            onClick={onRedo} 
+            disabled={readOnly}
+            className={`p-2 rounded-md ${readOnly ? 'opacity-40 cursor-not-allowed' : 'hover:bg-gray-300/50'} text-gray-700`} 
+            title={readOnly ? 'Bạn đang ở chế độ chỉ xem' : 'Làm lại (Ctrl+Y)'}
+          >
+            <Redo size={20} />
+          </button>
+          <div className="w-px h-6 bg-gray-300 mx-2" />
 
           {/* Zoom Controls */}
           <button onClick={onZoomOut} className="p-2 rounded-md hover:bg-gray-300/50 text-gray-700" title="Thu nhỏ (Ctrl + Scroll)">
@@ -458,6 +477,7 @@ const EditorToolbar: React.FC<EditorToolbarProps> = ({
     <ImageModal
       isOpen={isImageModalOpen}
       onClose={() => setIsImageModalOpen(false)}
+      currentImageUrl={selectedNode?.imageUrl}
       onConfirm={handleConfirmImage}
     />
     </>

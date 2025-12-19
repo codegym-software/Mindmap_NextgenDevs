@@ -136,7 +136,10 @@ export function useRealtime({
         const token = await getAccessToken();
         if (!token || !isMounted) return;
 
-        const wsUrl = `ws://localhost:8081/ws/mindmap/${mindmapId}?token=${token}`;
+        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const host = window.location.hostname;
+        const port = import.meta.env.VITE_WS_PORT || '8081';
+        const wsUrl = `${protocol}//${host}:${port}/ws/mindmap/${mindmapId}?token=${token}`;
         const ws = new WebSocket(wsUrl);
         wsRef.current = ws;
 
