@@ -85,7 +85,7 @@ export type NodeData = {
 
   // --- Style thuộc tính ---
   // [MERGE] Giữ lại các hình dạng từ HEAD (diamond, ellipse)
-  shape?: 'rectangle' | 'roundedRect' | 'diamond' | 'ellipse';
+  shape?: 'rectangle' | 'roundedRect' | 'diamond' | 'ellipse' | 'underline';
   color?: string;
   // [MERGE] Dùng 'string' thường (từ Incoming) thay vì 'String' hoa (từ HEAD)
   hyperlink?: string;
@@ -251,10 +251,11 @@ export function getNodeComputedStyle(
       baseStyle.fontWeight = 'normal';
       baseStyle.borderWidth = 1;
     } else {
+      // Level 3+: Sử dụng underline shape làm mặc định
       baseStyle.color = 'transparent';
       baseStyle.borderColor = smartColors.border;
       baseStyle.textColor = '#2D3748';
-      baseStyle.shape = 'rectangle';
+      baseStyle.shape = 'underline';
       baseStyle.fontSize = 14;
       baseStyle.fontWeight = 'normal';
       baseStyle.borderWidth = 0;
