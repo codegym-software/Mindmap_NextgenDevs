@@ -194,7 +194,8 @@ export const DEFAULT_NODE_STYLE: Partial<NodeData> = {
   textDecoration: 'none',
   textAlign: 'CENTER',
   textColor: '#1E3A8A',
-  nodeLength: 150,
+  // Auto-fit width to text for non-root nodes by default
+  nodeLength: 'fit',
   branchColor: undefined,
   branchLineStyle: 'bezier',
   branchLineEnd: 'none',

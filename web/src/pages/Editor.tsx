@@ -233,12 +233,16 @@ function calculateNodeBox(node: NodeData, style: NodeData) {
   const measureWidth = (text: string) =>
     context?.measureText(text).width || text.length * finalFontSize * 0.6;
   if (nodeLength === 'fit') {
-    const maxFitWidth = node.id === 'root' ? 400 : 400; 
+    // Tăng độ rộng tối đa: root 800px, nodes thường 600px
+    const maxFitWidth = node.id === 'root' ? 800 : 600; 
     let maxWidth = 0;
     const lines = processedText.split('\n');
     
+    // First pass: determine the required width
+    // Node sẽ tự động mở rộng cho đến khi đạt maxFitWidth
     lines.forEach((line: string) => {
       const lineWidth = measureWidth(line);
+      // Node tự fit theo text, chỉ giới hạn ở maxFitWidth
       if (lineWidth > maxFitWidth) {
         maxWidth = maxFitWidth;
       } else {
@@ -247,9 +251,9 @@ function calculateNodeBox(node: NodeData, style: NodeData) {
     });
     
     w = maxWidth + PADDING_X * 2 + borderWidth * 2;
-    w = Math.max(w, 80);
+    w = Math.max(w, 80); // Minimum width
     
-    // Second pass: wrap lines that are too long
+    // Second pass: wrap lines that exceed the determined width
     const contentWidth = w - PADDING_X * 2 - borderWidth * 2;
     lines.forEach((line: string) => {
       if (line.length === 0) {
@@ -259,9 +263,10 @@ function calculateNodeBox(node: NodeData, style: NodeData) {
       
       const lineWidth = measureWidth(line);
       if (lineWidth <= contentWidth) {
+        // Line fits, no wrapping needed
         wrappedLines.push(line);
       } else {
-        // Wrap this line
+        // Line is too long, wrap it
         let currentLine = '';
         const words = line.split(' ');
         for (const word of words) {
@@ -270,10 +275,16 @@ function calculateNodeBox(node: NodeData, style: NodeData) {
           if (testWidth > contentWidth) {
             if (currentLine) wrappedLines.push(currentLine);
             currentLine = word;
-            // Handle very long words
+            // Handle very long single words that don't fit
             while (measureWidth(currentLine) > contentWidth) {
-              wrappedLines.push(currentLine.substring(0, 20));
-              currentLine = currentLine.substring(20);
+              // Find the position to break
+              let breakPos = currentLine.length;
+              while (breakPos > 0 && measureWidth(currentLine.substring(0, breakPos)) > contentWidth) {
+                breakPos--;
+              }
+              if (breakPos === 0) breakPos = 1; // At least 1 character
+              wrappedLines.push(currentLine.substring(0, breakPos));
+              currentLine = currentLine.substring(breakPos);
             }
           } else {
             currentLine = testLine;
@@ -282,7 +293,7 @@ function calculateNodeBox(node: NodeData, style: NodeData) {
         if (currentLine) wrappedLines.push(currentLine);
       }
     });
-  } else {
+  }else {
     w = Number(nodeLength) || 250;
     const contentWidth = w - PADDING_X * 2 - borderWidth * 2;
     const lines = processedText.split('\n');
@@ -1081,7 +1092,8 @@ export default function Editor({ mode = 'edit' }: EditorProps = {}) {
                   borderColor: '#F59E0B',
                   borderWidth: 2,
                   fontSize: 12,
-                  nodeLength: 150,
+                  // Fit summary node width to its text
+                  nodeLength: 'fit',
                   textColor: '#000000',
                 };
                 loadedNodes.push(summaryNode);
@@ -1382,6 +1394,12 @@ const handleLayout = useCallback(
             const padding = Math.max(10, basePadding + depthPadding);
             boundaryPaddingVertical = padding * 2; // Top + Bottom
           }
+
+          // Nếu node đang collapse thì xem như leaf: chỉ lấy chiều cao của chính nó
+          if (node.collapsed) {
+            node.subtreeHeight = selfHeight + boundaryPaddingVertical;
+            return node.subtreeHeight;
+          }
           
           if (node.children.length === 0) {
             node.subtreeHeight = selfHeight + boundaryPaddingVertical;
@@ -1402,6 +1420,7 @@ const handleLayout = useCallback(
           parent: TreeNode,
           side: 'left' | 'right'
         ) => {
+          if (parent.collapsed) return;
           const totalHeight = branchNodes.reduce((sum, node, index) => {
             return sum + node.subtreeHeight + (index > 0 ? VERTICAL_GAP : 0);
           }, 0);
@@ -1438,7 +1457,7 @@ const handleLayout = useCallback(
             node.y = currentY + blockHeight / 2;
             node.side = side;
             currentY += blockHeight + VERTICAL_GAP;
-            if (node.children.length > 0) {
+            if (!node.collapsed && node.children.length > 0) {
               positionChildrenVertically(node.children, node, side);
             }
           });
@@ -1448,6 +1467,7 @@ const handleLayout = useCallback(
           parent: TreeNode,
           side: 'left' | 'right'
         ) => {
+          if (parent.collapsed) return;
           const totalHeight = children.reduce((sum, node, index) => {
             return sum + node.subtreeHeight + (index > 0 ? VERTICAL_GAP : 0);
           }, 0);
@@ -1485,7 +1505,7 @@ const handleLayout = useCallback(
             node.y = currentY + blockHeight / 2;
             node.side = side;
             currentY += blockHeight + VERTICAL_GAP;
-            if (node.children.length > 0) {
+            if (!node.collapsed && node.children.length > 0) {
               positionChildrenVertically(node.children, node, side);
             }
           });
@@ -1764,6 +1784,84 @@ const handleLayout = useCallback(
         });
       });
 
+      // ===================================================================
+      // [FIX] Align underlines for ALL level 3+ nodes in same BRANCH
+      // ===================================================================
+      if (layoutType === 'mindmap' || layoutType === 'logic') {
+        // Build topology map to determine depth
+        const topologyMap = new Map<string, { depth: number; rootBranch: string }>();
+        
+        // Find root branch for each node (which level-1 node it belongs to)
+        const findRootBranch = (nodeId: string, rootBranch: string = nodeId): string => {
+          const parentEdge = edges.find(e => e.to === nodeId);
+          if (!parentEdge || parentEdge.from === 'root') {
+            return rootBranch;
+          }
+          return findRootBranch(parentEdge.from, rootBranch);
+        };
+        
+        const buildTopology = (nodeId: string, depth: number) => {
+          const rootBranch = depth === 1 ? nodeId : findRootBranch(nodeId, nodeId);
+          topologyMap.set(nodeId, { depth, rootBranch });
+          const childEdges = edges.filter(e => e.from === nodeId);
+          childEdges.forEach(e => {
+            buildTopology(e.to, depth + 1);
+          });
+        };
+        buildTopology('root', 0);
+        
+        // Group all level 3+ nodes by their root branch
+        const branchGroups = new Map<string, NodeData[]>();
+        newNodes.forEach(node => {
+          const topo = topologyMap.get(node.id);
+          if (topo && topo.depth >= 3 && node.id !== 'root') {
+            const branchKey = topo.rootBranch;
+            if (!branchGroups.has(branchKey)) {
+              branchGroups.set(branchKey, []);
+            }
+            branchGroups.get(branchKey)!.push(node);
+          }
+        });
+        
+        // For each branch, align ALL level 3+ nodes to the same underline position
+        branchGroups.forEach((nodesInBranch, branchKey) => {
+          if (nodesInBranch.length > 0) {
+            // Find the maximum bottom position (y + h/2) among ALL nodes in this branch
+            let maxUnderlineY = -Infinity;
+            nodesInBranch.forEach(node => {
+              const visual = nodeVisuals.get(node.id);
+              if (visual) {
+                const underlineY = node.y + visual.box.h / 2;
+                if (underlineY > maxUnderlineY) {
+                  maxUnderlineY = underlineY;
+                }
+              }
+            });
+            
+            console.log(`[Underline Align] Branch ${branchKey}: maxUnderlineY=${maxUnderlineY}, nodes=${nodesInBranch.length}`);
+            
+            // Align ALL nodes in this branch to this maxUnderlineY
+            nodesInBranch.forEach(node => {
+              const visual = nodeVisuals.get(node.id);
+              if (visual) {
+                const nodeIndex = newNodes.findIndex(n => n.id === node.id);
+                if (nodeIndex !== -1) {
+                  const oldY = newNodes[nodeIndex].y;
+                  const newY = maxUnderlineY - visual.box.h / 2;
+                  // Adjust Y so that underline (y + h/2) equals maxUnderlineY
+                  newNodes[nodeIndex] = {
+                    ...newNodes[nodeIndex],
+                    y: newY
+                  };
+                  console.log(`  Node ${node.id}: h=${visual.box.h}, oldY=${oldY.toFixed(1)}, newY=${newY.toFixed(1)}`);
+                }
+              }
+            });
+          }
+        });
+      }
+      // ===================================================================
+
       // Lấy trạng thái hiện tại của nodes từ store
       const currentNodesInStore = useEditorStore.getState().nodes;
 
@@ -1990,6 +2088,82 @@ const handleLayout = useCallback(
         return rest;
       });
     }
+    
+    // ===================================================================
+    // [FIX] Align underlines for ALL level 3+ nodes in same BRANCH
+    // ===================================================================
+    // Build topology map to determine depth and root branch
+    const topologyMap = new Map<string, { depth: number; rootBranch: string }>();
+    
+    // Find root branch for each node (which level-1 node it belongs to)
+    const findRootBranch = (nodeId: string, rootBranch: string = nodeId): string => {
+      const parentEdge = edges.find(e => e.to === nodeId);
+      if (!parentEdge || parentEdge.from === 'root') {
+        return rootBranch;
+      }
+      return findRootBranch(parentEdge.from, rootBranch);
+    };
+    
+    const buildTopology = (nodeId: string, depth: number) => {
+      const rootBranch = depth === 1 ? nodeId : findRootBranch(nodeId, nodeId);
+      topologyMap.set(nodeId, { depth, rootBranch });
+      const childEdges = edges.filter(e => e.from === nodeId);
+      childEdges.forEach(e => {
+        buildTopology(e.to, depth + 1);
+      });
+    };
+    buildTopology('root', 0);
+    
+    // Group all level 3+ nodes by their root branch
+    const branchGroups = new Map<string, NodeData[]>();
+    newNodes.forEach(node => {
+      const topo = topologyMap.get(node.id);
+      if (topo && topo.depth >= 3 && node.id !== 'root') {
+        const branchKey = topo.rootBranch;
+        if (!branchGroups.has(branchKey)) {
+          branchGroups.set(branchKey, []);
+        }
+        branchGroups.get(branchKey)!.push(node);
+      }
+    });
+    
+    // For each branch, align ALL level 3+ nodes to the same underline position
+    branchGroups.forEach((nodesInBranch, branchKey) => {
+      if (nodesInBranch.length > 0) {
+        // Find the maximum bottom position (y + h/2) among ALL nodes in this branch
+        let maxUnderlineY = -Infinity;
+        nodesInBranch.forEach(node => {
+          const visual = nodeVisuals.get(node.id);
+          if (visual) {
+            const underlineY = node.y + visual.box.h / 2;
+            if (underlineY > maxUnderlineY) {
+              maxUnderlineY = underlineY;
+            }
+          }
+        });
+        
+        console.log(`[Rebalance Underline Align] Branch ${branchKey}: maxUnderlineY=${maxUnderlineY}, nodes=${nodesInBranch.length}`);
+        
+        // Align ALL nodes in this branch to this maxUnderlineY
+        nodesInBranch.forEach(node => {
+          const visual = nodeVisuals.get(node.id);
+          if (visual) {
+            const nodeIndex = newNodes.findIndex(n => n.id === node.id);
+            if (nodeIndex !== -1) {
+              const oldY = newNodes[nodeIndex].y;
+              const newY = maxUnderlineY - visual.box.h / 2;
+              // Adjust Y so that underline (y + h/2) equals maxUnderlineY
+              newNodes[nodeIndex] = {
+                ...newNodes[nodeIndex],
+                y: newY
+              };
+              console.log(`  Node ${node.id}: h=${visual.box.h}, oldY=${oldY.toFixed(1)}, newY=${newY.toFixed(1)}`);
+            }
+          }
+        });
+      }
+    });
+    // ===================================================================
     
     setGraph(newNodes, edges);
     console.log('[Rebalance] Completed');
@@ -2297,7 +2471,9 @@ const handleFitToScreen = useCallback(() => {
       const node = nodeMap.get(nodeId);
       if (!node) return visual.box.h;
       const children = nodes.filter(n => n.parentId === nodeId);
-      if (children.length === 0 || node.collapsed) return visual.box.h;
+      if (children.length === 0) return visual.box.h;
+      // Khi collapse, co chiều cao nhánh về 0 để autolayout ép sát
+      if (node.collapsed) return 0;
       let childrenTotalHeight = 0;
       children.forEach((child, index) => {
         childrenTotalHeight += getSubtreeHeight(child.id);
@@ -2420,7 +2596,9 @@ const handleFitToScreen = useCallback(() => {
       const node = nodeMap.get(nodeId);
       if (!node) return visual.box.h;
       const children = nodes.filter(n => n.parentId === nodeId);
-      if (children.length === 0 || node.collapsed) return visual.box.h;
+      if (children.length === 0) return visual.box.h;
+      // Khi collapse, co chiều cao nhánh về 0 để autolayout ép sát
+      if (node.collapsed) return 0;
       let childrenTotalHeight = 0;
       children.forEach((child, index) => {
         childrenTotalHeight += getSubtreeHeight(child.id);
