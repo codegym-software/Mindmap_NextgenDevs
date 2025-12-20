@@ -38,8 +38,15 @@ export default function ChatSidebar({ mindmapId, sendPatch }: Props) {
     const content = inputText.trim();
     const tempId = Date.now().toString(); // ID tạm
     const myId = user?.sub || user?.id || 'guest';
-    const myName = user?.displayName || 'Tôi';
+    let myName = 'Khách'; // Mặc định
 
+    if (user?.email) {
+        // Nếu có email (vd: huan123@gmail.com) -> lấy huan123
+        myName = user.email.split('@')[0];
+    } else if (user?.displayName) {
+        // Fallback nếu không có email thì lấy displayName
+        myName = user.displayName;
+    }
     // 1. Gửi qua WebSocket
     sendPatch('CHAT_MESSAGE', {
       id: tempId,

@@ -512,21 +512,6 @@ const {
     applyUserAction(newNodes, newEdges);
   }, [applyUserAction]);
 
-  // Wrap undo/redo to trigger layout after state change
-  const undo = useCallback(() => {
-    storeUndo();
-    setTimeout(() => {
-      handleLayoutRef.current?.();
-    }, 50);
-  }, [storeUndo]);
-
-  const redo = useCallback(() => {
-    storeRedo();
-    setTimeout(() => {
-      handleLayoutRef.current?.();
-    }, 50);
-  }, [storeRedo]);
-
   const handleToggleBoundary = () => {
     if (selectedNodeIds.length === 1) {
       const targetId = selectedNodeIds[0];
@@ -1047,6 +1032,57 @@ const isReadOnly = useMemo(() => {
     onSetRootCollapse: handleSetRootCollapse,
     shouldConnect: !!id && !isGuest && !accessDenied && isAuthed,
   });
+
+    // Wrap undo/redo to trigger layout after state change
+const undo = useCallback(() => {
+    // 1. Thực hiện Undo cục bộ
+    storeUndo();
+
+    // 2. Lấy dữ liệu mới nhất sau khi Undo
+    const { nodes: newNodes, edges: newEdges } = useEditorStore.getState();
+
+    // 3. Gửi dữ liệu mới cho mọi người (Real-time)
+    if (isConnected) { // Kiểm tra kết nối trước khi gửi
+        sendPatch('GRAPH_UPDATE', { 
+            nodes: newNodes, 
+            edges: newEdges 
+        });
+    }
+
+    // 4. Lưu lại vào DB (để đảm bảo dữ liệu bền vững)
+    debouncedPersistData();
+
+    // 5. Layout lại giao diện
+    setTimeout(() => {
+      handleLayoutRef.current?.();
+    }, 50);
+  }, [storeUndo, sendPatch, isConnected, debouncedPersistData]);
+
+  // [SỬA LẠI] Hàm Redo có broadcast
+  const redo = useCallback(() => {
+    // 1. Thực hiện Redo cục bộ
+    storeRedo();
+
+    // 2. Lấy dữ liệu mới nhất sau khi Redo
+    const { nodes: newNodes, edges: newEdges } = useEditorStore.getState();
+
+    // 3. Gửi dữ liệu mới cho mọi người
+    if (isConnected) {
+        sendPatch('GRAPH_UPDATE', { 
+            nodes: newNodes, 
+            edges: newEdges 
+        });
+    }
+
+    // 4. Lưu DB
+    debouncedPersistData();
+
+    // 5. Layout lại
+    setTimeout(() => {
+      handleLayoutRef.current?.();
+    }, 50);
+  }, [storeRedo, sendPatch, isConnected, debouncedPersistData]);
+
 
   // --- Collaboration: Access Request Handlers ---
   const handleLoginRequired = useCallback(() => {
@@ -2797,6 +2833,11 @@ const handleFitToScreen = useCallback(() => {
 
     applyUserAction(newNodes, newEdges);
     
+    sendPatch('NODE_CREATE', { 
+        node: newNodeData, 
+        edge: newEdgeData 
+    });
+
     // [FIX YÊU CẦU 1] Call layout immediately to get correct position, then animate
     // Smart viewport: ensure new node is visible without full fit-to-screen
     setTimeout(() => {
@@ -2908,6 +2949,11 @@ const handleFitToScreen = useCallback(() => {
     const newEdges = [...edges, newEdgeData];
 
     applyUserAction(newNodes, newEdges);
+
+    sendPatch('NODE_CREATE', { 
+        node: newNodeData, 
+        edge: newEdgeData 
+    });
     
     // [FIX YÊU CẦU 1] Call layout immediately to get correct position, then animate
     // Smart viewport: ensure new node is visible without full fit-to-screen

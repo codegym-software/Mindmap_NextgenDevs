@@ -321,6 +321,14 @@ export function useRealtime({
                  break;
               }
 
+              case 'GRAPH_UPDATE': {
+                if (payload?.nodes && payload?.edges) {
+                  // Cập nhật graph ngay lập tức mà không ghi vào history của người nhận
+                  setGraph(payload.nodes, payload.edges);
+                }
+                break;
+              }
+
               // Các case style khác giữ nguyên, đảm bảo copy đủ từ code cũ của bạn nếu có thêm
               default:
                 break;

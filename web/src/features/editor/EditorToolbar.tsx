@@ -371,24 +371,6 @@ const EditorToolbar: React.FC<EditorToolbarProps> = ({
             )}
           </button>
 
-          {isOwner && (
-            <button
-              type="button"
-              onClick={() => onShowRequests && onShowRequests()}
-              className={`relative p-2 rounded-md transition-colors ${
-                pendingRequestsCount > 0
-                  ? 'bg-red-50 text-red-600 hover:bg-red-100'
-                  : 'text-gray-700 hover:bg-gray-300/50'
-              }`}
-              title={
-                pendingRequestsCount > 0
-                  ? `Bạn có ${pendingRequestsCount} yêu cầu truy cập đang chờ`
-                  : 'Yêu cầu truy cập'
-              }
-            >
-            </button>
-          )}
-
           <button 
             onClick={onShare} 
             className={`relative p-2 rounded-md transition-colors ${
