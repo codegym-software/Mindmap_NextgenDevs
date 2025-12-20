@@ -6,21 +6,31 @@ import { Upload, Link as LinkIcon } from 'lucide-react';
 type Props = {
   isOpen: boolean;
   onClose: () => void;
-  onConfirm: (url: string) => void;
+  currentImageUrl?: string;
+  onConfirm: (url: string | undefined) => void;
 };
 
-export default function ImageModal({ isOpen, onClose, onConfirm }: Props) {
+export default function ImageModal({ isOpen, onClose, currentImageUrl, onConfirm }: Props) {
   const [activeTab, setActiveTab] = useState<'upload' | 'url'>('upload');
   const [url, setUrl] = useState('');
   const [isUploading, setIsUploading] = useState(false);
 
+  React.useEffect(() => {
+    if (isOpen) {
+      setUrl(currentImageUrl || '');
+      // Nếu đã có ảnh, mở tab URL để dễ xóa
+      if (currentImageUrl) {
+        setActiveTab('url');
+      }
+    }
+  }, [isOpen, currentImageUrl]);
+
   const handleUrlSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (url.trim()) {
-      onConfirm(url.trim());
-      onClose();
-      setUrl('');
-    }
+    // Nếu url rỗng thì xóa ảnh
+    onConfirm(url.trim() === '' ? undefined : url.trim());
+    onClose();
+    setUrl('');
   };
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -95,14 +105,14 @@ export default function ImageModal({ isOpen, onClose, onConfirm }: Props) {
                     <LinkIcon size={16} className="text-gray-400" />
                   </div>
                   <input
-                    type="url"
+                    type="text"
                     value={url}
                     onChange={(e) => setUrl(e.target.value)}
                     className="pl-10 block w-full border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500 sm:text-sm py-2 border"
                     placeholder="https://example.com/image.png"
-                    required
                   />
                 </div>
+                <p className="text-xs text-gray-500 mt-1">Để trống để xóa ảnh hiện tại.</p>
               </div>
               <div className="flex justify-end gap-2">
                 <Button type="button" variant="ghost" size="sm" onClick={onClose}>Hủy</Button>

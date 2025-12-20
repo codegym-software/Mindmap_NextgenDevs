@@ -1,23 +1,3 @@
-/**
- * Editor.tsx - MERGED VERSION
- * 
- * Merges UI/UX features from your version with collaboration features from friend's version:
- * 
- * YOUR UI/UX FEATURES (100% KEPT):
- * - Boundaries, Relationships, Summaries
- * - Image support
- * - Better layout algorithms
- * - Smooth animations
- * - All your existing UI improvements
- * 
- * COLLABORATION FEATURES ADDED:
- * - ShareModal for inviting collaborators
- * - Real-time cursor tracking (CursorLayer)
- * - Access control (owner/editor/viewer permissions)
- * - Access request system
- * - Permission-based read-only mode
- * - Realtime WebSocket sync via useRealtime hook
- */
 
 import React, {
   useEffect,
@@ -107,6 +87,7 @@ const GUEST_BUCKET = 'mm_guest_docs';
 const PADDING_X = 20,
   PADDING_Y = 12;
 const LINE_HEIGHT_MULTIPLIER = 1.3;
+const IMAGE_WIDTH = 200; // Fixed width for images in nodes
 
 const BRANCH_COLORS_PALETTE = [
   '#14B8A6', 
@@ -118,6 +99,76 @@ const BRANCH_COLORS_PALETTE = [
   '#F97316',
   '#6366F1', 
 ];
+
+// Maximum distance (px) to pick a parent node; otherwise node becomes floating.
+const SNAP_THRESHOLD = 200;
+
+// Ghost insert hint sizing.
+const GHOST_NODE_HEIGHT = 40;
+const GHOST_NODE_GAP = 10;
+const ZONE_EXTRA_WIDTH = 100;
+const ZONE_PADDING_Y = 40;
+
+// Extra padding around the main tree bounding box before allowing detach.
+const TREE_BOUNDS_PADDING = 100;
+
+// Euclidean distance between two points.
+const getDistance = (p1: { x: number; y: number }, p2: { x: number; y: number }) => {
+  return Math.sqrt(Math.pow(p1.x - p2.x, 2) + Math.pow(p1.y - p2.y, 2));
+};
+
+// Compute bounding box of the main tree (root + descendants) with padding.
+const getMainTreeBoundingBox = (
+  allNodes: NodeData[],
+  allEdges: EdgeData[],
+  visuals: Map<string, any>
+) => {
+  const mainTreeIds = new Set<string>(['root']);
+  const queue = ['root'];
+  while (queue.length > 0) {
+    const currentId = queue.shift()!;
+    const children = allEdges.filter(e => e.from === currentId).map(e => e.to);
+    children.forEach(childId => {
+      if (!mainTreeIds.has(childId)) {
+        mainTreeIds.add(childId);
+        queue.push(childId);
+      }
+    });
+  }
+
+  let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+  let hasNode = false;
+
+  mainTreeIds.forEach(id => {
+    const node = allNodes.find(n => n.id === id);
+    const visual = visuals.get(id);
+    if (node && visual) {
+      hasNode = true;
+      const { x, y } = visual.style;
+      const { w, h } = visual.box;
+      minX = Math.min(minX, x - w / 2);
+      maxX = Math.max(maxX, x + w / 2);
+      minY = Math.min(minY, y - h / 2);
+      maxY = Math.max(maxY, y + h / 2);
+    }
+  });
+
+  if (!hasNode) return null;
+
+  return {
+    minX: minX - TREE_BOUNDS_PADDING,
+    maxX: maxX + TREE_BOUNDS_PADDING,
+    minY: minY - TREE_BOUNDS_PADDING,
+    maxY: maxY + TREE_BOUNDS_PADDING
+  };
+};
+
+const getConnectionPoint = (x: number, y: number, w: number, h: number, side: 'left' | 'right') => {
+  return {
+    x: x + (side === 'left' ? -w / 2 : w / 2),
+    y,
+  };
+};
 
 function hexToRgb(hex: string) {
   const h = hex.replace('#', '');
@@ -234,12 +285,16 @@ function calculateNodeBox(node: NodeData, style: NodeData) {
   const measureWidth = (text: string) =>
     context?.measureText(text).width || text.length * finalFontSize * 0.6;
   if (nodeLength === 'fit') {
-    const maxFitWidth = node.id === 'root' ? 400 : 400; 
+    // Tăng độ rộng tối đa: root 800px, nodes thường 600px
+    const maxFitWidth = node.id === 'root' ? 800 : 600; 
     let maxWidth = 0;
     const lines = processedText.split('\n');
     
+    // First pass: determine the required width
+    // Node sẽ tự động mở rộng cho đến khi đạt maxFitWidth
     lines.forEach((line: string) => {
       const lineWidth = measureWidth(line);
+      // Node tự fit theo text, chỉ giới hạn ở maxFitWidth
       if (lineWidth > maxFitWidth) {
         maxWidth = maxFitWidth;
       } else {
@@ -248,9 +303,9 @@ function calculateNodeBox(node: NodeData, style: NodeData) {
     });
     
     w = maxWidth + PADDING_X * 2 + borderWidth * 2;
-    w = Math.max(w, 80);
+    w = Math.max(w, 80); // Minimum width
     
-    // Second pass: wrap lines that are too long
+    // Second pass: wrap lines that exceed the determined width
     const contentWidth = w - PADDING_X * 2 - borderWidth * 2;
     lines.forEach((line: string) => {
       if (line.length === 0) {
@@ -260,9 +315,10 @@ function calculateNodeBox(node: NodeData, style: NodeData) {
       
       const lineWidth = measureWidth(line);
       if (lineWidth <= contentWidth) {
+        // Line fits, no wrapping needed
         wrappedLines.push(line);
       } else {
-        // Wrap this line
+        // Line is too long, wrap it
         let currentLine = '';
         const words = line.split(' ');
         for (const word of words) {
@@ -271,10 +327,16 @@ function calculateNodeBox(node: NodeData, style: NodeData) {
           if (testWidth > contentWidth) {
             if (currentLine) wrappedLines.push(currentLine);
             currentLine = word;
-            // Handle very long words
+            // Handle very long single words that don't fit
             while (measureWidth(currentLine) > contentWidth) {
-              wrappedLines.push(currentLine.substring(0, 20));
-              currentLine = currentLine.substring(20);
+              // Find the position to break
+              let breakPos = currentLine.length;
+              while (breakPos > 0 && measureWidth(currentLine.substring(0, breakPos)) > contentWidth) {
+                breakPos--;
+              }
+              if (breakPos === 0) breakPos = 1; // At least 1 character
+              wrappedLines.push(currentLine.substring(0, breakPos));
+              currentLine = currentLine.substring(breakPos);
             }
           } else {
             currentLine = testLine;
@@ -283,7 +345,7 @@ function calculateNodeBox(node: NodeData, style: NodeData) {
         if (currentLine) wrappedLines.push(currentLine);
       }
     });
-  } else {
+  }else {
     w = Number(nodeLength) || 250;
     const contentWidth = w - PADDING_X * 2 - borderWidth * 2;
     const lines = processedText.split('\n');
@@ -316,19 +378,28 @@ function calculateNodeBox(node: NodeData, style: NodeData) {
     wrappedLines.length * finalLineHeight + PADDING_Y * 2
   );
 
+  // Với shape underline, h hiện đang lấy theo text; nhưng node thực tế cần đủ chỗ cho ảnh + khoảng cách
+  // Lưu ý: h ở đây là chiều cao "thân" để layout; totalH bổ sung thêm ảnh phía trên.
+
   let imageHeight = 0;
   let imageWidthDisplay = 0;
    
   if (imageUrl) {
-    // Nếu có ảnh, node sẽ rộng ra hoặc ảnh fit theo width của node
-    // Mặc định ảnh sẽ fit width của node (trừ padding)
-    imageWidthDisplay = w - (PADDING_X * 2) - (borderWidth * 2);
-    // Giả sử tỉ lệ 16:9 hoặc lấy tỉ lệ thật nếu đã lưu trong node
-    // Ở đây tạm tính chiều cao ảnh khoảng 2/3 chiều rộng hiển thị cho đẹp nếu chưa load xong
-    // Nếu đã có imageHeight từ store (sau khi load) thì dùng
-    imageHeight = imageWidthDisplay * 0.6; 
+    // [FIX] Cố định kích thước ảnh thay vì phụ thuộc vào node width
+    imageWidthDisplay = IMAGE_WIDTH;
+    
+    // Tính chiều cao dựa trên tỉ lệ ảnh thực
     if (style.imageHeight && style.imageWidth) {
        imageHeight = (style.imageHeight / style.imageWidth) * imageWidthDisplay;
+    } else {
+       // Fallback: Giả sử tỉ lệ 3:2 khi chưa load xong
+       imageHeight = imageWidthDisplay * 0.66;
+    }
+    
+    // Node width phải đủ rộng để chứa ảnh + padding
+    const minWidthForImage = imageWidthDisplay + (PADDING_X * 2) + (borderWidth * 2);
+    if (w < minWidthForImage) {
+      w = minWidthForImage;
     }
   }
 
@@ -336,7 +407,7 @@ function calculateNodeBox(node: NodeData, style: NodeData) {
   // Nếu textHeight đã bao gồm padding, ta chỉ cần cộng thêm ảnh
   let totalH = h;
   if (imageUrl) {
-      totalH = h + imageHeight + 10;
+      totalH = h + imageHeight + 10; // khoảng cách 10px giữa ảnh và text
   }
 
   return { 
@@ -349,20 +420,43 @@ function calculateNodeBox(node: NodeData, style: NodeData) {
   };
 }
 
-// const URLImage = ({ src, x, y, width, height, onImageLoad }: any) => {
-//   const [image] = useImage(src);
-//   
-//   useEffect(() => {
-//     if (image && onImageLoad) {
-//       onImageLoad(image.width, image.height);
-//     }
-//   }, [image, onImageLoad]); 
+const useKonvaImage = (src: string): [HTMLImageElement | null] => {
+  const [image, setImage] = useState<HTMLImageElement | null>(null);
 
-//   if (!image) return null;
-//   return <KonvaImage image={image} x={x} y={y} width={width} height={height} cornerRadius={4} />;
-// };
+  useEffect(() => {
+    if (!src) {
+      setImage(null);
+      return;
+    }
+    const img = new window.Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => setImage(img);
+    img.onerror = () => setImage(null);
+    img.src = src;
+    return () => {
+      img.onload = null;
+      img.onerror = null;
+    };
+  }, [src]);
 
-export default function Editor({ mode = 'edit' }: EditorProps = {}) {
+  return [image];
+};
+
+const URLImage = ({ src, x, y, width, height, onImageLoad }: any) => {
+  const [image] = useKonvaImage(src);
+  
+  
+  React.useEffect(() => {
+    if (image && onImageLoad) {
+      onImageLoad(image.width, image.height);
+    }
+  }, [image, onImageLoad]); 
+
+  if (!image) return null;
+  return <KonvaImage image={image} x={x} y={y} width={width} height={height} cornerRadius={4} />;
+};
+
+export default function Editor({ mode = 'edit' }: EditorProps) {
   const { id } = useParams<{ id?: string }>();
   const navigate = useNavigate();
   const { addToast } = useToast();
@@ -391,8 +485,8 @@ const {
     edges,
     setGraph,
     applyUserAction,
-    undo,
-    redo,
+    undo: storeUndo,
+    redo: storeRedo,
     clear: clearHistory,
     globalStructure,
     globalFont,
@@ -417,6 +511,21 @@ const {
   const pushHistory = useCallback((newNodes: NodeData[], newEdges: EdgeData[]) => {
     applyUserAction(newNodes, newEdges);
   }, [applyUserAction]);
+
+  // Wrap undo/redo to trigger layout after state change
+  const undo = useCallback(() => {
+    storeUndo();
+    setTimeout(() => {
+      handleLayoutRef.current?.();
+    }, 50);
+  }, [storeUndo]);
+
+  const redo = useCallback(() => {
+    storeRedo();
+    setTimeout(() => {
+      handleLayoutRef.current?.();
+    }, 50);
+  }, [storeRedo]);
 
   const handleToggleBoundary = () => {
     if (selectedNodeIds.length === 1) {
@@ -467,7 +576,7 @@ const {
     // Xóa label node nếu có
     if (relationship.labelNodeId) {
       const newNodes = nodes.filter(n => n.id !== relationship.labelNodeId);
-      setGraph(newNodes, edges);
+      applyUserAction(newNodes, edges);
     }
     
     removeRelationship(id);
@@ -485,7 +594,7 @@ const {
     const newNodes = nodes.map(n => 
       n.id === nodeId ? { ...n, boundary: false } : n
     );
-    setGraph(newNodes, edges);
+    applyUserAction(newNodes, edges);
     setSelectedBoundaryId(null);
     debouncedPersistData();
   };
@@ -530,6 +639,7 @@ const {
   const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null);
   const [dropTargetNodeId, setDropTargetNodeId] = useState<string | null>(null);
   const [dropTargetSide, setDropTargetSide] = useState<'left' | 'right' | null>(null);
+  const [dropTargetIndex, setDropTargetIndex] = useState<number | null>(null);
   const [draggingNodeId, setDraggingNodeId] = useState<string | null>(null);
   const [backgroundColor, setBackgroundColor] = useState('#FAFAFB');
   const [styleClipboard, setStyleClipboard] = useState<Partial<NodeData> | null>(
@@ -541,6 +651,8 @@ const {
 
   const stageRef = useRef<any>(null);
   const canvasContainerRef = useRef<HTMLDivElement>(null);
+  const handleLayoutRef = useRef<() => void>();
+  
   const [canvasContainerWidth, setCanvasContainerWidth] = useState<number>(0);
     useEffect(() => {
       const updateWidth = () => {
@@ -783,19 +895,17 @@ const isReadOnly = useMemo(() => {
       // Node bình thường
       const topo = nodeTopology.get(node.id);
       let style = getNodeComputedStyle(node, activeTheme, globalFont, topo);
-      // [ORG STRUCTURE] Level 3+ vẫn là box, không underline
+      // [ORG STRUCTURE] Level 3+ với underline shape -> chuyển về roundedRect
       const gs = useEditorStore.getState().globalStructure;
-      if (gs === 'org' && topo && topo.depth >= 3) {
-        if (style.color === 'transparent') {
-          style = {
-            ...style,
-            color: activeTheme.quickStyles.default.fill || '#FFFFFF',
-            borderColor: activeTheme.quickStyles.default.stroke || '#CBD5E0',
-            textColor: style.textColor || '#333333',
-            borderWidth: 1,
-            shape: 'roundedRect',
-          } as NodeData;
-        }
+      if (gs === 'org' && topo && topo.depth >= 3 && style.shape === 'underline') {
+        style = {
+          ...style,
+          color: activeTheme.quickStyles.default.fill || '#FFFFFF',
+          borderColor: activeTheme.quickStyles.default.stroke || '#CBD5E0',
+          textColor: style.textColor || '#333333',
+          borderWidth: 1,
+          shape: 'roundedRect',
+        } as NodeData;
       }
       map.set(node.id, style);
     });
@@ -830,6 +940,59 @@ const isReadOnly = useMemo(() => {
     }
     return sides;
   }, [edges, nodeMap, nodesWithChildren]);
+
+  // Auto-pan to keep a node visible in the viewport.
+  const ensureNodeVisible = useCallback((nodeId: string) => {
+    const stage = stageRef.current;
+    if (!stage) return;
+
+    const visual = nodeVisuals.get(nodeId);
+    if (!visual) return;
+
+    const viewW = dimensions.width;
+    const viewH = dimensions.height;
+    const PADDING = 100;
+
+    const nodeWorldX = visual.style.x;
+    const nodeWorldY = visual.style.y;
+    const nodeW = visual.box.w;
+    const nodeH = visual.box.h;
+
+    const screenLeft = pos.x + (nodeWorldX - nodeW / 2) * scale;
+    const screenRight = pos.x + (nodeWorldX + nodeW / 2) * scale;
+    const screenTop = pos.y + (nodeWorldY - nodeH / 2) * scale;
+    const screenBottom = pos.y + (nodeWorldY + nodeH / 2) * scale;
+
+    let deltaX = 0;
+    let deltaY = 0;
+
+    if (screenRight > viewW - PADDING) {
+      deltaX = (viewW - PADDING) - screenRight;
+    } else if (screenLeft < PADDING) {
+      deltaX = PADDING - screenLeft;
+    }
+
+    if (screenBottom > viewH - PADDING) {
+      deltaY = (viewH - PADDING) - screenBottom;
+    } else if (screenTop < PADDING) {
+      deltaY = PADDING - screenTop;
+    }
+
+    if (deltaX !== 0 || deltaY !== 0) {
+      const targetX = pos.x + deltaX;
+      const targetY = pos.y + deltaY;
+
+      stage.to({
+        x: targetX,
+        y: targetY,
+        duration: 0.3,
+        easing: Konva.Easings.EaseOut,
+        onFinish: () => {
+          setPos({ x: targetX, y: targetY });
+        },
+      });
+    }
+  }, [nodeVisuals, dimensions, pos, scale]);
 
   // ==========================================================
   // [MERGE GĐ 7] CẤY GHÉP LOGIC DEBOUNCE (Undo/Save)
@@ -1120,7 +1283,8 @@ const isReadOnly = useMemo(() => {
                   borderColor: '#F59E0B',
                   borderWidth: 2,
                   fontSize: 12,
-                  nodeLength: 150,
+                  // Fit summary node width to its text
+                  nodeLength: 'fit',
                   textColor: '#000000',
                 };
                 loadedNodes.push(summaryNode);
@@ -1421,19 +1585,42 @@ const handleLayout = useCallback(
             const padding = Math.max(10, basePadding + depthPadding);
             boundaryPaddingVertical = padding * 2; // Top + Bottom
           }
+
+          // Nếu node đang collapse thì xem như leaf: chỉ lấy chiều cao của chính nó
+          if (node.collapsed) {
+            node.subtreeHeight = selfHeight + boundaryPaddingVertical;
+            return node.subtreeHeight;
+          }
           
           if (node.children.length === 0) {
             node.subtreeHeight = selfHeight + boundaryPaddingVertical;
             return node.subtreeHeight;
           }
           let childrenTotalHeight = 0;
+          let maxChildShift = 0; // Track maximum shift amount from underline children
+          
           node.children.forEach((child, index) => {
             childrenTotalHeight += calculateSubtreeHeights(child);
             if (index > 0) {
               childrenTotalHeight += VERTICAL_GAP;
             }
+            
+            // [UNDERLINE SHIFT COMPENSATION] Check if child will be shifted up
+            const childStyle = computedNodeStyles.get(child.id);
+            if (childStyle?.shape === 'underline' && child.id !== 'root') {
+              const childVisual = nodeVisuals.get(child.id);
+              if (childVisual) {
+                const imageH = childVisual.box.imageHeight || 0;
+                const imageGap = imageH > 0 ? 10 : 0;
+                const textBlockHeight = Math.max(childVisual.box.h - imageH - imageGap, 0);
+                const shiftAmount = (textBlockHeight > 0 ? textBlockHeight : childVisual.box.h) / 2;
+                maxChildShift = Math.max(maxChildShift, shiftAmount);
+              }
+            }
           });
-          node.subtreeHeight = Math.max(selfHeight, childrenTotalHeight) + boundaryPaddingVertical;
+          
+          // Add the shift compensation to subtreeHeight
+          node.subtreeHeight = Math.max(selfHeight, childrenTotalHeight) + boundaryPaddingVertical + maxChildShift;
           return node.subtreeHeight;
         };
         const positionBranch = (
@@ -1441,6 +1628,7 @@ const handleLayout = useCallback(
           parent: TreeNode,
           side: 'left' | 'right'
         ) => {
+          if (parent.collapsed) return;
           const totalHeight = branchNodes.reduce((sum, node, index) => {
             return sum + node.subtreeHeight + (index > 0 ? VERTICAL_GAP : 0);
           }, 0);
@@ -1477,7 +1665,7 @@ const handleLayout = useCallback(
             node.y = currentY + blockHeight / 2;
             node.side = side;
             currentY += blockHeight + VERTICAL_GAP;
-            if (node.children.length > 0) {
+            if (!node.collapsed && node.children.length > 0) {
               positionChildrenVertically(node.children, node, side);
             }
           });
@@ -1487,6 +1675,7 @@ const handleLayout = useCallback(
           parent: TreeNode,
           side: 'left' | 'right'
         ) => {
+          if (parent.collapsed) return;
           const totalHeight = children.reduce((sum, node, index) => {
             return sum + node.subtreeHeight + (index > 0 ? VERTICAL_GAP : 0);
           }, 0);
@@ -1524,7 +1713,7 @@ const handleLayout = useCallback(
             node.y = currentY + blockHeight / 2;
             node.side = side;
             currentY += blockHeight + VERTICAL_GAP;
-            if (node.children.length > 0) {
+            if (!node.collapsed && node.children.length > 0) {
               positionChildrenVertically(node.children, node, side);
             }
           });
@@ -1719,19 +1908,34 @@ const handleLayout = useCallback(
         
         const [minIdx, maxIdx] = [Math.min(startIdx, endIdx), Math.max(startIdx, endIdx)];
         
-        // Collect leaf nodes
+        const subtreeNodes = new Set<string>();
         const collectLeafNodes = (nodeId: string): string[] => {
           const node = newNodes.find(n => n.id === nodeId);
+          if (node) subtreeNodes.add(nodeId);
           if (node?.collapsed) return [nodeId];
           const children = newNodes.filter(n => n.parentId === nodeId);
           if (children.length === 0) return [nodeId];
           return children.flatMap(child => collectLeafNodes(child.id));
         };
-        
+
         const leafNodes: string[] = [];
         for (let i = minIdx; i <= maxIdx; i++) {
           leafNodes.push(...collectLeafNodes(siblings[i].id));
         }
+
+        // Include summary nodes of descendants so parent summaries sit outside them
+        summaries.forEach((s) => {
+          if (s.summaryNodeId && subtreeNodes.has(s.parentId)) {
+            leafNodes.push(s.summaryNodeId);
+          }
+        });
+
+        // Include summary nodes of descendants so parent summaries sit outside them
+        summaries.forEach((s) => {
+          if (s.summaryNodeId && subtreeNodes.has(s.parentId)) {
+            leafNodes.push(s.summaryNodeId);
+          }
+        });
         
         // Calculate brace position
         const firstNode = newNodes.find(n => n.id === summary.startNodeId);
@@ -1785,10 +1989,29 @@ const handleLayout = useCallback(
       const outwardBase = 80;
       const outwardStep = 28;
 
+      // Calculate depth for each summary (how deep is the parentId in the tree)
+      const calculateDepth = (nodeId: string): number => {
+        let depth = 0;
+        let currentId = nodeId;
+        while (currentId !== 'root') {
+          const parentEdge = edges.find(e => e.to === currentId);
+          if (!parentEdge) break;
+          currentId = parentEdge.from;
+          depth++;
+        }
+        return depth;
+      };
+
       grouped.forEach(group => {
-        group.sort((a, b) => b.spanHeight - a.spanHeight); 
+        // Sort by depth: deeper summaries (children) come first (level 0), shallower (parents) get higher levels
+        group.sort((a, b) => {
+          const depthA = calculateDepth(a.summary.parentId);
+          const depthB = calculateDepth(b.summary.parentId);
+          return depthB - depthA; // Deeper first (higher depth value = closer to leaves)
+        });
+        
         group.forEach((layout, idx) => {
-          const level = group.length - idx - 1; 
+          const level = idx; // First in sorted array (deepest) = level 0, next = level 1, etc.
           summaryLayoutLevelsRef.current.set(layout.summary.id, level);
           const { summary, direction, xMid, midY, firstNodeSide } = layout;
           const summaryNodeIndex = newNodes.findIndex(n => n.id === summary.summaryNodeId);
@@ -1803,8 +2026,95 @@ const handleLayout = useCallback(
         });
       });
 
+      
+      // ===================================================================
+
       // Lấy trạng thái hiện tại của nodes từ store
-      const currentNodesInStore = useEditorStore.getState().nodes;
+      // ===================================================================
+      // [FIX] ALIGN BASELINES (CĂN THẲNG HÀNG ĐƯỜNG GẠCH CHÂN)
+      if (layoutType === 'mindmap' || layoutType === 'logic') {
+        const topologyMap = new Map<string, { depth: number; rootBranch: string }>();
+
+        const findRootBranch = (nodeId: string, rootBranch: string = nodeId): string => {
+          const parentEdge = edges.find(e => e.to === nodeId);
+          if (!parentEdge || parentEdge.from === 'root') return rootBranch;
+          return findRootBranch(parentEdge.from, rootBranch);
+        };
+
+        const buildTopology = (nodeId: string, depth: number) => {
+          const rootBranch = depth === 1 ? nodeId : findRootBranch(nodeId, nodeId);
+          topologyMap.set(nodeId, { depth, rootBranch });
+          edges.filter(e => e.from === nodeId).forEach(e => buildTopology(e.to, depth + 1));
+        };
+        buildTopology('root', 0);
+
+        const rowGroups = new Map<string, NodeData[]>();
+
+        newNodes.forEach(node => {
+          const topo = topologyMap.get(node.id);
+          const nodeStyle = computedNodeStyles.get(node.id);
+          if (topo && nodeStyle?.shape === 'underline' && node.id !== 'root') {
+            const yKey = Math.round(node.y).toString();
+            const groupKey = `${topo.rootBranch}_${yKey}`;
+            if (!rowGroups.has(groupKey)) rowGroups.set(groupKey, []);
+            rowGroups.get(groupKey)!.push(node);
+          }
+        });
+
+        rowGroups.forEach((nodesInRow) => {
+          if (nodesInRow.length <= 1) return;
+
+          let maxUnderlineY = -Infinity;
+          nodesInRow.forEach(node => {
+            const visual = nodeVisuals.get(node.id);
+            if (visual) {
+              const underlineY = node.y + visual.box.h / 2;
+              if (underlineY > maxUnderlineY) {
+                maxUnderlineY = underlineY;
+              }
+            }
+          });
+
+          nodesInRow.forEach(node => {
+            const visual = nodeVisuals.get(node.id);
+            if (visual) {
+              const nodeIndex = newNodes.findIndex(n => n.id === node.id);
+              if (nodeIndex !== -1) {
+                const newY = maxUnderlineY - visual.box.h / 2;
+                if (Math.abs(newNodes[nodeIndex].y - newY) > 0.1) {
+                  newNodes[nodeIndex] = { ...newNodes[nodeIndex], y: newY };
+                }
+              }
+            }
+        });
+      });
+    }
+    // ===================================================================
+
+    // ===================================================================
+    // [FIX] CĂN CHỈNH ĐƯỜNG GẠCH CHÂN (BASELINE ALIGNMENT - SHIFT UP)
+    if (layoutType === 'mindmap' || layoutType === 'logic') {
+      newNodes = newNodes.map(node => {
+        const nodeStyle = computedNodeStyles.get(node.id);
+        if (nodeStyle?.shape === 'underline' && node.id !== 'root') {
+          const visual = nodeVisuals.get(node.id);
+          if (visual) {
+            // Khi node có ảnh, không dịch toàn bộ chiều cao (bao gồm ảnh) lên trên
+            // để tránh kéo node quá cao và chồng lên node khác. Chỉ dịch dựa trên
+            // phần text (box height trừ ảnh + khoảng cách giữa ảnh và text).
+            const imageH = visual.box.imageHeight || 0;
+            const imageGap = imageH > 0 ? 10 : 0;
+            const textBlockHeight = Math.max(visual.box.h - imageH - imageGap, 0);
+            const shiftBase = textBlockHeight > 0 ? textBlockHeight : visual.box.h;
+            return { ...node, y: node.y - shiftBase / 2 };
+          }
+        }
+        return node;
+      });
+    }
+    // ===================================================================
+
+    const currentNodesInStore = useEditorStore.getState().nodes;
 
       // Chỉ cập nhật graph nếu có sự thay đổi đáng kể về vị trí/kích thước
       if (!deepEqualNodes(newNodes, currentNodesInStore)) {
@@ -1816,6 +2126,11 @@ const handleLayout = useCallback(
     [nodeVisuals, setGraph, edges] 
   );
 
+  // Update ref after handleLayout is defined
+  React.useEffect(() => {
+    handleLayoutRef.current = handleLayout;
+  }, [handleLayout]);
+
   
 
   // ============================================================================
@@ -1825,6 +2140,7 @@ const handleLayout = useCallback(
     console.log('[Rebalance] Starting full tree rebalance');
     
     const { globalStructure, nodes, edges } = useEditorStore.getState();
+    const layoutType = globalStructure;
     
     // Chỉ hoạt động với mindmap structure
     if (globalStructure !== 'mindmap') {
@@ -2028,8 +2344,79 @@ const handleLayout = useCallback(
         const { children, subtreeHeight, ...rest } = node;
         return rest;
       });
+    }    
+
+    if (layoutType === 'mindmap' || layoutType === 'logic') {
+      const topologyMap = new Map<string, { depth: number; rootBranch: string }>();
+
+      const findRootBranch = (nodeId: string, rootBranch: string = nodeId): string => {
+        const parentEdge = edges.find(e => e.to === nodeId);
+        if (!parentEdge || parentEdge.from === 'root') return rootBranch;
+        return findRootBranch(parentEdge.from, rootBranch);
+      };
+
+      const buildTopology = (nodeId: string, depth: number) => {
+        const rootBranch = depth === 1 ? nodeId : findRootBranch(nodeId, nodeId);
+        topologyMap.set(nodeId, { depth, rootBranch });
+        edges.filter(e => e.from === nodeId).forEach(e => buildTopology(e.to, depth + 1));
+      };
+      buildTopology('root', 0);
+
+      const rowGroups = new Map<string, NodeData[]>();
+
+      newNodes.forEach(node => {
+        const topo = topologyMap.get(node.id);
+        const nodeStyle = computedNodeStyles.get(node.id);
+        if (topo && nodeStyle?.shape === 'underline' && node.id !== 'root') {
+          const yKey = Math.round(node.y).toString();
+          const groupKey = `${topo.rootBranch}_${yKey}`;
+          if (!rowGroups.has(groupKey)) rowGroups.set(groupKey, []);
+          rowGroups.get(groupKey)!.push(node);
+        }
+      });
+
+      rowGroups.forEach((nodesInRow) => {
+        if (nodesInRow.length <= 1) return;
+
+        let maxUnderlineY = -Infinity;
+        nodesInRow.forEach(node => {
+          const visual = nodeVisuals.get(node.id);
+          if (visual) {
+            const underlineY = node.y + visual.box.h / 2;
+            if (underlineY > maxUnderlineY) {
+              maxUnderlineY = underlineY;
+            }
+          }
+        });
+
+        nodesInRow.forEach(node => {
+          const visual = nodeVisuals.get(node.id);
+          if (visual) {
+            const nodeIndex = newNodes.findIndex(n => n.id === node.id);
+            if (nodeIndex !== -1) {
+              const newY = maxUnderlineY - visual.box.h / 2;
+              if (Math.abs(newNodes[nodeIndex].y - newY) > 0.1) {
+                newNodes[nodeIndex] = { ...newNodes[nodeIndex], y: newY };
+              }
+            }
+          }
+        });
+      });
     }
-    
+
+    if (layoutType === 'mindmap' || layoutType === 'logic') {
+      newNodes = newNodes.map(node => {
+        const nodeStyle = computedNodeStyles.get(node.id);
+        if (nodeStyle?.shape === 'underline' && node.id !== 'root') {
+          const visual = nodeVisuals.get(node.id);
+          if (visual) {
+            return { ...node, y: node.y - visual.box.h / 2 };
+          }
+        }
+        return node;
+      });
+    }
+
     setGraph(newNodes, edges);
     console.log('[Rebalance] Completed');
   }, [nodeVisuals, edges, setGraph]);
@@ -2232,7 +2619,7 @@ const handleFitToScreen = useCallback(() => {
         const newNodes = nodes.map((n) =>
           n.id === editingNodeId ? { ...n, nodeText: newText } : n
         );
-        setGraph(newNodes, edges);
+        applyUserAction(newNodes, edges);
         justStoppedEditingRef.current = true; 
         useEditorStore.setState({ isDirty: true });
         
@@ -2340,7 +2727,9 @@ const handleFitToScreen = useCallback(() => {
       const node = nodeMap.get(nodeId);
       if (!node) return visual.box.h;
       const children = nodes.filter(n => n.parentId === nodeId);
-      if (children.length === 0 || node.collapsed) return visual.box.h;
+      if (children.length === 0) return visual.box.h;
+      // Khi collapse, co chiều cao nhánh về 0 để autolayout ép sát
+      if (node.collapsed) return 0;
       let childrenTotalHeight = 0;
       children.forEach((child, index) => {
         childrenTotalHeight += getSubtreeHeight(child.id);
@@ -2406,8 +2795,7 @@ const handleFitToScreen = useCallback(() => {
     const newNodes = [...updatedNodes, newNodeData];
     const newEdges = [...edges, newEdgeData];
 
-    pushHistory(nodes, edges);
-    setGraph(newNodes, newEdges);
+    applyUserAction(newNodes, newEdges);
     
     // [FIX YÊU CẦU 1] Call layout immediately to get correct position, then animate
     // Smart viewport: ensure new node is visible without full fit-to-screen
@@ -2417,16 +2805,13 @@ const handleFitToScreen = useCallback(() => {
         const finalVisual = nodeVisuals.get(newId);
         if (finalVisual) {
           startNodeBirthAnimation(newId, parentComputedStyle.x, parentComputedStyle.y, finalVisual.style.x, finalVisual.style.y);
+          ensureNodeVisible(newId);
         }
       }, 0);
       startEditing(newId);
-      // Smart pan: only adjust camera if node is outside viewport or behind panel
-      setTimeout(() => {
-        // ensureNodeVisible removed
-      }, 100);
       endRenderTracking();
     }, 0);
-  }, [nodes, edges, pushHistory, setGraph, nodeMap, nodeVisuals, startEditing, handleLayout, startNodeBirthAnimation]);
+  }, [nodes, edges, pushHistory, setGraph, nodeMap, nodeVisuals, startEditing, handleLayout, startNodeBirthAnimation, ensureNodeVisible]);
 
   const handleAddSibling = useCallback((nodeId: string) => {
     if (isReadOnly) { 
@@ -2467,7 +2852,9 @@ const handleFitToScreen = useCallback(() => {
       const node = nodeMap.get(nodeId);
       if (!node) return visual.box.h;
       const children = nodes.filter(n => n.parentId === nodeId);
-      if (children.length === 0 || node.collapsed) return visual.box.h;
+      if (children.length === 0) return visual.box.h;
+      // Khi collapse, co chiều cao nhánh về 0 để autolayout ép sát
+      if (node.collapsed) return 0;
       let childrenTotalHeight = 0;
       children.forEach((child, index) => {
         childrenTotalHeight += getSubtreeHeight(child.id);
@@ -2520,8 +2907,7 @@ const handleFitToScreen = useCallback(() => {
     const newNodes = [...nodes, newNodeData];
     const newEdges = [...edges, newEdgeData];
 
-    pushHistory(nodes, edges);
-    setGraph(newNodes, newEdges);
+    applyUserAction(newNodes, newEdges);
     
     // [FIX YÊU CẦU 1] Call layout immediately to get correct position, then animate
     // Smart viewport: ensure new node is visible without full fit-to-screen
@@ -2531,17 +2917,14 @@ const handleFitToScreen = useCallback(() => {
         const finalVisual = nodeVisuals.get(newId);
         if (finalVisual) {
           startNodeBirthAnimation(newId, parentVisual.style.x, parentVisual.style.y, finalVisual.style.x, finalVisual.style.y);
+          ensureNodeVisible(newId);
         }
       }, 0);
       startEditing(newId);
-      // Smart pan: only adjust camera if node is outside viewport or behind panel
-      setTimeout(() => {
-        // ensureNodeVisible removed
-      }, 100);
       endRenderTracking();
     }, 0);
     
-  }, [nodes, edges, pushHistory, setGraph, nodeMap, nodeVisuals, startEditing, handleLayout, handleAddChild, startNodeBirthAnimation]);
+  }, [nodes, edges, pushHistory, setGraph, nodeMap, nodeVisuals, startEditing, handleLayout, handleAddChild, startNodeBirthAnimation, ensureNodeVisible]);
 
   const handleDeleteNode = useCallback(
     () => {
@@ -2574,7 +2957,7 @@ const handleFitToScreen = useCallback(() => {
       const newEdges = edges.filter(
         (e) => !nodesToDelete.has(e.from) && !nodesToDelete.has(e.to)
       );
-      setGraph(newNodes, newEdges);
+      applyUserAction(newNodes, newEdges);
       setSelectedNodeIds([]);
       setTimeout(() => handleLayout(), 50);
       debouncedPersistData();
@@ -2595,8 +2978,9 @@ const handleFitToScreen = useCallback(() => {
     const STYLE_KEYS: Array<keyof NodeData> = [
       'shape', 'color', 'borderColor', 'borderWidth', 'borderStyle',
       'fontFamily', 'fontSize', 'fontWeight', 'fontStyle', 'textDecoration', 'textAlign', 'textColor', 'textCase', 'nodeLength',
-      'branchColor', 'branchLineStyle', 'branchLineEnd', 'branchLineThickness'
-    ];
+      'branchColor', 'branchLineStyle', 'branchLineEnd', 'branchLineThickness',
+      'imageUrl', 'imageHeight', 'imageWidth'
+    ];;
     const isStyleUpdate = Object.keys(updates).some(k => STYLE_KEYS.includes(k as keyof NodeData));
 
     if (updates.branchColor !== undefined) {
@@ -2609,7 +2993,18 @@ const handleFitToScreen = useCallback(() => {
       selectedNodeIds.forEach(id => updateBranchColorRecursive(id, updates.branchColor as string));
     }
     
-    newNodes = newNodes.map(n => idSet.has(n.id) ? { ...n, ...updates } : n);
+    newNodes = newNodes.map(n => {
+      if (idSet.has(n.id)) {
+        const updated = { ...n, ...updates };
+        // [FIX] Khi xóa ảnh (imageUrl = undefined), cũng xóa dimensions
+        if (updates.imageUrl === undefined) {
+          delete updated.imageWidth;
+          delete updated.imageHeight;
+        }
+        return updated;
+      }
+      return n;
+    });
     
     if (isStyleUpdate) {
       const lockRec = (nodeId: string) => {
@@ -2619,16 +3014,20 @@ const handleFitToScreen = useCallback(() => {
       selectedNodeIds.forEach(id => lockRec(id));
     }
 
-    setGraph(newNodes, edges);
+    applyUserAction(newNodes, edges);
     
     // [OPTIMIZATION] Dirty Checking - chỉ layout khi có thay đổi dimension
     // Theo spec: fontSize, padding, borderWidth, nodeLength ảnh hưởng đến kích thước
     const needsLayout = updates.nodeLength !== undefined || 
                         updates.fontSize !== undefined || 
-                        updates.borderWidth !== undefined;
+                        updates.borderWidth !== undefined ||
+                        'imageUrl' in updates || // Khi chèn/xóa ảnh cần layout ngay (dùng 'in' để catch cả undefined)
+                        updates.imageHeight !== undefined ||
+                        updates.imageWidth !== undefined;
     
     if (needsLayout) {
-      setTimeout(() => handleLayout(), 50);
+      // Set flag để useEffect trigger layout sau khi nodeVisuals update
+      pendingLayoutRef.current = true;
     }
     
     // Lưu ngay lập tức khi thay đổi style node
@@ -2733,6 +3132,14 @@ const handleFitToScreen = useCallback(() => {
         handleAddSibling(singleSelectedId);
       } else if (e.key === 'Delete' || e.key === 'Backspace') {
         e.preventDefault();
+        // Ctrl/Cmd + Delete = chỉ xóa ảnh trong node (nếu có)
+        if ((e.ctrlKey || e.metaKey) && !e.shiftKey) {
+          const node = nodes.find(n => n.id === singleSelectedId);
+          if (node?.imageUrl) {
+            handleUpdateNode({ imageUrl: undefined, imageHeight: undefined, imageWidth: undefined });
+            return;
+          }
+        }
         handleDeleteNode(); 
       } else if (e.key === 'F2') {
         e.preventDefault();
@@ -2954,16 +3361,21 @@ const handleFitToScreen = useCallback(() => {
         setGraph(newNodes, edges);
         debouncedPersistData();
        
+        // Set flag để useEffect trigger layout sau khi nodeVisuals update
         pendingLayoutRef.current = true;
     }
-  }, [setGraph, debouncedPersistData]); 
+  }, [setGraph, debouncedPersistData]);
 
+  // Trigger layout when nodeVisuals changes after image load
   useEffect(() => {
-    if (pendingLayoutRef.current) {
-      handleLayout(); 
+    if (pendingLayoutRef.current && isDataLoaded) {
       pendingLayoutRef.current = false;
+      // Đợi thêm 1 frame để đảm bảo nodeVisuals đã update xong
+      requestAnimationFrame(() => {
+        handleLayout();
+      });
     }
-  }, [handleLayout]);
+  }, [nodeVisuals, isDataLoaded, handleLayout]);
 
   useEffect(() => {
     if (isDataLoaded) {
@@ -2976,76 +3388,136 @@ const handleFitToScreen = useCallback(() => {
   }, [isDataLoaded]); // Chỉ depend on isDataLoaded, không depend on handleFitToScreen
 
   const handleDragMove = (e: any, draggedNodeId: string) => {
-    // Detect drop target khi đang kéo
-    const currentX = e.target.x();
-    const currentY = e.target.y();
-    
-    let potentialDropTarget: string | null = null;
+    const stage = e.target.getStage();
+    const pointerPos = stage.getPointerPosition();
+    if (!pointerPos) return;
+
+    const mouseX = (pointerPos.x - pos.x) / scale;
+    const mouseY = (pointerPos.y - pos.y) / scale;
+
+    let bestTargetId: string | null = null;
+    let bestIndex: number | null = null;
+    let bestDist = Infinity;
     let targetSide: 'left' | 'right' | null = null;
-    
-    for (const node of nodes) {
-      if (node.id === draggedNodeId) continue;
-      if (draggedNodeChildrenRef.current.has(node.id)) continue; // Không cho drop vào con
-      
-      const visual = nodeVisuals.get(node.id);
-      if (!visual) continue;
-      
-      const { w, h } = visual.box;
-      const { x, y } = visual.style;
-      
-      const isOver =
-        currentX > x - w / 2 &&
-        currentX < x + w / 2 &&
-        currentY > y - h / 2 &&
-        currentY < y + h / 2;
-      
-      if (isOver) {
-        potentialDropTarget = node.id;
-        
-        // Calculate side for root based on which side has lower height
-        if (node.id === 'root') {
-          // Calculate total height of each side
-          const calculateSideHeight = (side: 'left' | 'right'): number => {
-            const sideNodes = nodes.filter(n => n.parentId === 'root' && n.side === side);
-            if (sideNodes.length === 0) return 0;
-            
-            const getSubtreeHeight = (nodeId: string): number => {
-              const visual = nodeVisuals.get(nodeId);
-              const selfHeight = visual?.box.h || 60;
-              const children = edges.filter(e => e.from === nodeId).map(e => e.to);
-              if (children.length === 0) return selfHeight;
-              
-              const childrenHeight = children.reduce((sum, childId) => sum + getSubtreeHeight(childId), 0);
-              return selfHeight + childrenHeight + (children.length - 1) * 20;
-            };
-            
-            return sideNodes.reduce((sum, node) => sum + getSubtreeHeight(node.id), 0);
-          };
-          
-          const leftHeight = calculateSideHeight('left');
-          const rightHeight = calculateSideHeight('right');
-          
-          // Show hint on the side with lower height
-          targetSide = leftHeight <= rightHeight ? 'left' : 'right';
+
+    for (const parentNode of nodes) {
+      if (parentNode.id === draggedNodeId) continue;
+      if (draggedNodeChildrenRef.current.has(parentNode.id)) continue;
+
+      const parentVis = nodeVisuals.get(parentNode.id);
+      if (!parentVis) continue;
+
+      let zoneSide: 'left' | 'right' = 'right';
+      if (parentNode.id === 'root') {
+        zoneSide = mouseX < parentVis.style.x ? 'left' : 'right';
+      } else {
+        zoneSide = parentNode.side === 'left' ? 'left' : 'right';
+        if (useEditorStore.getState().globalStructure === 'logic') zoneSide = 'right';
+      }
+
+      let siblings = nodes.filter(n => n.parentId === parentNode.id && n.id !== draggedNodeId);
+      if (parentNode.id === 'root') {
+        siblings = siblings.filter(n => n.side === zoneSide);
+      }
+
+      siblings.sort((a, b) => {
+        const visA = nodeVisuals.get(a.id);
+        const visB = nodeVisuals.get(b.id);
+        return (visA?.style.y || 0) - (visB?.style.y || 0);
+      });
+
+      let minZoneY = parentVis.style.y - parentVis.box.h / 2;
+      let maxZoneY = parentVis.style.y + parentVis.box.h / 2;
+
+      if (siblings.length > 0) {
+        const first = nodeVisuals.get(siblings[0].id);
+        const last = nodeVisuals.get(siblings[siblings.length - 1].id);
+        if (first && last) {
+          minZoneY = Math.min(minZoneY, first.style.y - first.box.h / 2);
+          maxZoneY = Math.max(maxZoneY, last.style.y + last.box.h / 2);
         }
-        break;
+      }
+      minZoneY -= ZONE_PADDING_Y;
+      maxZoneY += ZONE_PADDING_Y;
+
+      let minZoneX = 0;
+      let maxZoneX = 0;
+      let maxChildExtension = 0;
+      const defaultExtension = 150;
+
+      if (siblings.length > 0) {
+        siblings.forEach(sib => {
+          const v = nodeVisuals.get(sib.id);
+          if (v) {
+            if (zoneSide === 'left') {
+              const leftEdge = v.style.x - v.box.w / 2;
+              if (maxChildExtension === 0 || leftEdge < maxChildExtension) {
+                maxChildExtension = leftEdge;
+              }
+            } else {
+              const rightEdge = v.style.x + v.box.w / 2;
+              if (maxChildExtension === 0 || rightEdge > maxChildExtension) {
+                maxChildExtension = rightEdge;
+              }
+            }
+          }
+        });
+      }
+
+      if (zoneSide === 'left') {
+        const parentLeftEdge = parentVis.style.x - parentVis.box.w / 2;
+        const childLeftEdge = maxChildExtension !== 0 ? maxChildExtension : (parentLeftEdge - defaultExtension);
+        maxZoneX = parentLeftEdge;
+        minZoneX = childLeftEdge - ZONE_EXTRA_WIDTH;
+      } else {
+        const parentRightEdge = parentVis.style.x + parentVis.box.w / 2;
+        const childRightEdge = maxChildExtension !== 0 ? maxChildExtension : (parentRightEdge + defaultExtension);
+        minZoneX = parentRightEdge;
+        maxZoneX = childRightEdge + ZONE_EXTRA_WIDTH;
+      }
+
+      const inZoneX = mouseX >= minZoneX && mouseX <= maxZoneX;
+      const inZoneY = mouseY >= minZoneY && mouseY <= maxZoneY;
+
+      if (inZoneX && inZoneY) {
+        const distToParent = Math.abs(mouseY - parentVis.style.y) + Math.abs(mouseX - parentVis.style.x);
+
+        if (distToParent < bestDist) {
+          bestDist = distToParent;
+          bestTargetId = parentNode.id;
+          targetSide = zoneSide;
+
+          if (siblings.length === 0) {
+            bestIndex = 0;
+          } else {
+            let found = false;
+            for (let i = 0; i < siblings.length; i++) {
+              const sibVis = nodeVisuals.get(siblings[i].id);
+              if (!sibVis) continue;
+              if (mouseY < sibVis.style.y) {
+                bestIndex = i;
+                found = true;
+                break;
+              }
+            }
+            if (!found) bestIndex = siblings.length;
+          }
+        }
       }
     }
-    
-    if (dropTargetNodeId !== potentialDropTarget) {
-      setDropTargetNodeId(potentialDropTarget);
-    }
-    if (dropTargetSide !== targetSide) {
-      setDropTargetSide(targetSide);
-    }
+
+    if (dropTargetNodeId !== bestTargetId) setDropTargetNodeId(bestTargetId);
+    if (dropTargetSide !== targetSide) setDropTargetSide(targetSide);
+    if (dropTargetIndex !== bestIndex) setDropTargetIndex(bestIndex);
   };
 
   const handleDragEnd = (e: any, draggedNodeId: string) => {
-    // Fix: Root node không thể drag, chỉ reset về vị trí 0,0
     if (draggedNodeId === 'root') {
       e.target.position({ x: 0, y: 0 });
       setDragStartState(null);
       setDropTargetNodeId(null);
+      setDropTargetSide(null);
+      setDropTargetIndex(null);
       setDraggingNodeId(null);
       draggedNodeChildrenRef.current.clear();
       if (imposterRef.current) {
@@ -3059,150 +3531,149 @@ const handleFitToScreen = useCallback(() => {
       return;
     }
 
-    // Cleanup Imposter
     if (imposterRef.current) {
       imposterRef.current.destroy();
       imposterRef.current = null;
     }
-
-    // Hiện lại nodes thật
     if (hiddenRealNodesRef.current.length > 0) {
       hiddenRealNodesRef.current.forEach(node => node.visible(true));
       hiddenRealNodesRef.current = [];
     }
-    
     draggedNodeChildrenRef.current.clear();
-    setDropTargetNodeId(null);
-    setDropTargetSide(null);
-    setDraggingNodeId(null);
-    setDragStartState(null);
+
     const finalX = e.target.x();
     const finalY = e.target.y();
+    const targetId = dropTargetNodeId;
+    const targetIndex = dropTargetIndex;
 
-    // Check drop target khi thả (thay vì trong khi drag)
-    let dropTargetId: string | null = null;
-    for (const node of nodes) {
-      if (node.id === draggedNodeId) continue;
-      const visual = nodeVisuals.get(node.id);
-      if (!visual) continue;
-      const { w, h } = visual.box;
-      const { x, y } = visual.style;
-      const isOver =
-        finalX > x - w / 2 &&
-        finalX < x + w / 2 &&
-        finalY > y - h / 2 &&
-        finalY < y + h / 2;
-      if (isOver) {
-        dropTargetId = node.id;
-        break;
-      }
-    }
+    setDropTargetNodeId(null);
+    setDropTargetSide(null);
+    setDropTargetIndex(null);
+    setDraggingNodeId(null);
 
-    if (dropTargetId && dropTargetId !== draggedNodeId) {
-      const draggedNode = nodes.find((n) => n.id === draggedNodeId);
-      if (!draggedNode) return;
+    if (targetId && targetId !== draggedNodeId) {
       let isDroppingOnChild = false;
       const checkChildren = (id: string) => {
-        if (id === dropTargetId) {
-          isDroppingOnChild = true;
-          return;
-        }
-        edges.filter((e) => e.from === id).forEach((e) => checkChildren(e.to));
+        if (id === targetId) isDroppingOnChild = true;
+        else edges.filter((edge) => edge.from === id).forEach((edge) => checkChildren(edge.to));
       };
       checkChildren(draggedNodeId);
+
       if (isDroppingOnChild) {
-        addToast('Không thể di chuyển node cha vào node con!', 'error');
-        // Phục hồi vị trí cũ của node
+        addToast('Khong the tha vao con chau!', 'error');
+        handleLayout();
+        return;
+      }
+
+      const newParentId = targetId;
+
+      let newSide = dropTargetSide || nodeMap.get(newParentId)?.side || 'right';
+      if (useEditorStore.getState().globalStructure === 'logic') newSide = 'right';
+
+      const updatedNodes = nodes.map((node) =>
+        node.id === draggedNodeId
+          ? {
+              ...node,
+              parentId: newParentId,
+              side: newSide,
+              x: finalX,
+              y: finalY,
+              color: undefined,
+              borderColor: undefined,
+              textColor: undefined,
+            }
+          : node
+      );
+
+      if (newParentId === 'root') {
+        let leftSiblings = updatedNodes.filter(n => n.parentId === newParentId && n.id !== draggedNodeId && n.side === 'left');
+        let rightSiblings = updatedNodes.filter(n => n.parentId === newParentId && n.id !== draggedNodeId && n.side !== 'left');
+
+        leftSiblings.sort((a, b) => (nodeVisuals.get(a.id)?.style.y || 0) - (nodeVisuals.get(b.id)?.style.y || 0));
+        rightSiblings.sort((a, b) => (nodeVisuals.get(a.id)?.style.y || 0) - (nodeVisuals.get(b.id)?.style.y || 0));
+
+        const insertList = newSide === 'left' ? leftSiblings : rightSiblings;
+        const insertIndex = Math.max(0, Math.min(insertList.length, targetIndex ?? insertList.length));
+        insertList.splice(insertIndex, 0, updatedNodes.find(n => n.id === draggedNodeId)!);
+
+        const sortedChildIds = [...leftSiblings, ...rightSiblings].map(n => n.id);
+
+        const otherEdges = edges.filter(e => e.from !== newParentId && e.to !== draggedNodeId);
+        const newSortedEdges = sortedChildIds.map(childId => ({
+          id: `e-${childId}`,
+          from: newParentId,
+          to: childId
+        }));
+        const finalEdges = [...otherEdges, ...newSortedEdges];
+
+        applyUserAction(updatedNodes, finalEdges);
+      } else {
+        let siblings = updatedNodes.filter(n => n.parentId === newParentId && n.id !== draggedNodeId);
+        siblings.sort((a, b) => (nodeVisuals.get(a.id)?.style.y || 0) - (nodeVisuals.get(b.id)?.style.y || 0));
+
+        const sortedChildIds = siblings.map(n => n.id);
+        const insertIndex = Math.max(0, Math.min(sortedChildIds.length, targetIndex ?? sortedChildIds.length));
+        sortedChildIds.splice(insertIndex, 0, draggedNodeId);
+
+        const otherEdges = edges.filter(e => e.from !== newParentId && e.to !== draggedNodeId);
+        const newSortedEdges = sortedChildIds.map(childId => ({
+          id: `e-${childId}`,
+          from: newParentId,
+          to: childId
+        }));
+        const finalEdges = [...otherEdges, ...newSortedEdges];
+
+        applyUserAction(updatedNodes, finalEdges);
+      }
+
+      sendPatch('NODE_REPARENT', { nodeId: draggedNodeId, newParentId, x: finalX, y: finalY, side: newSide });
+
+      setTimeout(() => handleLayout(), 50);
+    } else {
+      const mainTreeBounds = getMainTreeBoundingBox(nodes, edges, nodeVisuals);
+      let isOutside = true;
+      if (mainTreeBounds) {
+        const { minX, maxX, minY, maxY } = mainTreeBounds;
+        if (finalX >= minX && finalX <= maxX && finalY >= minY && finalY <= maxY) {
+          isOutside = false;
+        }
+      }
+
+      if (isOutside) {
+        const newEdges = edges.filter(e => e.to !== draggedNodeId);
+
+        const newNodes = nodes.map((n) => {
+          if (n.id === draggedNodeId) {
+            return {
+              ...n,
+              parentId: undefined,
+              side: undefined,
+              x: finalX,
+              y: finalY
+            };
+          }
+          return n;
+        });
+
+        applyUserAction(newNodes, newEdges);
+
+        sendPatch('NODE_MOVE', { id: draggedNodeId, x: finalX, y: finalY });
+
+        setTimeout(() => handleLayout(), 0);
+      } else {
         if (dragStartState) {
           const oldNode = dragStartState.nodes.find(n => n.id === draggedNodeId);
           if (oldNode) {
             e.target.position({ x: oldNode.x, y: oldNode.y });
           }
           setGraph(dragStartState.nodes, dragStartState.edges);
-        }
-        return;
-      }
-      const newParentId = dropTargetId;
-      const oldEdge = edges.find((e) => e.to === draggedNodeId);
-      let newEdges: EdgeData[];
-      if (oldEdge) {
-        newEdges = edges.map((e) =>
-          e.id === oldEdge.id ? { ...e, from: newParentId } : e
-        );
-      } else {
-        newEdges = [
-          ...edges,
-          { id: `e-${draggedNodeId}`, from: newParentId, to: draggedNodeId },
-        ];
-      }
-      // Determine new side
-      let newSide = nodeMap.get(newParentId)?.side || 'right';
-      const gs = useEditorStore.getState().globalStructure;
-      if (gs === 'logic') {
-        // In logic mode, always force children to the right
-        newSide = 'right';
-      } else {
-        // If dropping onto ROOT, use the side indicated by the drop target indicator (green plus sign)
-        if (newParentId === 'root' && dropTargetSide) {
-          // Use the side where the indicator was shown during drag
-          newSide = dropTargetSide;
-        } else if (newParentId === 'root') {
-          // Fallback: if dropTargetSide wasn't set, infer by drop x relative to root
-          const rootNode = nodes.find(n => n.id === 'root');
-          if (rootNode) {
-            newSide = (finalX < rootNode.x) ? 'left' : 'right';
-          }
+        } else {
+          handleLayout();
         }
       }
-      // Áp dụng format theme phân cấp: reset style về undefined để kế thừa theme
-      const newNodes = nodes.map((n) =>
-        n.id === draggedNodeId
-          ? {
-              ...n,
-              parentId: newParentId,
-              x: finalX,
-              y: finalY,
-              side: newSide,
-              // Reset các thuộc tính style để node kế thừa theme phân cấp mới
-              color: undefined,
-              borderColor: undefined,
-              textColor: undefined,
-              fontSize: undefined,
-              fontWeight: undefined,
-              borderWidth: undefined,
-              shape: undefined,
-            }
-          : n
-      );
-      setGraph(newNodes, newEdges);
-      sendPatch('NODE_REPARENT', {
-        nodeId: draggedNodeId, newParentId, x: finalX, y: finalY, side: newSide,
-      });
-      // Layout lại khi thay đổi parent
-      setTimeout(() => {
-        handleLayout();
-        // Smart pan: ensure moved node is visible
-        setTimeout(() => {
-          // ensureNodeVisible removed
-        }, 100);
-      }, 50); 
-    } else {
-      const newNodes = nodes.map((n) => {
-        if (n.id === draggedNodeId) {
-          if (n.parentId) {
-            return { ...n, x: finalX, y: finalY };
-          }
-          return {
-            ...n, x: finalX, y: finalY, parentId: undefined, side: undefined,
-          };
-        }
-        return n;
-      });
-      setGraph(newNodes, edges);
-      sendPatch('NODE_MOVE', { id: draggedNodeId, x: finalX, y: finalY });
-      // Re-run layout so summary nodes stay anchored to their braces
-      setTimeout(() => handleLayout(), 0);
     }
+
+    setDragStartState(null);
     debouncedPersistData();
   };
 
@@ -3219,7 +3690,7 @@ const handleFitToScreen = useCallback(() => {
         };
         assignRec(childId);
       });
-      setGraph(newNodes, edges);
+      applyUserAction(newNodes, edges);
     } else {
       const newNodes = nodes.map(n => {
         if (n.styleLocked) return n;
@@ -3231,7 +3702,7 @@ const handleFitToScreen = useCallback(() => {
           borderColor: undefined 
         };
       });
-      setGraph(newNodes, edges);
+      applyUserAction(newNodes, edges);
     }
     debouncedPersistData();
     sendPatch('LINE_COLOR_TOGGLE', { state });
@@ -3275,7 +3746,7 @@ const handleFitToScreen = useCallback(() => {
       };
     });
     
-    setGraph(newNodes, edges);
+    applyUserAction(newNodes, edges);
     useEditorStore.setState({ isDirty: true });
     
     // Lưu ngay lập tức
@@ -3319,7 +3790,7 @@ const handleFitToScreen = useCallback(() => {
       return n;
     });
     
-    setGraph(newNodes, edges);
+    applyUserAction(newNodes, edges);
     setTimeout(() => handleLayout(), 50);
     
     // Lưu ngay lập tức
@@ -3364,7 +3835,7 @@ const handleFitToScreen = useCallback(() => {
     const newNodes = nodes.map((n) =>
       idSet.has(n.id) ? { ...n, ...styleClipboard } : n
     );
-    setGraph(newNodes, edges);
+    applyUserAction(newNodes, edges);
     
     // Chỉ trigger layout nếu style ảnh hưởng đến dimension (fontSize, padding, border)
     // Theo spec: màu sắc chỉ cần Repaint
@@ -3400,7 +3871,7 @@ const handleFitToScreen = useCallback(() => {
     const newNodes = nodes.map((n) =>
       idSet.has(n.id) ? { ...n, ...resetStyle } : n
     );
-    setGraph(newNodes, edges);
+    applyUserAction(newNodes, edges);
     
     // Chỉ layout nếu có thay đổi dimension
     if (needsLayout) {
@@ -3489,7 +3960,7 @@ const handleFitToScreen = useCallback(() => {
           const newNodes = nodes.map(n => 
             n.id === nodeId ? { ...n, collapsed: !n.collapsed } : n
           );
-          setGraph(newNodes, edges);
+          applyUserAction(newNodes, edges);
           
           // Sau khi layout, giữ node ở cùng vị trí screen
           setTimeout(() => {
@@ -3800,6 +4271,7 @@ const handleFitToScreen = useCallback(() => {
           onAddSibling={handleToolbarAddSibling}
           onSetHyperlink={handleSetHyperlink}
           onUpdateNode={handleUpdateNode}
+          onRemoveImage={() => handleUpdateNode({ imageUrl: undefined, imageHeight: undefined, imageWidth: undefined })}
           onToggleBoundary={handleToggleBoundary}
           onAddRelationship={handleAddRelationship}
           onAddSummary={handleAddSummary}
@@ -3836,10 +4308,10 @@ const handleFitToScreen = useCallback(() => {
             const absoluteX = stageRect.left + pos.x + style.x * scale;
             const absoluteY = stageRect.top + pos.y + style.y * scale;
             
-            // Check if Level 3+
+            // Check if underline style
+            const currentStyle = computedNodeStyles.get(editingNodeId!);
+            const isUnderlineStyle = currentStyle?.shape === 'underline';
             const topology = nodeTopology.get(editingNodeId!);
-            const depth = topology?.depth || 0;
-            const isUnderlineStyle = depth >= 3 && editingNodeId !== 'root';
             const isRoot = editingNodeId === 'root';
 
             return (
@@ -4193,7 +4665,7 @@ const handleFitToScreen = useCallback(() => {
               };
 
               const newNodes = [...nodes, newNodeData];
-              setGraph(newNodes, edges);
+              applyUserAction(newNodes, edges);
               startEditing(newId);
               debouncedPersistData();
               sendPatch('NODE_CREATE', { node: newNodeData, edge: null });
@@ -4341,19 +4813,14 @@ const handleFitToScreen = useCallback(() => {
                   const midY = (p1.y + p4.y) / 2;
                   points = [p1.x, p1.y, p1.x, midY, p4.x, midY, p4.x, p4.y];
                 } else if (globalStructure === 'mindmap' || globalStructure === 'logic') {
-                  // Check if fromNode and toNode are Level 3+ (has underline)
-                  const fromTopology = nodeTopology.get(edge.from);
-                  const fromDepth = fromTopology?.depth || 0;
-                  const isFromUnderline = fromDepth >= 3 && edge.from !== 'root';
+                  // Check if fromNode and toNode have underline shape
+                  const isFromUnderline = fromStyle.shape === 'underline' && edge.from !== 'root';
+                  const isToUnderline = toStyle.shape === 'underline';
                   
-                  const toTopology = nodeTopology.get(edge.to);
-                  const toDepth = toTopology?.depth || 0;
-                  const isToUnderline = toDepth >= 3;
-                  
-                  // Nếu fromNode là Level 3+, edge mọc từ underline
+                  // Nếu fromNode có underline shape, edge mọc từ underline
                   if (isFromUnderline) {
                     p1 = { 
-                      x: fromStyle.x + (fromSide === 'left' ? -fromBox.w / 2 - 10 : fromBox.w / 2 + 10), 
+                      x: fromStyle.x + (fromSide === 'left' ? -fromBox.w / 2 : fromBox.w / 2), 
                       y: fromStyle.y + fromBox.h / 2 - 2 // Vị trí underline
                     };
                   } else if (edge.from === 'root') {
@@ -4362,10 +4829,10 @@ const handleFitToScreen = useCallback(() => {
                     p1 = { x: fromStyle.x + (fromSide === 'left' ? -fromBox.w / 2 : fromBox.w / 2), y: fromStyle.y };
                   }
                   
-                  // Nếu toNode là Level 3+, edge kết nối vào underline
+                  // Nếu toNode có underline shape, edge kết nối vào underline
                   if (isToUnderline) {
                     p4 = { 
-                      x: toStyle.x + (toSide === 'left' ? toBox.w / 2 + 10 : -toBox.w / 2 - 10), 
+                      x: toStyle.x + (toSide === 'left' ? toBox.w / 2 : -toBox.w / 2), 
                       y: toStyle.y + toBox.h / 2 - 2 // Vị trí underline
                     };
                   } else {
@@ -4373,7 +4840,7 @@ const handleFitToScreen = useCallback(() => {
                   }
                   
                   points = [ p1.x, p1.y, (p1.x + p4.x) / 2, p1.y, (p1.x + p4.x) / 2, p4.y, p4.x, p4.y ];
-                } else {
+                }else {
                   p1 = { x: fromStyle.x + (fromSide === 'left' ? -fromBox.w / 2 : fromBox.w / 2), y: fromStyle.y };
                   p4 = { x: toStyle.x + (toSide === 'left' ? toBox.w / 2 : -toBox.w / 2), y: toStyle.y };
                   points = [ p1.x, p1.y, (p1.x + p4.x) / 2, p1.y, (p1.x + p4.x) / 2, p4.y, p4.x, p4.y ];
@@ -4431,6 +4898,7 @@ const handleFitToScreen = useCallback(() => {
                   nodeVisuals={nodeVisuals}
                   isSelected={selectedSummaryId === sum.id}
                   level={summaryLayoutLevelsRef.current.get(sum.id) || 0}
+                  summaries={summaries}
                   onUpdateRange={handleUpdateSummaryRange}
                   onClick={() => {
                     setSelectedSummaryId(sum.id);
@@ -4520,10 +4988,9 @@ const handleFitToScreen = useCallback(() => {
                >
                     {(() => {
                       const topology = nodeTopology.get(node.id);
-                      const depth = topology?.depth || 0;
                       
-                      // Level 3+: Render underline (ngoại trừ org)
-                      if (depth >= 3 && node.id !== 'root' && useEditorStore.getState().globalStructure !== 'org') {
+                      // Render dựa trên shape thay vì depth
+                      if (style.shape === 'underline') {
                         return (
                           <>
                             <Rect 
@@ -4537,12 +5004,23 @@ const handleFitToScreen = useCallback(() => {
                             />
                             
                             <Line
-                              points={[-w/2 - 10, h/2 - 2, w/2 + 10, h/2 - 2]}
+                              points={[-w/2, h/2 - 2, w/2, h/2 - 2]}
                               stroke={topology?.branchBaseColor || style.borderColor}
                               strokeWidth={2}
                               lineCap="round"
                               listening={false}
                             />
+
+                            {style.imageUrl && imageHeight > 0 && (
+                              <URLImage
+                                src={style.imageUrl}
+                                x={-imageWidthDisplay / 2}
+                                y={-h / 2 + PADDING_Y}
+                                width={imageWidthDisplay}
+                                height={imageHeight}
+                                onImageLoad={(imgW: number, imgH: number) => handleImageLoad(node.id, imgW, imgH)}
+                              />
+                            )}
                           </>
                         );
                       }
@@ -4553,18 +5031,16 @@ const handleFitToScreen = useCallback(() => {
                             <Rect {...shapeProps} cornerRadius={style.shape === 'roundedRect' ? 8 : 0} />
                           )}
                           
-                          {/* Tạm comment URLImage do useImage không available
-                          {style.imageUrl && (
+                          {style.imageUrl && imageHeight > 0 && (
                             <URLImage 
                               src={style.imageUrl}
-                              x={-w/2 + (style.borderWidth || 0) + PADDING_X} 
-                              y={-h/2 + (style.borderWidth || 0) + PADDING_Y} 
+                              x={-imageWidthDisplay / 2} 
+                              y={-h/2 + PADDING_Y} 
                               width={imageWidthDisplay}
                               height={imageHeight}
                               onImageLoad={(imgW: number, imgH: number) => handleImageLoad(node.id, imgW, imgH)}
                             />
                           )}
-                          */}
                         </>
                       );
                     })()}
@@ -4572,14 +5048,14 @@ const handleFitToScreen = useCallback(() => {
                     <Text
                       visible={editingNodeId !== node.id}
                       text={node.id === 'root' ? (textToRender || '(...)').toUpperCase() : (textToRender || '(...)')}
-                      width={w} 
-                      height={style.imageUrl ? (h - imageHeight - 10) : h} 
-                      offsetX={w / 2} 
-                      offsetY={style.imageUrl ? (h / 2) - imageHeight - 10 : h / 2} 
+                      x={-w/2 + PADDING_X}
+                      y={style.imageUrl && imageHeight > 0 ? (-h/2 + PADDING_Y + imageHeight + 10) : (-h/2 + PADDING_Y)}
+                      width={w - PADDING_X * 2} 
+                      height={style.imageUrl && imageHeight > 0 ? (h - imageHeight - 10 - PADDING_Y * 2) : (h - PADDING_Y * 2)} 
                       align={(style.textAlign || 'CENTER').toLowerCase() as 'left' | 'center' | 'right'}
                       verticalAlign="middle"
                       fill={style.textColor}
-                      padding={PADDING_Y} listening={false}
+                      listening={false}
                       fontSize={finalFontSize}
                       fontStyle={combinedFontStyle}
                       fontFamily={style.fontFamily}
@@ -4621,7 +5097,7 @@ const handleFitToScreen = useCallback(() => {
                       hasChildren && (node.collapsed || hoveredNodeId === node.id) && (
                         <Group
                           x={globalStructure === 'org' ? 0 : (style.side === 'left' ? -w / 2 : w / 2)}
-                          y={globalStructure === 'org' ? (h / 2) : ((nodeTopology.get(node.id)?.depth || 0) >= 3 ? (h / 2 - 2) : 0)}
+                          y={globalStructure === 'org' ? (h / 2) : (style.shape === 'underline' ? (h / 2 - 2) : 0)}
                           onClick={(e) => handleToggleCollapse(e, node.id)}
                           onMouseEnter={(e) => { const stage = e.target.getStage(); if (stage) stage.container().style.cursor = 'pointer'; }}
                          onMouseLeave={(e) => { const stage = e.target.getStage(); if (stage) stage.container().style.cursor = 'default'; }}
@@ -4669,6 +5145,85 @@ const handleFitToScreen = useCallback(() => {
                   </Group>
                 );
               })}
+
+              {draggingNodeId && dropTargetNodeId && dropTargetIndex !== null && (() => {
+                const parentVis = nodeVisuals.get(dropTargetNodeId);
+                if (!parentVis) return null;
+
+                const effectiveSide = dropTargetSide || 'right';
+                const isLogic = globalStructure === 'logic';
+
+                let hintY = parentVis.style.y;
+                let siblings = nodes.filter(n => n.parentId === dropTargetNodeId && n.id !== draggingNodeId);
+                if (dropTargetNodeId === 'root') {
+                  siblings = siblings.filter(n => n.side === effectiveSide);
+                }
+                siblings.sort((a, b) => (nodeVisuals.get(a.id)?.style.y || 0) - (nodeVisuals.get(b.id)?.style.y || 0));
+
+                if (siblings.length > 0) {
+                  if (dropTargetIndex === 0) {
+                    const first = nodeVisuals.get(siblings[0].id);
+                    if (first) hintY = first.style.y - first.box.h / 2 - 10;
+                  } else if (dropTargetIndex >= siblings.length) {
+                    const last = nodeVisuals.get(siblings[siblings.length - 1].id);
+                    if (last) hintY = last.style.y + last.box.h / 2 + 10;
+                  } else {
+                    const prev = nodeVisuals.get(siblings[dropTargetIndex - 1].id);
+                    const next = nodeVisuals.get(siblings[dropTargetIndex].id);
+                    if (prev && next) {
+                      const prevBottom = prev.style.y + prev.box.h / 2;
+                      const nextTop = next.style.y - next.box.h / 2;
+                      hintY = (prevBottom + nextTop) / 2;
+                    }
+                  }
+                } else {
+                  hintY = parentVis.style.y;
+                }
+
+                const X_OFFSET = 80;
+                const ghostW = 100;
+                const ghostH = 36;
+                const ghostX = effectiveSide === 'left'
+                  ? parentVis.style.x - parentVis.box.w / 2 - X_OFFSET - ghostW / 2
+                  : parentVis.style.x + parentVis.box.w / 2 + X_OFFSET + ghostW / 2;
+
+                const startPoint = getConnectionPoint(
+                  parentVis.style.x, parentVis.style.y, parentVis.box.w, parentVis.box.h, effectiveSide
+                );
+                const endSide = effectiveSide === 'left' ? 'right' : 'left';
+                const endPoint = getConnectionPoint(ghostX, hintY, ghostW, ghostH, endSide);
+
+                let pathData = "";
+                if (isLogic) {
+                  pathData = `M ${startPoint.x} ${startPoint.y} L ${endPoint.x} ${endPoint.y}`;
+                } else {
+                  const cX = (startPoint.x + endPoint.x) / 2;
+                  pathData = `M ${startPoint.x} ${startPoint.y} C ${cX} ${startPoint.y}, ${cX} ${endPoint.y}, ${endPoint.x} ${endPoint.y}`;
+                }
+
+                return (
+                  <Group listening={false}>
+                    <Path
+                      data={pathData}
+                      stroke="#3b82f6"
+                      strokeWidth={2}
+                      opacity={0.6}
+                      dash={[5, 5]}
+                    />
+                    <Rect
+                      x={ghostX - ghostW / 2}
+                      y={hintY - ghostH / 2}
+                      width={ghostW}
+                      height={ghostH}
+                      fill="rgba(59, 130, 246, 0.1)"
+                      stroke="#3b82f6"
+                      strokeWidth={2}
+                      cornerRadius={6}
+                      dash={[5, 5]}
+                    />
+                  </Group>
+                );
+              })()}
               <Rect
                 x={selectionRect.x}
                 y={selectionRect.y}

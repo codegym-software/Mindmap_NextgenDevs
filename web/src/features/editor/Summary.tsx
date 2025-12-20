@@ -10,7 +10,8 @@ type SummaryProps = {
   onUpdateRange?: (summaryId: string, newStartNodeId: string, newEndNodeId: string) => void;
   onClick?: () => void;
   onDelete?: () => void;
-  level?: number; // [MỚI] Nhận level từ Editor để đẩy brace ra xa
+  level?: number;
+  summaries?: SummaryData[]; // [MỚI] Để include summary nodes của descendants
 };
 
 const Summary: React.FC<SummaryProps> = ({ 
@@ -21,7 +22,8 @@ const Summary: React.FC<SummaryProps> = ({
   onUpdateRange,
   onClick,
   onDelete,
-  level = 0 // [MỚI] Mặc định là 0 (sát nhất)
+  level = 0,
+  summaries = []
 }) => {
   const startVisual = nodeVisuals.get(summary.startNodeId);
   const endVisual = nodeVisuals.get(summary.endNodeId);
@@ -55,16 +57,17 @@ const Summary: React.FC<SummaryProps> = ({
 
   if (!currentStartVisual || !currentEndVisual) return null;
 
-  // Nếu node bị collapse, dùng chính node đó
   const getLeafNodesInRange = () => {
     // Use siblingsSorted to find range indices
     const startIdx = siblingsSorted.findIndex(n => n.id === localStartNodeId);
     const endIdx = siblingsSorted.findIndex(n => n.id === localEndNodeId);
     const [minIdx, maxIdx] = [Math.min(startIdx, endIdx), Math.max(startIdx, endIdx)];
 
-    // Collect visible leaf nodes under a node (respect collapsed flag)
+    // Collect visible leaf nodes under a node and track subtree
+    const subtreeNodes = new Set<string>();
     const collectLeafNodes = (nodeId: string): string[] => {
       const node = nodes.find(n => n.id === nodeId);
+      if (node) subtreeNodes.add(nodeId);
       if (!node) return [];
       if (node.collapsed) return [nodeId];
       const children = nodes.filter(n => n.parentId === nodeId);
@@ -77,6 +80,14 @@ const Summary: React.FC<SummaryProps> = ({
       const sibling = siblingsSorted[i];
       if (sibling) leafNodes.push(...collectLeafNodes(sibling.id));
     }
+
+    // Include summary nodes of descendants so parent summaries sit outside them
+    summaries.forEach((s) => {
+      if (s.summaryNodeId && subtreeNodes.has(s.parentId)) {
+        leafNodes.push(s.summaryNodeId);
+      }
+    });
+
     return leafNodes;
   };
 

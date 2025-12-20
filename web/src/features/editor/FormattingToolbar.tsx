@@ -379,6 +379,7 @@ function NodeStylePanel({
             >
               <Option value="roundedRect">Bo góc</Option>
               <Option value="rectangle">Vuông</Option>
+              <Option value="underline">Gạch dưới</Option>
             </CustomSelect>
           </div>
         </ColorItem>

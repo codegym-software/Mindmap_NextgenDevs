@@ -5,9 +5,17 @@ type Props = {
   disabled: boolean;
   onInsertLink: () => void;
   onInsertImage: () => void;
+  onRemoveImage?: () => void;
+  hasImage?: boolean;
 };
 
-export default function InsertDropdown({ disabled, onInsertLink, onInsertImage }: Props) {
+export default function InsertDropdown({
+  disabled,
+  onInsertLink,
+  onInsertImage,
+  onRemoveImage,
+  hasImage,
+}: Props) {
   const [isOpen, setIsOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
@@ -34,7 +42,7 @@ export default function InsertDropdown({ disabled, onInsertLink, onInsertImage }
         className={`flex items-center gap-1 p-2 rounded-md text-gray-700 ${
           disabled ? 'opacity-40 cursor-not-allowed' : 'hover:bg-gray-300/50'
         }`}
-        title="Chèn (Link, Ảnh...)"
+        title="Chèn (Link, hình...)"
       >
         <PlusSquare size={20} />
         <ChevronDown size={14} />
@@ -54,6 +62,20 @@ export default function InsertDropdown({ disabled, onInsertLink, onInsertImage }
           >
             <ImageIcon size={16} /> Chèn hình ảnh
           </button>
+          {onRemoveImage && (
+            <button
+              onClick={() => {
+                if (!hasImage) return;
+                handleSelect(onRemoveImage);
+              }}
+              disabled={!hasImage}
+              className={`w-full text-left px-4 py-2 text-sm flex items-center gap-2 ${
+                hasImage ? 'text-gray-700 hover:bg-gray-100' : 'text-gray-400 cursor-not-allowed'
+              }`}
+            >
+              <ImageIcon size={16} /> Xóa hình ảnh
+            </button>
+          )}
         </div>
       )}
     </div>

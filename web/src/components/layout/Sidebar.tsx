@@ -139,6 +139,9 @@ export default function Sidebar() {
   const handleConfirmDelete = async () => {
     if (!deletingId) return;
 
+    // Check if deleting current mindmap
+    const isDeletingCurrent = deletingId === currentMindmapId;
+
     try {
       if (isAuthed) {
         await mindmapsApi.delete(deletingId);
@@ -147,6 +150,11 @@ export default function Sidebar() {
         removeGuest(deletingId); 
       }
       addToast("Đã xóa mindmap", "success");
+      
+      // Navigate to dashboard if deleting current mindmap
+      if (isDeletingCurrent) {
+        window.location.href = '/dashboard';
+      }
     } catch (e: any) {
       console.error("Delete failed:", e);
       addToast(e?.message || "Xóa thất bại", "error");
