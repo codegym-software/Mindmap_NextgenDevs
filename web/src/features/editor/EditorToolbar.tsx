@@ -8,8 +8,7 @@ import {
   BracesIcon,
   Presentation,
   TextSelect,
-  PlusSquare,
-  Bell, //  icon chuông
+  PlusSquare, //  icon chuông
   MessageSquare, // Icon cho Chat
 } from 'lucide-react';
 import UserAvatarMenu from '../auth/UserAvatarMenu';
@@ -372,14 +371,26 @@ const EditorToolbar: React.FC<EditorToolbarProps> = ({
                   : 'Yêu cầu truy cập'
               }
             >
-              <Bell className="w-5 h-5" />
-              {pendingRequestsCount > 0 && (
-                <span className="absolute top-1 right-1 w-2.5 h-2.5 bg-red-600 rounded-full border-2 border-white"></span>
-              )}
             </button>
           )}
 
-          <button onClick={onShare} className="p-2 rounded-md hover:bg-gray-300/50 text-gray-700" title="Chia sẻ"><Share2 size={20} /></button>
+          <button 
+            onClick={onShare} 
+            className={`relative p-2 rounded-md transition-colors ${
+               // Nếu có request thì highlight nhẹ
+               pendingRequestsCount > 0 ? 'bg-blue-50 text-blue-600' : 'hover:bg-gray-300/50 text-gray-700'
+            }`} 
+            title="Chia sẻ & Quản lý quyền"
+          >
+            <Share2 size={20} />
+            
+            {/* LOGIC CHẤM ĐỎ: Nếu là Owner và có request pending */}
+            {isOwner && pendingRequestsCount > 0 && (
+              <span className="absolute top-0 right-0 -mt-1 -mr-1 flex h-4 w-4 items-center justify-center rounded-full bg-red-500 text-[10px] text-white ring-2 ring-white">
+                {pendingRequestsCount}
+              </span>
+            )}
+          </button>
           
           <ExportButton 
             nodes={useEditorStore.getState().nodes}

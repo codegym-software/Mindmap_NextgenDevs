@@ -313,13 +313,13 @@ public class MindmapService {
                 .map(c -> {
                     User user = userMap.get(c.getUserId());
                     if (user == null) return null;
-                    return new CollaboratorResponse(user.getId(), user.getDisplayName(), user.getAvatarUrl(), c.getPermission());
+                    return new CollaboratorResponse(user.getId(), user.getDisplayName(), user.getEmail(), user.getAvatarUrl(), c.getPermission());
                 })
                 .filter(java.util.Objects::nonNull)
                 .collect(Collectors.toList());
         
         if (owner != null) {
-            collaboratorResponses.add(0, new CollaboratorResponse(owner.getId(), owner.getDisplayName(), owner.getAvatarUrl(), Permission.OWNER));
+            collaboratorResponses.add(0, new CollaboratorResponse(owner.getId(), owner.getDisplayName(), owner.getEmail(), owner.getAvatarUrl(), Permission.OWNER));
         }
 
         return new MindmapDetailResponse(mindmap.getId(),

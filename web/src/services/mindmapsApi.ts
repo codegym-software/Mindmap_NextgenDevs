@@ -26,6 +26,7 @@ export type PublicAccessLevel = 'DISABLED' | 'VIEW' | 'EDIT';
 export type Collaborator = {
   userId: string;
   displayName: string;
+  email: string; 
   avatarUrl: string;
   permission: Permission;
 };

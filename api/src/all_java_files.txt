@@ -1,15 +1,12 @@
-** Bạn hãy đọc code phía BE của tôi và đánh giá xem hiện tại luồng hoạt đọng như thế nào, và hiện tại websocket nếu tôi muốn thêm tính năng chat realtim thì có đáp ứng được không; Chat không lưu và DB; **
-** Tôi sẽ gửi bạn code phía FE sau để bạn đánh giá đúng hơn về vấn đề thêm tính năng này nhưng hiện tịa bạn có thể đưa ra các hướng xử lý cho tôi về vấn đề này được không và theo bạn các mindmap khác xử lý vấn đề này như thế nào nhỉ **
-
 ==== ./main/java/com/example/mindmap/MindmapApiApplication.java ====
 package com.example.mindmap;
 
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
-import org.springframework.data.mongodb.config.EnableMongoAuditing; // Enable Auditing
+import org.springframework.data.mongodb.config.EnableMongoAuditing; 
 
 @SpringBootApplication
-@EnableMongoAuditing // Needed for @CreatedDate, @LastModifiedDate if you use them
+@EnableMongoAuditing
 public class MindmapApiApplication {
     public static void main(String[] args) {
         SpringApplication.run(MindmapApiApplication.class, args);
@@ -63,6 +60,7 @@ package com.example.mindmap.websocket;
 import java.io.IOException;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.time.Instant;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -77,11 +75,15 @@ import com.example.mindmap.websocket.dto.BroadcastPatch;
 import com.example.mindmap.websocket.dto.GenericPatch;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 
 // Dependencies để check quyền
 import com.example.mindmap.features.mindmap.Mindmap;
 import com.example.mindmap.features.mindmap.MindmapRepository;
 import com.example.mindmap.features.collaboration.CollaborationRepository;
+import com.example.mindmap.features.chat.ChatMessage;
+import com.example.mindmap.features.chat.ChatRepository;
 
 @Component
 public class MindmapUpdateHandler extends TextWebSocketHandler {
@@ -91,16 +93,19 @@ public class MindmapUpdateHandler extends TextWebSocketHandler {
     private final ObjectMapper objectMapper;
     private final MindmapRepository mindmapRepository;
     private final CollaborationRepository collaborationRepository;
+    private final ChatRepository chatRepository;
 
     // Cấu trúc: Map<MindmapId, Map<SessionId, Session>>
     private final Map<String, Map<String, WebSocketSession>> mindmapRooms = new ConcurrentHashMap<>();
 
     public MindmapUpdateHandler(ObjectMapper objectMapper,
                                 MindmapRepository mindmapRepository,
-                                CollaborationRepository collaborationRepository) {
+                                CollaborationRepository collaborationRepository,
+                                ChatRepository chatRepository) {
         this.objectMapper = objectMapper;
         this.mindmapRepository = mindmapRepository;
         this.collaborationRepository = collaborationRepository;
+        this.chatRepository = chatRepository;
     }
 
     private String getMindmapId(WebSocketSession session) {
@@ -187,14 +192,43 @@ public class MindmapUpdateHandler extends TextWebSocketHandler {
 
         try {
             GenericPatch patch = objectMapper.readValue(payload, GenericPatch.class);
+            JsonNode payloadNode = patch.payload();
+
+            // ====== HANDLE CHAT PERSISTENT ======
+            if ("CHAT_MESSAGE".equals(patch.type())) {
+
+                String content = payloadNode.has("content")
+                        ? payloadNode.get("content").asText()
+                        : "";
+
+                String senderName = payloadNode.has("senderName")
+                        ? payloadNode.get("senderName").asText()
+                        : "Unknown";
+
+                ChatMessage chatMsg = ChatMessage.builder()
+                        .mindmapId(mindmapId)
+                        .userId(userId)
+                        .senderName(senderName)
+                        .content(content)
+                        .build();
+
+                ChatMessage savedMsg = chatRepository.save(chatMsg);
+
+                // inject server truth → FE
+                if (payloadNode instanceof ObjectNode node) {
+                    node.put("id", savedMsg.getId());
+                    node.put("createdAt", savedMsg.getCreatedAt().toString());
+                }
+            }
+            // ==========================================
 
             BroadcastPatch broadcastMessage = new BroadcastPatch(
                     patch.type(),
-                    patch.payload(),
+                    payloadNode,
                     userId
             );
-
             String messageToSend = objectMapper.writeValueAsString(broadcastMessage);
+
 
             log.debug("WebSocket [User: {}] broadcasting [Type: {}] to [Mindmap: {}]",
                     userId, patch.type(), mindmapId);
@@ -530,19 +564,32 @@ public class AuthUtils {
 package com.example.mindmap.core.model;
 
 import java.time.Instant;
-
 import org.springframework.data.annotation.CreatedDate;
 import org.springframework.data.annotation.LastModifiedDate;
 
-import lombok.Data;
-
-@Data
 public abstract class Auditable {
     @CreatedDate
     private Instant createdAt;
 
     @LastModifiedDate
     private Instant updatedAt;
+
+    // Getters and Setters
+    public Instant getCreatedAt() {
+        return createdAt;
+    }
+
+    public void setCreatedAt(Instant createdAt) {
+        this.createdAt = createdAt;
+    }
+
+    public Instant getUpdatedAt() {
+        return updatedAt;
+    }
+
+    public void setUpdatedAt(Instant updatedAt) {
+        this.updatedAt = updatedAt;
+    }
 }
 ==== ./main/java/com/example/mindmap/core/exception/ResourceNotFoundException.java ====
 package com.example.mindmap.core.exception;
@@ -701,28 +748,24 @@ package com.example.mindmap.config;
 
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.http.converter.json.Jackson2ObjectMapperBuilder;
+import org.springframework.context.annotation.Primary;
 
-import com.fasterxml.jackson.databind.SerializationFeature; // Thêm import
+import com.fasterxml.jackson.databind.MapperFeature;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.SerializationFeature;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 
 @Configuration
 public class JacksonConfig {
 
     @Bean
-    public Jackson2ObjectMapperBuilder jackson2ObjectMapperBuilder() {
-        Jackson2ObjectMapperBuilder builder = new Jackson2ObjectMapperBuilder();
-
-        builder.modules(new JavaTimeModule());
-
-        // Date → ISO-8601
-        builder.featuresToDisable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
-
-        builder.serializerByType(Enum.class, new com.fasterxml.jackson.databind.ser.std.ToStringSerializer());
-        builder.featuresToEnable(SerializationFeature.WRITE_ENUMS_USING_TO_STRING);
-
-
-        return builder;
+    @Primary
+    public ObjectMapper objectMapper() {
+        ObjectMapper mapper = new ObjectMapper();
+        mapper.registerModule(new JavaTimeModule());
+        mapper.disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
+        mapper.enable(MapperFeature.ACCEPT_CASE_INSENSITIVE_ENUMS);
+        return mapper;
     }
 }
 
@@ -900,12 +943,17 @@ import java.util.Set;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.mongodb.core.MongoTemplate;
+import org.springframework.data.mongodb.core.convert.MongoCustomConversions;
 import org.springframework.data.mongodb.core.index.CompoundIndexDefinition;
 import org.springframework.data.mongodb.core.index.Index;
 import org.springframework.data.mongodb.core.index.IndexOperations;
+
+import com.fasterxml.jackson.databind.MapperFeature;
+import com.fasterxml.jackson.databind.ObjectMapper;
 
 import jakarta.annotation.PostConstruct;
 
@@ -963,6 +1011,16 @@ public class MongoConfig {
             log.debug("Ensuring index on {}: {}", collectionName, index.getIndexKeys());
             indexOps.ensureIndex(index);
         });
+    }
+
+     // Configure ObjectMapper for MongoDB with case-insensitive enums
+    @Bean
+    public com.fasterxml.jackson.databind.ObjectMapper mongoObjectMapper() {
+        ObjectMapper mapper = new ObjectMapper();
+        mapper.enable(MapperFeature.ACCEPT_CASE_INSENSITIVE_ENUMS);
+        mapper.disable(com.fasterxml.jackson.databind.SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
+        mapper.registerModule(new com.fasterxml.jackson.datatype.jsr310.JavaTimeModule());
+        return mapper;
     }
 }
 ==== ./main/java/com/example/mindmap/config/CognitoConfig.java ====
@@ -1506,73 +1564,63 @@ public class CollaborationController {
 ==== ./main/java/com/example/mindmap/features/collaboration/Collaboration.java ====
 package com.example.mindmap.features.collaboration;
 
-import com.example.mindmap.core.model.Auditable;
-import lombok.*;
 import org.springframework.data.annotation.Id;
-import org.springframework.data.mongodb.core.index.CompoundIndex;
-import org.springframework.data.mongodb.core.index.CompoundIndexes;
 import org.springframework.data.mongodb.core.mapping.Document;
-
-import java.time.Instant;
+import com.example.mindmap.core.model.Auditable;
+import jakarta.validation.constraints.NotNull;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Data;
+import lombok.NoArgsConstructor;
 
 @Data
-@Builder // Thêm Builder pattern để dễ khởi tạo object
+@Builder
 @NoArgsConstructor
 @AllArgsConstructor
-@EqualsAndHashCode(callSuper = false)
 @Document(collection = "collaborators")
-// ✅ CẤU HÌNH INDEXING TRỰC TIẾP TẠI ĐÂY
-@CompoundIndexes({
-        // 1. Đảm bảo tính duy nhất: 1 User chỉ có 1 quyền trong 1 Mindmap
-        @CompoundIndex(name = "mindmap_user_unique", def = "{'mindmapId': 1, 'userId': 1}", unique = true),
-        
-        // 2. Tối ưu Query: Tìm danh sách request đang chờ (PENDING) của 1 Mindmap
-        @CompoundIndex(name = "mindmap_status_idx", def = "{'mindmapId': 1, 'status': 1}"),
-        
-        // 3. Tối ưu Query: Tìm danh sách các Mindmap mà User này đang tham gia hoặc đang xin vào
-        @CompoundIndex(name = "user_status_idx", def = "{'userId': 1, 'status': 1}")
-})
 public class Collaboration extends Auditable {
     @Id
     private String id;
 
+    @NotNull
     private String mindmapId;
+
+    @NotNull
     private String userId;
 
-    private Permission permission; // Quyền hiện tại (nếu ACTIVE) hoặc quyền dự kiến (nếu PENDING)
+    @NotNull
+    private Permission permission; // OWNER, EDITOR, VIEWER
 
-    @Builder.Default
-    private InviteStatus status = InviteStatus.PENDING;
-
-    // --- CÁC TRƯỜNG BỔ SUNG CHO LOGIC REQUEST ACCESS & INVITE ---
-
-    // Phân loại: Được mời (INVITE) hay Tự xin vào (REQUEST_ACCESS)
-    private InviteType type;
-
-    // Nếu là xin quyền, người dùng muốn quyền gì? (Thường là VIEWER hoặc EDITOR)
-    private Permission requestedPermission;
-
-    // Ai là người mời (nếu type = INVITE) -> Lưu userId của Owner/Editor mời
     private String invitedBy;
 
-    // Ai là người duyệt/từ chối (nếu type = REQUEST_ACCESS) -> Lưu userId của Owner
-    private String decidedBy;
+    // Trạng thái mời: PENDING (chờ duyệt), ACCEPTED (đã vào), REJECTED
+    @Builder.Default
+    private InviteStatus status = InviteStatus.ACCEPTED;
+
+    // Loại mời: INVITE (chủ động mời), REQUEST_ACCESS (xin vào)
+    private InviteType type; 
     
-    // Thời điểm duyệt/từ chối
-    private Instant decidedAt;
-
+    private String decidedBy; // Ai là người duyệt
+    
+    private java.time.Instant decidedAt; // Thời điểm duyệt
+    
     public enum InviteStatus {
-        PENDING,  // Đang chờ duyệt (Request) hoặc Chờ chấp nhận (Invite)
-        ACCEPTED, // Đã tham gia
-        REJECTED  // Đã bị từ chối
+        PENDING, ACCEPTED, REJECTED
     }
-
+    
     public enum InviteType {
-        INVITE,         // Owner chủ động mời qua email
-        REQUEST_ACCESS  // User click link và bấm "Request Access"
+        INVITE, REQUEST_ACCESS
+    }
+    
+    // Manual getter/setter for decidedAt (optional - @Data already provides these)
+    public java.time.Instant getDecidedAt() {
+        return decidedAt;
+    }
+    
+    public void setDecidedAt(java.time.Instant decidedAt) {
+        this.decidedAt = decidedAt;
     }
 }
-
 ==== ./main/java/com/example/mindmap/features/collaboration/Permission.java ====
 // src/main/java/com/example/mindmap/features/collaboration/Permission.java
 package com.example.mindmap.features.collaboration;
@@ -1821,6 +1869,7 @@ public class CollaborationService {
             throw new IllegalArgumentException("Owner cannot remove themselves.");
         }
 
+        @SuppressWarnings("null")
         Collaboration collaboration = collaborationRepository
                 .findByMindmapIdAndUserId(mindmapId, collaboratorId)
                 .orElseThrow(() -> new ResourceNotFoundException("Collaboration", "user_id", collaboratorId));
@@ -1844,6 +1893,7 @@ public class CollaborationService {
                 .map(Collaboration::getUserId)
                 .toList();
 
+        @SuppressWarnings("null")
         Map<String, User> userMap = userRepository.findAllById(userIds).stream()
                 .collect(Collectors.toMap(User::getId, Function.identity()));
 
@@ -1892,6 +1942,7 @@ public class CollaborationService {
         }
 
         // 3) Tạo request mới + cache info user để owner hiển thị list
+        @SuppressWarnings("null")
         User user = userRepository.findById(currentUserId)
                 .orElseThrow(() -> new ResourceNotFoundException("User", "id", currentUserId));
 
@@ -1904,10 +1955,12 @@ public class CollaborationService {
                 .requesterAvatar(user.getAvatarUrl())
                 .build();
 
-        accessRequestRepository.save(request);
+        @SuppressWarnings("null")
+        AccessRequest savedRequest = accessRequestRepository.save(request);
         log.info("User {} requested {} access to mindmap {}", currentUserId, requestedPerm, mindmapId);
 
-        // TODO: bắn websocket notify owner
+        // TODO: Implement WebSocket notification to owner about new access request
+        // Example: webSocketService.notifyOwner(mindmapId, "NEW_ACCESS_REQUEST", savedRequest);
     }
 
     // ===================================================================
@@ -2004,6 +2057,108 @@ public interface AccessRequestRepository extends MongoRepository<AccessRequest, 
     List<AccessRequest> findByMindmapId(String mindmapId);
     Optional<AccessRequest> findByMindmapIdAndUserId(String mindmapId, String userId);
     void deleteByMindmapIdAndUserId(String mindmapId, String userId);
+}
+==== ./main/java/com/example/mindmap/features/chat/ChatRepository.java ====
+package com.example.mindmap.features.chat;
+
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.mongodb.repository.MongoRepository;
+import java.util.List;
+
+public interface ChatRepository extends MongoRepository<ChatMessage, String> {
+    
+    // Lấy tin nhắn của 1 mindmap, sắp xếp cũ nhất -> mới nhất
+    List<ChatMessage> findByMindmapIdOrderByCreatedAtAsc(String mindmapId);
+    
+    // Nếu muốn phân trang (ví dụ lấy 50 tin mới nhất)
+    List<ChatMessage> findByMindmapIdOrderByCreatedAtDesc(String mindmapId, Pageable pageable);
+}
+==== ./main/java/com/example/mindmap/features/chat/ChatController.java ====
+package com.example.mindmap.features.chat;
+
+import com.example.mindmap.core.auth.AuthUtils;
+import com.example.mindmap.features.mindmap.MindmapService;
+import com.example.mindmap.features.mindmap.Mindmap;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.*;
+
+import java.util.List;
+
+@RestController
+@RequestMapping("/api/mindmaps/{mindmapId}/messages")
+public class ChatController {
+
+    private final ChatRepository chatRepository;
+    private final MindmapService mindmapService;
+    private final AuthUtils authUtils;
+
+    public ChatController(ChatRepository chatRepository, MindmapService mindmapService, AuthUtils authUtils) {
+        this.chatRepository = chatRepository;
+        this.mindmapService = mindmapService;
+        this.authUtils = authUtils;
+    }
+
+    @GetMapping
+    public ResponseEntity<List<ChatMessage>> getChatHistory(@PathVariable String mindmapId) {
+        String currentUserId = authUtils.getRequiredCurrentUserId();
+        
+        // 1. Check quyền (User phải có quyền VIEW mindmap mới xem được chat)
+        Mindmap mindmap = mindmapService.findMindmapById(mindmapId);
+        mindmapService.checkViewPermission(currentUserId, mindmap);
+
+        // 2. Lấy toàn bộ lịch sử (Production nên limit 50-100 tin)
+        List<ChatMessage> messages = chatRepository.findByMindmapIdOrderByCreatedAtAsc(mindmapId);
+        
+        return ResponseEntity.ok(messages);
+    }
+    
+    // (Optional) API gửi tin nhắn qua HTTP nếu không dùng WebSocket
+    @PostMapping
+    public ResponseEntity<ChatMessage> sendMessage(@PathVariable String mindmapId, @RequestBody ChatMessage request) {
+        String currentUserId = authUtils.getRequiredCurrentUserId();
+        // Check quyền VIEW hoặc EDIT
+        Mindmap mindmap = mindmapService.findMindmapById(mindmapId);
+        mindmapService.checkViewPermission(currentUserId, mindmap); // Hoặc checkEditPermission tuỳ logic
+
+        ChatMessage msg = new ChatMessage();
+        msg.setMindmapId(mindmapId);
+        msg.setUserId(currentUserId);
+        msg.setSenderName(request.getSenderName()); // FE gửi lên hoặc lấy từ DB User
+        msg.setContent(request.getContent());
+        
+        return ResponseEntity.ok(chatRepository.save(msg));
+    }
+}
+==== ./main/java/com/example/mindmap/features/chat/ChatMessage.java ====
+package com.example.mindmap.features.chat;
+
+import com.example.mindmap.core.model.Auditable;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Data;
+import lombok.EqualsAndHashCode;
+import lombok.NoArgsConstructor;
+import org.springframework.data.annotation.Id;
+import org.springframework.data.mongodb.core.index.Indexed;
+import org.springframework.data.mongodb.core.mapping.Document;
+
+@Data
+@Builder
+@NoArgsConstructor
+@AllArgsConstructor
+@EqualsAndHashCode(callSuper = false)
+@Document(collection = "chat_messages")
+public class ChatMessage extends Auditable {
+    @Id
+    private String id;
+
+    @Indexed // Đánh index để query theo mindmap nhanh hơn
+    private String mindmapId;
+
+    private String userId;      // ID người gửi
+    private String senderName;  // Tên người gửi (Snapshot tại thời điểm gửi để hiển thị nhanh)
+    
+    private String content;     // Nội dung tin nhắn
 }
 ==== ./main/java/com/example/mindmap/features/gen_ai/dto/GenAiRequest.java ====
 package com.example.mindmap.features.gen_ai.dto;
@@ -2235,14 +2390,12 @@ public class EditorThemeService {
 package com.example.mindmap.features.editor_theme;
 
 import com.example.mindmap.core.model.Auditable;
-import lombok.Data;
 import lombok.EqualsAndHashCode;
 import org.springframework.data.annotation.Id;
 import org.springframework.data.mongodb.core.index.Indexed;
 import org.springframework.data.mongodb.core.mapping.Document;
 
 // Dựa trên schema bạn cung cấp
-@Data
 @EqualsAndHashCode(callSuper = false)
 @Document("editor_themes")
 public class EditorTheme extends Auditable {
@@ -2261,41 +2414,120 @@ public class EditorTheme extends Auditable {
 
     private String createdBy; // userId nếu do người dùng tạo
 
+    // Getter và Setter methods
+    public String getId() {
+        return id;
+    }
+
+    public void setId(String id) {
+        this.id = id;
+    }
+
+    public String getName() {
+        return name;
+    }
+
+    public void setName(String name) {
+        this.name = name;
+    }
+
+    public String getDescription() {
+        return description;
+    }
+
+    public void setDescription(String description) {
+        this.description = description;
+    }
+
+    public EditorThemeConfig getConfig() {
+        return config;
+    }
+
+    public void setConfig(EditorThemeConfig config) {
+        this.config = config;
+    }
+
+    public boolean isSystemTheme() {
+        return isSystemTheme;
+    }
+
+    public void setSystemTheme(boolean systemTheme) {
+        isSystemTheme = systemTheme;
+    }
+
+    public String getCreatedBy() {
+        return createdBy;
+    }
+
+    public void setCreatedBy(String createdBy) {
+        this.createdBy = createdBy;
+    }
+
     // --- Inner Classes cho cấu hình ---
 
-    @Data
     public static class EditorThemeConfig {
         private Background background;
         private Grid grid;
         private NodeStyleConfig nodeDefaults; // Đổi tên để tránh trùng lặp với NodeStyle của content
         private EdgeStyle edgeDefaults;
+
+        public Background getBackground() { return background; }
+        public void setBackground(Background background) { this.background = background; }
+        public Grid getGrid() { return grid; }
+        public void setGrid(Grid grid) { this.grid = grid; }
+        public NodeStyleConfig getNodeDefaults() { return nodeDefaults; }
+        public void setNodeDefaults(NodeStyleConfig nodeDefaults) { this.nodeDefaults = nodeDefaults; }
+        public EdgeStyle getEdgeDefaults() { return edgeDefaults; }
+        public void setEdgeDefaults(EdgeStyle edgeDefaults) { this.edgeDefaults = edgeDefaults; }
     }
 
-    @Data
     public static class Background {
         private String type; // 'color', 'gradient', 'image'
         private String value;
+
+        public String getType() { return type; }
+        public void setType(String type) { this.type = type; }
+        public String getValue() { return value; }
+        public void setValue(String value) { this.value = value; }
     }
 
-    @Data
     public static class Grid {
         private boolean enabled;
         private String color;
         private int spacing;
+
+        public boolean isEnabled() { return enabled; }
+        public void setEnabled(boolean enabled) { this.enabled = enabled; }
+        public String getColor() { return color; }
+        public void setColor(String color) { this.color = color; }
+        public int getSpacing() { return spacing; }
+        public void setSpacing(int spacing) { this.spacing = spacing; }
     }
 
-    @Data
     public static class NodeStyleConfig {
         private String color;
         private String font;
         private String textAlign;
+
+        public String getColor() { return color; }
+        public void setColor(String color) { this.color = color; }
+        public String getFont() { return font; }
+        public void setFont(String font) { this.font = font; }
+        public String getTextAlign() { return textAlign; }
+        public void setTextAlign(String textAlign) { this.textAlign = textAlign; }
     }
 
-    @Data
     public static class EdgeStyle {
         private String color;
         private int thickness;
         private String type; // 'bezier', 'straight'
+
+        public String getColor() { return color; }
+        public void setColor(String color) { this.color = color; }
+        public int getThickness() { return thickness; }
+        public void setThickness(int thickness) { this.thickness = thickness; }
+        public String getType() { return type; }
+        public void setType(String type) { this.type = type; }
     }
 }
 
@@ -2929,115 +3161,74 @@ public class UserService {
 ==== ./main/java/com/example/mindmap/features/user/User.java ====
 package com.example.mindmap.features.user;
 
-import com.example.mindmap.core.model.Auditable; // [UPDATE] Import Auditable
-import lombok.Data;
-import lombok.EqualsAndHashCode; // [UPDATE] Import
-import lombok.NoArgsConstructor;
+import com.example.mindmap.core.model.Auditable;
 import org.springframework.data.annotation.Id;
 import org.springframework.data.mongodb.core.index.Indexed;
 import org.springframework.data.mongodb.core.mapping.Document;
 
-/**
- * User document được lưu trong collection "users" của MongoDB.
- * Đại diện một tài khoản người dùng (bao gồm Guest user và Cognito user).
- * [FIX] Kế thừa Auditable để tự động hóa createdAt/updatedAt
- */
-@Data
-@NoArgsConstructor
 @Document("users")
-@EqualsAndHashCode(callSuper = false) // [UPDATE] Thêm vào
-public class User extends Auditable { // [UPDATE] Kế thừa Auditable
+public class User extends Auditable {
 
-    /**
-     * ID người dùng.
-     * - Nếu là user đăng nhập qua Cognito: Cognito Sub ID.
-     * - Nếu là user guest: tự sinh UUID.
-     */
     @Id
     private String id;
 
-    /**
-     * Email của người dùng.
-     * @Indexed(unique = true, sparse = true):
-     *  - unique: đảm bảo email không bị duplicate giữa các user thật.
-     *  - sparse: cho phép các user không có email (Guest): không bị lỗi duplicate.
-     */
     @Indexed(unique = true, sparse = true)
     private String email;
 
-    /**
-     * Tên hiển thị của user trong hệ thống.
-     * Dùng để show avatar/name trên UI.
-     */
     @Indexed
     private String displayName;
 
-    /**
-     * URL đến avatar của user (lưu trên S3 hoặc external storage).
-     */
     private String avatarUrl;
 
-    /**
-     * Username do Cognito quản lý, không phải email.
-     * Dùng khi cần kết nối Cognito API.
-     */
     private String cognitoUsername;
 
-    /**
-     * Trạng thái của user (ACTIVE / INACTIVE / PENDING_VERIFICATION / GUEST).
-     * Mặc định ACTIVE.
-     */
     private UserStatus status = UserStatus.ACTIVE;
 
-    /**
-     * Settings cá nhân của user (ngôn ngữ, theme sáng/tối).
-     */
     private UserSettings settings = new UserSettings();
 
-    // [UPDATE] Xóa 2 trường createdAt và updatedAt (đã được Auditable quản lý)
+    // Getters and Setters
+    public String getId() { return id; }
+    public void setId(String id) { this.id = id; }
+    
+    public String getEmail() { return email; }
+    public void setEmail(String email) { this.email = email; }
+    
+    public String getDisplayName() { return displayName; }
+    public void setDisplayName(String displayName) { this.displayName = displayName; }
+    
+    public String getAvatarUrl() { return avatarUrl; }
+    public void setAvatarUrl(String avatarUrl) { this.avatarUrl = avatarUrl; }
+    
+    public String getCognitoUsername() { return cognitoUsername; }
+    public void setCognitoUsername(String cognitoUsername) { this.cognitoUsername = cognitoUsername; }
+    
+    public UserStatus getStatus() { return status; }
+    public void setStatus(UserStatus status) { this.status = status; }
+    
+    public UserSettings getSettings() { return settings; }
+    public void setSettings(UserSettings settings) { this.settings = settings; }
 
-    /**
-     * Sub-object chứa cấu hình cá nhân hóa của user.
-     */
-    @Data
     public static class UserSettings {
-
-        /**
-         * Theme editor mặc định (nếu user đang dùng editor Mindmap hoặc Markdown).
-         * Ví dụ: "monokai", "github-dark", "solarized".
-         */
         private String defaultEditorThemeId;
-
-        /**
-         * Ngôn ngữ giao diện UI của user.
-         * Mặc định tiếng Việt.
-         */
-        private String language = "vi"; // [FIX] Cập nhật default theo yêu cầu
-
-        /**
-         * Theme sáng tối của giao diện mindmap / dashboard.
-         * Giá trị hợp lệ:
-         * - "light": giao diện sáng
-         * - "dark": giao diện tối
-         * - "system": tự theo theme của OS
-         */
+        private String language = "vi";
         private String colorMode = "light";
-
-        /**
-         * [FIX] Gợi ý layout mặc định.
-         * "FREEFORM" | "TREE" | "HORIZONTAL" | "RADIAL"
-         */
         private String preferredLayout = "FREEFORM";
+
+        public String getDefaultEditorThemeId() { return defaultEditorThemeId; }
+        public void setDefaultEditorThemeId(String defaultEditorThemeId) { this.defaultEditorThemeId = defaultEditorThemeId; }
+        
+        public String getLanguage() { return language; }
+        public void setLanguage(String language) { this.language = language; }
+        
+        public String getColorMode() { return colorMode; }
+        public void setColorMode(String colorMode) { this.colorMode = colorMode; }
+        
+        public String getPreferredLayout() { return preferredLayout; }
+        public void setPreferredLayout(String preferredLayout) { this.preferredLayout = preferredLayout; }
     }
 
-    /**
-     * Enum phân loại trạng thái tài khoản user.
-     */
     public enum UserStatus {
-        ACTIVE,                // User hoạt động
-        INACTIVE,              // Không sử dụng (tạm khóa)
-        PENDING_VERIFICATION,  // Đã đăng ký nhưng chưa xác thực email
-        GUEST                  // Không yêu cầu email / Cognito
+        ACTIVE, INACTIVE, PENDING_VERIFICATION, GUEST
     }
 }
 ==== ./main/java/com/example/mindmap/features/user/UserRepository.java ====
@@ -3294,6 +3485,7 @@ public record MindmapSummaryResponse(
         String id,
         String name,
         String ownerId,
+        Instant createdAt,
         Instant updatedAt,
         List<String> tags,
         Mindmap.AccessSettings accessSettings
@@ -3304,25 +3496,23 @@ package com.example.mindmap.features.mindmap.dto;
 import com.example.mindmap.features.mindmap.content.MindmapContent;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+
 import java.time.Instant;
 
-/**
- * DTO (Data Transfer Object) dùng để nhận dữ liệu
- * khi người dùng Guest đồng bộ (sync) mindmap lên server.
- *
- * Chứa các trường mà FE (dataMapper.ts) gửi lên.
- */
+@JsonIgnoreProperties(ignoreUnknown = true)
 public record MindmapSyncRequest(
+        String id,  
+
         @NotBlank
         String name,
 
         @NotNull
         MindmapContent content,
 
-        // Chúng ta nhận 'createdAt' (String ISO) từ guest
-        // để giữ lại ngày tạo gốc
         String createdAt
 ) {}
+
 ==== ./main/java/com/example/mindmap/features/mindmap/dto/MindmapDetailResponse.java ====
 // src/main/java/com/example/mindmap/features/mindmap/dto/MindmapDetailResponse.java
 package com.example.mindmap.features.mindmap.dto;
@@ -3480,10 +3670,14 @@ public class MindmapService {
     /**
      * Kiểm tra quyền sửa (EDIT):
      * 1. Là Owner
-     * 2. Là Collaborator ĐÃ ĐƯỢC CHẤP NHẬN (ACTIVE) + Quyền EDITOR
+     * 2. Mindmap Public với EDIT access level
+     * 3. Là Collaborator ĐÃ ĐƯỢC CHẤP NHẬN (ACTIVE) + Quyền EDITOR
      */
     public void checkEditPermission(String userId, Mindmap mindmap) {
         if (mindmap.getOwnerId().equals(userId)) return;
+        
+        // Check public EDIT access
+        if (mindmap.getAccessSettings().isPublic() && mindmap.getAccessSettings().getPublicAccessLevel() == Mindmap.PublicAccessLevel.EDIT) return;
         
         collaborationRepository.findByMindmapIdAndUserId(mindmap.getId(), userId)
                 .filter(c -> c.getStatus() == Collaboration.InviteStatus.ACCEPTED) // Phải Active
@@ -3679,7 +3873,7 @@ public class MindmapService {
     }
 
     private MindmapSummaryResponse toSummaryResponse(Mindmap mindmap) {
-        return new MindmapSummaryResponse(mindmap.getId(), mindmap.getName(), mindmap.getOwnerId(), mindmap.getUpdatedAt(), mindmap.getTags(), mindmap.getAccessSettings());
+        return new MindmapSummaryResponse(mindmap.getId(), mindmap.getName(), mindmap.getOwnerId(), mindmap.getCreatedAt(), mindmap.getUpdatedAt(), mindmap.getTags(), mindmap.getAccessSettings());
     }
 
     private MindmapDetailResponse toDetailResponse(Mindmap mindmap) {
@@ -3757,11 +3951,33 @@ public class MindmapService {
         if (original.getStyle() != null) {
             NodeStyle originalStyle = original.getStyle();
             NodeStyle newStyle = new NodeStyle();
+            
+            // --- SAO CHÉP TẤT CẢ THUỘC TÍNH STYLE ---
             newStyle.setColor(originalStyle.getColor());
             newStyle.setFont(originalStyle.getFont());
             newStyle.setIsBold(originalStyle.getIsBold());
             newStyle.setIsItalic(originalStyle.getIsItalic());
             newStyle.setTextAlign(originalStyle.getTextAlign());
+            newStyle.setShape(originalStyle.getShape());
+            newStyle.setBorderColor(originalStyle.getBorderColor());
+            newStyle.setBorderWidth(originalStyle.getBorderWidth());
+            newStyle.setBorderStyle(originalStyle.getBorderStyle());
+            newStyle.setImageUrl(originalStyle.getImageUrl());
+            newStyle.setImageWidth(originalStyle.getImageWidth());
+            newStyle.setImageHeight(originalStyle.getImageHeight());
+            newStyle.setFontFamily(originalStyle.getFontFamily());
+            newStyle.setFontSize(originalStyle.getFontSize());
+            newStyle.setFontWeight(originalStyle.getFontWeight());
+            newStyle.setFontStyle(originalStyle.getFontStyle());
+            newStyle.setTextDecoration(originalStyle.getTextDecoration());
+            newStyle.setTextColor(originalStyle.getTextColor());
+            newStyle.setTextCase(originalStyle.getTextCase());
+            newStyle.setBranchColor(originalStyle.getBranchColor());
+            newStyle.setBranchLineStyle(originalStyle.getBranchLineStyle());
+            newStyle.setBranchLineEnd(originalStyle.getBranchLineEnd());
+            newStyle.setBranchLineThickness(originalStyle.getBranchLineThickness());
+            newStyle.setQuickStyleId(originalStyle.getQuickStyleId());
+
             copy.setStyle(newStyle);
         } else {
             copy.setStyle(new NodeStyle());
@@ -3783,49 +3999,73 @@ public class MindmapService {
 package com.example.mindmap.features.mindmap.content;
 
 import java.util.List;
-
+import java.util.ArrayList;
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonValue;
-import lombok.Data;
 
-/**
- * MindmapContent là cấu trúc chính chứa toàn bộ nội dung của 1 Mindmap.
- * - Lưu danh sách Node và Edge để FE render bằng Konva hoặc bất kỳ canvas engine nào.
- * - Không phụ thuộc MongoDB annotation vì đây là sub-object nằm trong collection mindmaps.
- */
-@Data
 public class MindmapContent {
-
-    /**
-     * Chế độ layout của Mindmap.
-     * FE sẽ xử lý khác nhau dựa trên layoutMode:
-     * - FREEFORM: Người dùng tự do kéo thả node (giống Miro, Figjam, Excalidraw)
-     * - TREE_RIGHT: Render dạng cây từ trái sang phải (mindmap truyền thống)
-     * - TREE_LEFT: Render dạng cây từ phải sang trái
-     * - ORG_CHART: Sơ đồ tổ chức (cây từ trên xuống dưới)
-     *
-     * Mặc định = "FREEFORM".
-     */
     private String layoutMode = "FREEFORM";
-
-    /** Danh sách node trong mindmap */
-    private List<NodeData> nodes;
-
-    /** Danh sách các liên kết giữa node với node */
-    private List<EdgeData> edges;
-    
-    private GlobalSettings globalSettings = new GlobalSettings(); 
-
-
-    /** Theme của mindmap (light | dark) */
+    private List<NodeData> nodes = new ArrayList<>();
+    private List<EdgeData> edges = new ArrayList<>();
     private MindmapTheme theme = MindmapTheme.LIGHT;
+    private GlobalSettings globalSettings = new GlobalSettings();
+    
+    // [NEW] Thêm relationships và summaries
+    private List<Object> relationships = new ArrayList<>(); // Dùng Object để linh hoạt
+    private List<Object> summaries = new ArrayList<>();     // Dùng Object để linh hoạt
 
-    /**
-     * Enum MindmapTheme hỗ trợ deserialize từ string "light"/"dark"
-     */
+    // Getters and Setters
+    public String getLayoutMode() { return layoutMode; }
+    public void setLayoutMode(String layoutMode) { this.layoutMode = layoutMode; }
+    
+    public List<NodeData> getNodes() { return nodes; }
+    public void setNodes(List<NodeData> nodes) { this.nodes = nodes; }
+    
+    public List<EdgeData> getEdges() { return edges; }
+    public void setEdges(List<EdgeData> edges) { this.edges = edges; }
+    
+    public MindmapTheme getTheme() { return theme; }
+    public void setTheme(MindmapTheme theme) { this.theme = theme; }
+    
+    public GlobalSettings getGlobalSettings() { return globalSettings; }
+    public void setGlobalSettings(GlobalSettings globalSettings) { this.globalSettings = globalSettings; }
+    
+    // [NEW] Getters and Setters cho relationships và summaries
+    public List<Object> getRelationships() { return relationships; }
+    public void setRelationships(List<Object> relationships) { this.relationships = relationships; }
+    
+    public List<Object> getSummaries() { return summaries; }
+    public void setSummaries(List<Object> summaries) { this.summaries = summaries; }
+
+    public static class GlobalSettings {
+        private String fontFamily;
+        private Integer branchLineWidth;
+        private Boolean isColoredBranch;
+        private String globalBranchColor;
+        private String backgroundColor;
+        private String activeColorThemeId;
+
+        public String getFontFamily() { return fontFamily; }
+        public void setFontFamily(String fontFamily) { this.fontFamily = fontFamily; }
+        
+        public Integer getBranchLineWidth() { return branchLineWidth; }
+        public void setBranchLineWidth(Integer branchLineWidth) { this.branchLineWidth = branchLineWidth; }
+        
+        public Boolean getIsColoredBranch() { return isColoredBranch; }
+        public void setIsColoredBranch(Boolean isColoredBranch) { this.isColoredBranch = isColoredBranch; }
+        
+        public String getGlobalBranchColor() { return globalBranchColor; }
+        public void setGlobalBranchColor(String globalBranchColor) { this.globalBranchColor = globalBranchColor; }
+        
+        public String getBackgroundColor() { return backgroundColor; }
+        public void setBackgroundColor(String backgroundColor) { this.backgroundColor = backgroundColor; }
+        
+        public String getActiveColorThemeId() { return activeColorThemeId; }
+        public void setActiveColorThemeId(String activeColorThemeId) { this.activeColorThemeId = activeColorThemeId; }
+    }
+
     public enum MindmapTheme {
-        LIGHT,
-        DARK;
+        LIGHT, DARK;
 
         @JsonCreator
         public static MindmapTheme from(String value) {
@@ -3846,28 +4086,125 @@ package com.example.mindmap.features.mindmap.content;
 
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonFormat;
-import lombok.Data;
 
-@Data
 public class NodeStyle {
-    private String color; // e.g., "#RRGGBB"
-    private String font;  // e.g., "Arial"
+    private String color;
+    private String font;
     private Boolean isBold = false;
     private Boolean isItalic = false;
     private TextAlign textAlign = TextAlign.CENTER;
+    private String shape;
+    private String borderColor;
+    private Integer borderWidth;
+    private String borderStyle;
+    private String imageUrl;
+    private Double imageWidth;
+    private Double imageHeight;
+    private String fontFamily;
+    private Integer fontSize;
+    private String fontWeight;
+    private String fontStyle;
+    private String textDecoration;
+    private String textColor;
+    private String textCase;
+    private String backgroundColor;
+    private String branchColor;
+    private String branchLineStyle;
+    private String branchLineEnd;
+    private String branchLineThickness;
+    private String quickStyleId;
+    private String nodeLength;
+    private String localStructure;
+    private Boolean styleLocked;
 
-    // ✅ CHỈ đặt JsonFormat ở đây, trên ENUM
+    // Getters and Setters
+    public String getColor() { return color; }
+    public void setColor(String color) { this.color = color; }
+    
+    public String getFont() { return font; }
+    public void setFont(String font) { this.font = font; }
+    
+    public Boolean getIsBold() { return isBold; }
+    public void setIsBold(Boolean isBold) { this.isBold = isBold; }
+    
+    public Boolean getIsItalic() { return isItalic; }
+    public void setIsItalic(Boolean isItalic) { this.isItalic = isItalic; }
+    
+    public TextAlign getTextAlign() { return textAlign; }
+    public void setTextAlign(TextAlign textAlign) { this.textAlign = textAlign; }
+    
+    public String getShape() { return shape; }
+    public void setShape(String shape) { this.shape = shape; }
+    
+    public String getBorderColor() { return borderColor; }
+    public void setBorderColor(String borderColor) { this.borderColor = borderColor; }
+    
+    public Integer getBorderWidth() { return borderWidth; }
+    public void setBorderWidth(Integer borderWidth) { this.borderWidth = borderWidth; }
+    
+    public String getBorderStyle() { return borderStyle; }
+    public void setBorderStyle(String borderStyle) { this.borderStyle = borderStyle; }
+    
+    public String getImageUrl() { return imageUrl; }
+    public void setImageUrl(String imageUrl) { this.imageUrl = imageUrl; }
+    
+    public Double getImageWidth() { return imageWidth; }
+    public void setImageWidth(Double imageWidth) { this.imageWidth = imageWidth; }
+    
+    public Double getImageHeight() { return imageHeight; }
+    public void setImageHeight(Double imageHeight) { this.imageHeight = imageHeight; }
+    
+    public String getFontFamily() { return fontFamily; }
+    public void setFontFamily(String fontFamily) { this.fontFamily = fontFamily; }
+    
+    public Integer getFontSize() { return fontSize; }
+    public void setFontSize(Integer fontSize) { this.fontSize = fontSize; }
+    
+    public String getFontWeight() { return fontWeight; }
+    public void setFontWeight(String fontWeight) { this.fontWeight = fontWeight; }
+    
+    public String getFontStyle() { return fontStyle; }
+    public void setFontStyle(String fontStyle) { this.fontStyle = fontStyle; }
+    
+    public String getTextDecoration() { return textDecoration; }
+    public void setTextDecoration(String textDecoration) { this.textDecoration = textDecoration; }
+    
+    public String getTextColor() { return textColor; }
+    public void setTextColor(String textColor) { this.textColor = textColor; }
+    
+    public String getTextCase() { return textCase; }
+    public void setTextCase(String textCase) { this.textCase = textCase; }
+    
+    public String getBackgroundColor() { return backgroundColor; }
+    public void setBackgroundColor(String backgroundColor) { this.backgroundColor = backgroundColor; }
+    
+    public String getBranchColor() { return branchColor; }
+    public void setBranchColor(String branchColor) { this.branchColor = branchColor; }
+    
+    public String getBranchLineStyle() { return branchLineStyle; }
+    public void setBranchLineStyle(String branchLineStyle) { this.branchLineStyle = branchLineStyle; }
+    
+    public String getBranchLineEnd() { return branchLineEnd; }
+    public void setBranchLineEnd(String branchLineEnd) { this.branchLineEnd = branchLineEnd; }
+    
+    public String getBranchLineThickness() { return branchLineThickness; }
+    public void setBranchLineThickness(String branchLineThickness) { this.branchLineThickness = branchLineThickness; }
+    
+    public String getQuickStyleId() { return quickStyleId; }
+    public void setQuickStyleId(String quickStyleId) { this.quickStyleId = quickStyleId; }
+    
+    public String getNodeLength() { return nodeLength; }
+    public void setNodeLength(String nodeLength) { this.nodeLength = nodeLength; }
+    
+    public String getLocalStructure() { return localStructure; }
+    public void setLocalStructure(String localStructure) { this.localStructure = localStructure; }
+    
+    public Boolean getStyleLocked() { return styleLocked; }
+    public void setStyleLocked(Boolean styleLocked) { this.styleLocked = styleLocked; }
+
     @JsonFormat(shape = JsonFormat.Shape.STRING)
     public enum TextAlign {
-        LEFT,
-        CENTER,
-        RIGHT,
-        JUSTIFY;
-
-        @JsonCreator
-        public static TextAlign from(String value) {
-            return TextAlign.valueOf(value.toUpperCase());
-        }
+        LEFT, CENTER, RIGHT, JUSTIFY
     }
 }
 
@@ -3875,101 +4212,77 @@ public class NodeStyle {
 // src/main/java/com/example/mindmap/features/mindmap/content/EdgeData.java
 package com.example.mindmap.features.mindmap.content;
 
-import lombok.Data;
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 
-@Data
+@JsonIgnoreProperties(ignoreUnknown = true)
 public class EdgeData {
+    private String id;
     private String from;
     private String to;
+
+    public String getId() { return id; }
+    public void setId(String id) { this.id = id; }
+
+    public String getFrom() { return from; }
+    public void setFrom(String from) { this.from = from; }
+
+    public String getTo() { return to; }
+    public void setTo(String to) { this.to = to; }
 }
+
 ==== ./main/java/com/example/mindmap/features/mindmap/content/NodeData.java ====
 package com.example.mindmap.features.mindmap.content;
 
-import lombok.Data;
-
-/**
- * NodeData đại diện cho 1 node trong Mindmap.
- * Chứa tất cả thông tin cần thiết để FE render và BE quản lý logic.
- *
- * ✅ Có id để FE nhận diện node (Konva, canvas, drag & drop)
- * ✅ Hỗ trợ quan hệ cha-con bằng parentId
- * ✅ Hỗ trợ style riêng trên mỗi node
- * ✅ Có thể chứa metadata mở rộng như hyperlink, notes, externalReference
- */
-
-@Data
 public class NodeData {
-
-    /**
-     * ID duy nhất của node.
-     * FE sẽ tự sinh UUID và gửi lên BE trong update request.
-     * Đây là key để BE xác định node khi update / delete.
-     */
     private String id;
-
-    /**
-     * Nội dung text hiển thị trong node.
-     */
     private String text;
-
-    /**
-     * Tọa độ node trên canvas (FE xử lý, BE chỉ lưu trữ).
-     */
     private double x;
     private double y;
-
-    /**
-     * ID của node cha (nếu null → node root).
-     * FE/BE dựa trên parentId để xây dựng cấu trúc cây.
-     */
     private String parentId;
-
-    /**
-     * [FIX] Khởi tạo style để không bao giờ bị null.
-     *
-     * Style riêng của node, ví dụ:
-     * - màu nền
-     * - màu chữ
-     * - fontSize
-     * - border radius
-     *
-     * Nếu null → FE kế thừa style theo theme của Mindmap.
-     */
-    private NodeStyle style = new NodeStyle(); // <-- FIX LỖI GỐC RỄ
-
-    /**
-     * FLAG: Node có đang bị thu gọn branch hay không.
-     * FE dùng để ẩn con cháu của node nếu collapsed = true.
-     */
+    private NodeStyle style = new NodeStyle();
     private boolean isCollapsed = false;
-
-    /**
-     * Siêu liên kết (optional).
-     * FE click vào node có hyperlink → mở external URL.
-     */
     private String hyperlink;
-
-    /**
-     * Ghi chú nội dung chi tiết hơn ngoài text ngắn trên node.
-     * Dùng cho các Mindmap có nhiều ghi chú (radial notes).
-     */
     private String notes;
+    private Object externalReference;
+    private String side;
+    private Boolean boundary;
 
-    /**
-     * Tham chiếu liên kết tới hệ thống khác (Jira, Confluence, SaaS...).
-     */
-    private ExternalReference externalReference;
-
-    /**
-     * Metadata dùng cho liên kết hệ thống ngoài.
-     * Ví dụ: liên kết Jira ticket → TASK-123
-     */
-    @Data
-    public static class ExternalReference {
-        private String provider; // Ex: "jira", "github-repo", "notion"
-        private String id;       // Ex: "TASK-123", "DOC-456"
-        private String url;      // FE dùng url như fallback để mở nhanh
-    }
+    // Getters and Setters
+    public String getId() { return id; }
+    public void setId(String id) { this.id = id; }
+    
+    public String getText() { return text; }
+    public void setText(String text) { this.text = text; }
+    
+    public double getX() { return x; }
+    public void setX(double x) { this.x = x; }
+    
+    public double getY() { return y; }
+    public void setY(double y) { this.y = y; }
+    
+    public String getParentId() { return parentId; }
+    public void setParentId(String parentId) { this.parentId = parentId; }
+    
+    public NodeStyle getStyle() { return style; }
+    public void setStyle(NodeStyle style) { this.style = style; }
+    
+    public boolean isCollapsed() { return isCollapsed; }
+    public void setCollapsed(boolean collapsed) { isCollapsed = collapsed; }
+    
+    public String getHyperlink() { return hyperlink; }
+    public void setHyperlink(String hyperlink) { this.hyperlink = hyperlink; }
+    
+    public String getNotes() { return notes; }
+    public void setNotes(String notes) { this.notes = notes; }
+    
+    public Object getExternalReference() { return externalReference; }
+    public void setExternalReference(Object externalReference) { this.externalReference = externalReference; }
+    
+    public String getSide() { return side; }
+    public void setSide(String side) { this.side = side; }
+    
+    public Boolean getBoundary() { return boundary; }
+    public void setBoundary(Boolean boundary) { this.boundary = boundary; }
 }
 ==== ./main/java/com/example/mindmap/features/mindmap/content/MindmapTheme.java ====
 // src/main/java/com/example/mindmap/features/mindmap/content/MindmapTheme.java
@@ -3979,8 +4292,8 @@ import lombok.Data;
 
 @Data
 public class MindmapTheme {
-    private String background; // Theme name, e.g., "dark_grid"
-    private String connectionType; // e.g., "curved" or "straight"
+    private String background; 
+    private String connectionType; 
 }
 ==== ./main/java/com/example/mindmap/features/mindmap/content/GlobalSettings.java ====
 package com.example.mindmap.features.mindmap.content;
@@ -4014,7 +4327,7 @@ import jakarta.validation.constraints.NotBlank;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
 
-@Data
+@Data // Tự động sinh Getter, Setter, toString, equals...
 @EqualsAndHashCode(callSuper = false)
 @Document("mindmaps")
 public class Mindmap extends Auditable {
@@ -4027,25 +4340,28 @@ public class Mindmap extends Auditable {
     @Indexed
     private String ownerId;
 
-    private MindmapContent content = new MindmapContent();
+    private String lastEditedBy;
 
-    private AccessSettings accessSettings = new AccessSettings();
-
-    private String workspaceId;
+    // Nội dung chính (Nodes, Edges) - Phần UI của bạn nằm trong này
+    private MindmapContent content;
 
     @Indexed
     private List<String> tags = new ArrayList<>();
 
-    private String lastEditedBy;
+    // Cấu hình chia sẻ - Phần logic của đồng nghiệp
+    private AccessSettings accessSettings = new AccessSettings();
 
+    private String workspaceId;
+
+    // Optimistic Locking để tránh ghi đè dữ liệu khi nhiều người cùng sửa
     @Version
     private Long version;
 
     // ==========================================
-    // INNER CLASSES & ENUMS (UPDATED FOR PHASE 3 & 4)
+    // INNER CLASSES & ENUMS
     // ==========================================
 
-    @Data
+    @Data // Tự động sinh Getter/Setter cho settings
     public static class AccessSettings {
         private boolean isPublic = false;
 

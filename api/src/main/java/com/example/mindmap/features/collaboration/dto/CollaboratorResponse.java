@@ -6,6 +6,7 @@ import com.example.mindmap.features.collaboration.Permission;
 public record CollaboratorResponse(
         String userId,
         String displayName,
+        String email,
         String avatarUrl,
         Permission permission
 ) {}

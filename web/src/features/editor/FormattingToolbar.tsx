@@ -97,7 +97,7 @@ export default function FormattingToolbar({
     <div className="fixed top-12 right-0 h-[calc(100vh-3rem)] bg-white border-l border-gray-200 shadow-sm z-30 flex flex-col text-gray-700" style={{ width: '280px', fontFamily: 'Arial' }}> 
       {/* 1. Header (Tabs) */}
       <TabHeader activeTab={activeTab} setActiveTab={setActiveTab} isDisabled={isDisabled} />
-
+      
       {/* 2. Content */}
       <div className="flex-1 overflow-y-auto">
         {activeTab === 'style' && (

@@ -41,12 +41,13 @@ import {
   Arrow,
   Image as KonvaImage,
 } from 'react-konva';
-import { SquareArrowOutUpRight } from 'lucide-react'; 
+import { SquareArrowOutUpRight, Lock } from 'lucide-react'; 
 import * as dagre from 'dagre';
 import { useDebouncedCallback } from 'use-debounce';
 
 import EditorToolbar from '../features/editor/EditorToolbar';
 import Sidebar from '../components/layout/Sidebar';
+import Modal from '../components/common/Modal';
 import FormattingToolbar from '../features/editor/FormattingToolbar';
 import CursorLayer from '../features/editor/CursorLayer';
 import ShareModal from '../features/collaboration/ShareModal';
@@ -372,11 +373,12 @@ export default function Editor({ mode = 'edit' }: EditorProps = {}) {
   const summaryLayoutLevelsRef = useRef<Map<string, number>>(new Map());
 
   // --- Collaboration: Access Control Hook ---
-  const {
-    permission: accessPermissionState,
+const {
+    permission: accessPermissionState, // 'loading' | 'allowed' | 'denied'
     isOwner: isOwnerFromHook,
     pendingRequests,
     requestStatus,
+    publicAccessLevel,
     requestAccess,
     approveRequest,
     denyRequest,
@@ -430,6 +432,7 @@ export default function Editor({ mode = 'edit' }: EditorProps = {}) {
   const [selectedRelationshipId, setSelectedRelationshipId] = useState<string | null>(null);
   const [selectedSummaryId, setSelectedSummaryId] = useState<string | null>(null);
   const [selectedBoundaryId, setSelectedBoundaryId] = useState<string | null>(null);
+  const [isPermissionModalOpen, setIsPermissionModalOpen] = useState(false);
 
   const handleAddRelationship = () => {
     if (selectedNodeIds.length === 1) {
@@ -551,6 +554,7 @@ export default function Editor({ mode = 'edit' }: EditorProps = {}) {
     }, [isFormattingToolbarOpen, dimensions.width]);
   const editingInputRef = useRef<HTMLTextAreaElement | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
+  const isShareRoute = mode === 'share';
 
   // [DOCKING SIDEBAR] Panel width constant - must be before useEffect that uses it
   const PANEL_WIDTH = 280;
@@ -567,21 +571,56 @@ export default function Editor({ mode = 'edit' }: EditorProps = {}) {
   colorThemes[activeColorThemeId as keyof typeof colorThemes];
   
   // --- Collaboration: Ownership Logic ---
+// Ưu tiên isOwnerFromHook vì nó được tính toán chính xác sau khi API trả về
   const isOwner = useMemo(() => {
     if (isGuest) return true;
-    if (user && ownerId && (user.sub === ownerId || (user as any).id === ownerId)) return true;
-    if (isOwnerFromHook) return true;
-    return false;
-  }, [isGuest, isOwnerFromHook, user, ownerId]);
+    return isOwnerFromHook; 
+  }, [isGuest, isOwnerFromHook]);
 
-  // --- Collaboration: Read-Only Logic ---
-  const isReadOnly = useMemo(() => {
+  // --- SỬA LOGIC READONLY ---
+  // Thêm điều kiện: Nếu accessPermissionState != 'allowed' thì chắc chắn là readonly (hoặc loading)
+const isReadOnly = useMemo(() => {
+    // 1. Guest (Local) luôn có quyền sửa
     if (isGuest) return false;
+
+    // 2. Nếu chưa load xong hoặc bị chặn API -> ReadOnly
+    if (accessPermissionState !== 'allowed') return true;
+
+    // 3. Nếu là Owner -> Luôn sửa được
     if (isOwner) return false;
-    if (userPermission === 'EDITOR') return false;
-    // Share mode with VIEWER permission or no permission is read-only
-    return true;
-  }, [isGuest, isOwner, userPermission]);
+
+    // 4. [QUAN TRỌNG] Kiểm tra quyền CÁ NHÂN trước (Explicit Permission)
+    // Nếu user đã được gán quyền cụ thể trong danh sách collaborators:
+    if (userPermission === 'EDITOR') return false; // Được sửa
+    if (userPermission === 'VIEWER') return true;  // Bị khóa (Dù map có public edit thì ông này vẫn bị khóa)
+
+    // 5. Nếu không có quyền cá nhân (Vãng lai), mới check quyền PUBLIC
+    if (publicAccessLevel === 'EDIT') return false; 
+
+    // 6. Nếu đang chờ duyệt -> ReadOnly
+    if (requestStatus === 'pending') return true;
+
+    // Mặc định là ReadOnly
+    return true; 
+  }, [
+    isGuest, 
+    accessPermissionState, 
+    isOwner, 
+    userPermission, // State này được set trong useEffect loadData
+    publicAccessLevel, 
+    requestStatus
+  ]);
+
+  const handleRequestEditAccess = async () => {
+      try {
+          // Gửi request với quyền EDITOR thay vì mặc định VIEWER
+          await requestAccess({ requestedPermission: 'EDITOR' });
+          addToast('Đã gửi yêu cầu quyền chỉnh sửa (Edit).', 'success');
+      } catch (e) {
+          addToast('Gửi yêu cầu thất bại.', 'error');
+      }
+      setIsPermissionModalOpen(false);
+  };
 
   // --- Collaboration: User Info for Realtime ---
   const myName = useMemo(() => {
@@ -2233,6 +2272,10 @@ const handleFitToScreen = useCallback(() => {
   );
 
   const handleAddChild = useCallback((parentId: string) => {
+    if (isReadOnly) { 
+        setIsPermissionModalOpen(true); // Hiện modal thông báo
+        return; 
+    }
     // --- Collaboration: Permission Check ---
     if (!promptUpgradeToEditorIfNeeded()) return;
     
@@ -2386,6 +2429,10 @@ const handleFitToScreen = useCallback(() => {
   }, [nodes, edges, pushHistory, setGraph, nodeMap, nodeVisuals, startEditing, handleLayout, startNodeBirthAnimation]);
 
   const handleAddSibling = useCallback((nodeId: string) => {
+    if (isReadOnly) { 
+        setIsPermissionModalOpen(true); // Hiện modal thông báo
+        return; 
+    }
     // --- Collaboration: Permission Check ---
     if (!promptUpgradeToEditorIfNeeded()) return;
     
@@ -2498,6 +2545,7 @@ const handleFitToScreen = useCallback(() => {
 
   const handleDeleteNode = useCallback(
     () => {
+      if (isReadOnly) return;
       // --- Collaboration: Permission Check ---
       if (!promptUpgradeToEditorIfNeeded()) return;
       
@@ -2742,6 +2790,7 @@ const handleFitToScreen = useCallback(() => {
   }, [handleKeyDown]);
 
   const handleDragStart = (nodeId: string) => {
+    if (isReadOnly) return;
     pushHistory(useEditorStore.getState().nodes, useEditorStore.getState().edges);
     setDragStartState({ nodes, edges });
     setDraggingNodeId(nodeId);
@@ -4118,6 +4167,12 @@ const handleFitToScreen = useCallback(() => {
               }
             }}
             onDblClick={(e) => {
+              if (isReadOnly) {
+                 e.evt.preventDefault(); // Chặn hành vi mặc định
+                 e.cancelBubble = true;  // Chặn nổi bọt sự kiện
+                 setIsPermissionModalOpen(true); // Mở Modal xin quyền
+                 return; // ⛔️ DỪNG NGAY LẬP TỨC, KHÔNG CHẠY CODE TẠO NODE DƯỚI
+              }
               const stage = e.target.getStage();
               if (e.target !== stage) return;
               const pointerPos = stage.getPointerPosition();
@@ -4630,6 +4685,50 @@ const handleFitToScreen = useCallback(() => {
             <CursorLayer />
             </Stage>
           </div>
+
+          {/* 4. GIAO DIỆN MODAL XIN QUYỀN (Thay thế alert URL) */}
+      <Modal 
+        isOpen={isPermissionModalOpen} 
+        onClose={() => setIsPermissionModalOpen(false)}
+        title="Yêu cầu quyền chỉnh sửa"
+      >
+        <div className="p-5 flex flex-col items-center text-center">
+          
+          {/* Icon */}
+          <div className="w-12 h-12 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center mb-3">
+            <Lock size={24} />
+          </div>
+          
+          {/* Title */}
+          <h3 className="text-base font-semibold text-gray-800 mb-1">
+            Bạn đang ở chế độ chỉ xem
+          </h3>
+          
+          {/* Description */}
+          <p className="text-gray-600 mb-4 text-sm leading-relaxed">
+            Bạn cần được chủ sở hữu cấp quyền để có thể chỉnh sửa Mindmap này.
+          </p>
+
+          {/* Status */}
+          {requestStatus === 'pending' ? (
+            <div className="bg-yellow-50 text-yellow-700 px-3 py-2 rounded-md border border-yellow-200 w-full text-sm">
+              ⏳ Đã gửi yêu cầu, vui lòng chờ phê duyệt.
+            </div>
+          ) : (
+            <div className="flex gap-2 w-full justify-center">
+
+              {/* Gửi yêu cầu */}
+              <button 
+                onClick={handleRequestEditAccess}
+                className="px-4 py-1.5 text-sm bg-blue-600 text-white rounded-md hover:bg-blue-700 transition"
+              >
+                Gửi yêu cầu chỉnh sửa
+              </button>
+            </div>
+          )}
+        </div>
+      </Modal>
+
 
           {/* [PROPERTIES PANEL] Docked sidebar with fixed width and smooth transition */}
           <div

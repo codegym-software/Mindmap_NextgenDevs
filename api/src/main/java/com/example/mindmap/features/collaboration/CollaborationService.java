@@ -20,6 +20,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.function.Function;
 import java.util.stream.Collectors;
+import java.util.Optional;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -129,6 +130,7 @@ public class CollaborationService {
         return new CollaboratorResponse(
                 user.getId(),
                 user.getDisplayName(),
+                user.getEmail(),
                 user.getAvatarUrl(),
                 collaboration.getPermission()
         );
@@ -179,6 +181,7 @@ public class CollaborationService {
         return new CollaboratorResponse(
                 userToInvite.getId(),
                 userToInvite.getDisplayName(),
+                userToInvite.getEmail(),
                 userToInvite.getAvatarUrl(),
                 request.permission()
         );
@@ -237,6 +240,7 @@ public class CollaborationService {
                     return new CollaboratorResponse(
                             user.getId(),
                             user.getDisplayName(),
+                            user.getEmail(),
                             user.getAvatarUrl(),
                             c.getPermission()
                     );
@@ -256,24 +260,21 @@ public class CollaborationService {
         // Owner không cần xin quyền
         if (mindmap.getOwnerId().equals(currentUserId)) return;
 
-        // 1) Đã là collaborator (ACCEPTED) thì thôi
-        collaborationRepository.findByMindmapIdAndUserId(mindmapId, currentUserId)
-                .ifPresent(collab -> {
-                    if (collab.getStatus() == Collaboration.InviteStatus.ACCEPTED) {
-                        // throw runtime để “thoát sớm” khỏi lambda
-                        throw new EarlyReturnRuntime();
-                    }
-                });
-        // Nếu đã EarlyReturn thì return
-        if (EarlyReturnRuntime.consumeIfThrown()) return;
+        // 1) SỬA LỖI 500: Kiểm tra tường minh thay vì ném Exception
+        // Kiểm tra xem đã là collaborator (ACCEPTED) chưa
+        Optional<Collaboration> existingCollab = collaborationRepository
+                .findByMindmapIdAndUserId(mindmapId, currentUserId);
+
+        if (existingCollab.isPresent() && existingCollab.get().getStatus() == Collaboration.InviteStatus.ACCEPTED) {
+            return; // Đã có quyền, thoát hàm bình thường
+        }
 
         // 2) Đã có request đang chờ duyệt?
         if (accessRequestRepository.findByMindmapIdAndUserId(mindmapId, currentUserId).isPresent()) {
             throw new IllegalArgumentException("Yêu cầu của bạn đang chờ duyệt.");
         }
 
-        // 3) Tạo request mới + cache info user để owner hiển thị list
-        @SuppressWarnings("null")
+        // 3) Tạo request mới... (Giữ nguyên đoạn code tạo request bên dưới của bạn)
         User user = userRepository.findById(currentUserId)
                 .orElseThrow(() -> new ResourceNotFoundException("User", "id", currentUserId));
 
@@ -286,12 +287,8 @@ public class CollaborationService {
                 .requesterAvatar(user.getAvatarUrl())
                 .build();
 
-        @SuppressWarnings("null")
-        AccessRequest savedRequest = accessRequestRepository.save(request);
+        accessRequestRepository.save(request);
         log.info("User {} requested {} access to mindmap {}", currentUserId, requestedPerm, mindmapId);
-
-        // TODO: Implement WebSocket notification to owner about new access request
-        // Example: webSocketService.notifyOwner(mindmapId, "NEW_ACCESS_REQUEST", savedRequest);
     }
 
     // ===================================================================
@@ -358,21 +355,4 @@ public class CollaborationService {
         return accessRequestRepository.findByMindmapId(mindmapId);
     }
 
-    /**
-     * Trick nhỏ để thoát sớm khỏi lambda ifPresent mà vẫn giữ code “ít đụng repo”.
-     * Bạn có thể thay bằng existsBy... nếu repo của bạn đã có method đó.
-     */
-    private static final class EarlyReturnRuntime extends RuntimeException {
-        private static final ThreadLocal<Boolean> thrown = ThreadLocal.withInitial(() -> false);
-
-        private EarlyReturnRuntime() {
-            thrown.set(true);
-        }
-
-        static boolean consumeIfThrown() {
-            boolean v = thrown.get();
-            thrown.set(false);
-            return v;
-        }
-    }
 }

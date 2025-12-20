@@ -14,6 +14,7 @@ import {
   Code,
   QrCode,
   Bell,
+  Mail,
 } from 'lucide-react';
 import { useToast } from '../../hooks/useToast';
 import {
@@ -94,12 +95,11 @@ export default function ShareModal({
       setShareSettings({
         mindmapId,
         isPublic: doc.accessSettings?.isPublic || false,
-        publicAccessLevel:
-          doc.accessSettings?.publicAccessLevel || 'DISABLED',
+        publicAccessLevel: doc.accessSettings?.publicAccessLevel || 'DISABLED',
+        // SỬA: Luôn dùng /editor cho link chia sẻ để thống nhất logic
         shareLink: doc.accessSettings?.isPublic
           ? `${window.location.origin}/editor/${mindmapId}`
           : null,
-        
       });
             // nếu BE có field này thì sync, còn không thì thôi
       if (doc.accessSettings?.workspaceVisibility) {
@@ -196,7 +196,7 @@ const handleUpdatePublicAccess = async (
     });
 
     const link = isPublic
-      ? `${window.location.origin}/share/${mindmapId}`
+      ? `${window.location.origin}/editor/${mindmapId}`
       : null;
 
     setShareSettings({ ...res, shareLink: link });
@@ -335,10 +335,10 @@ const handleUpdatePublicAccess = async (
 
                     <p className="text-sm text-gray-500 mb-2">
                       {shareSettings?.publicAccessLevel === 'DISABLED'
-                        ? 'Chỉ những người được mời mới có thể truy cập.'
+                        ? 'Chỉ những người được mời mới có thể truy cập'
                         : shareSettings?.publicAccessLevel === 'VIEW'
-                        ? 'Bất kỳ ai có liên kết đều có thể xem.'
-                        : 'Bất kỳ ai có liên kết đều có thể chỉnh sửa (cần đăng nhập).'}
+                        ? 'Bất kỳ ai có liên kết đều có thể xem'
+                        : 'Bất kỳ ai có liên kết đều có thể chỉnh sửa'}
                     </p>
 
                     {isOwner && (
@@ -359,35 +359,33 @@ const handleUpdatePublicAccess = async (
                           }
                           className="border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white w-full"
                         >
-                          <option value="NONE">Tắt (Chỉ người được mời)</option>
+                          <option value="NONE">Tắt</option>
                           <option value="VIEW">Bất kỳ ai có link: Xem</option>
-                          <option value="EDIT">Bất kỳ ai có link: Chỉnh sửa</option>
+                          {/* <option value="EDIT">Bất kỳ ai có link: Chỉnh sửa</option> */}
                         </select>
 
-                        {/* WORKSPACE VISIBILITY SELECT */}
-                        <select
-                          value={workspaceVisibility}
-                          onChange={(e) =>
-                            handleUpdateWorkspaceVisibility(
-                              e.target.value as
-                                | 'PRIVATE'
-                                | 'WORKSPACE_VIEW'
-                                | 'WORKSPACE_EDIT'
-                            )
-                          }
-                          className="border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white w-full"
-                        >
-                          <option value="PRIVATE">Chỉ mình tôi và người được mời</option>
-                          <option value="WORKSPACE_VIEW">
-                            Mọi người trong Workspace: Xem
-                          </option>
-                          <option value="WORKSPACE_EDIT">
-                            Mọi người trong Workspace: Chỉnh sửa
-                          </option>
-                        </select>
+                        {/* WORKSPACE VISIBILITY SELECT (tạm ẩn để gọn UI) */}
+                        <div className="hidden">
+                          <select
+                            value={workspaceVisibility}
+                            onChange={(e) =>
+                              handleUpdateWorkspaceVisibility(
+                                e.target.value as
+                                  | 'PRIVATE'
+                                  | 'WORKSPACE_VIEW'
+                                  | 'WORKSPACE_EDIT'
+                              )
+                            }
+                            className="border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white w-full"
+                          >
+                            <option value="PRIVATE">Chỉ mình tôi và người được mời</option>
+                            <option value="WORKSPACE_VIEW">Mọi người trong Workspace: Xem</option>
+                            <option value="WORKSPACE_EDIT">Mọi người trong Workspace: Chỉnh sửa</option>
+                          </select>
+                        </div>
+
                       </div>
                     )}
-
 
                     {shareSettings?.isPublic && shareSettings.shareLink && (
                       <div className="flex gap-2">
@@ -406,7 +404,6 @@ const handleUpdatePublicAccess = async (
                     )}
                   </div>
                 </div>
-
 
                 <hr className="border-gray-100" />
 
@@ -462,19 +459,26 @@ const handleUpdatePublicAccess = async (
                         key={collab.userId}
                         className="flex items-center justify-between p-2 hover:bg-gray-50 rounded-lg transition-colors"
                       >
-                        <div className="flex items-center gap-3">
-                          <div className="w-8 h-8 rounded-full bg-gradient-to-br from-purple-500 to-blue-500 flex items-center justify-center text-white font-bold text-xs">
-                            {collab.displayName?.[0]?.toUpperCase() ||
-                              '?'}
+                        <div className="flex items-center gap-3 overflow-hidden">
+                          {/* Avatar logic */}
+                          <div className="w-8 h-8 rounded-full bg-gradient-to-br from-purple-500 to-blue-500 flex items-center justify-center text-white font-bold text-xs shrink-0">
+                            {collab.avatarUrl ? (
+                                <img src={collab.avatarUrl} alt="" className="w-full h-full rounded-full object-cover"/>
+                            ) : (
+                                collab.displayName?.[0]?.toUpperCase() || '?'
+                            )}
                           </div>
-                          <div>
-                            <div className="font-medium text-sm text-gray-900">
-                              {collab.displayName}
+
+                          {/* Hiển thị Tên và Email */}
+                          <div className="flex flex-col min-w-0">
+                            <div className="font-medium text-sm text-gray-900 truncate">
+                              {collab.displayName || 'Unknown User'}
                             </div>
-                            <div className="text-xs text-gray-500">
-                              {collab.userId === user?.sub
-                                ? '(Bạn)'
-                                : 'Thành viên'}
+                            <div className="text-xs text-gray-500 flex items-center gap-1 truncate">
+                               {/* Hiển thị Email ở đây */}
+                               <Mail size={10} />
+                               {collab.email || 'No email'} 
+                               {collab.userId === user?.sub && <span className="font-bold text-blue-600 ml-1">(Bạn)</span>}
                             </div>
                           </div>
                         </div>
@@ -543,20 +547,26 @@ const handleUpdatePublicAccess = async (
                             <div className="font-medium text-sm text-gray-900">
                               {req.displayName}
                             </div>
-                            <div className="text-xs text-gray-500">
+
+                            {/* [MỚI] Hiển thị Email */}
+                            <div className="text-xs text-gray-600 flex items-center gap-1">
+                              <Mail size={10} /> {req.email || 'No Email'}
+                            </div>
+
+                            <div className="text-[10px] text-gray-400 mt-0.5">
                               {new Date(req.timestamp).toLocaleString()}
                             </div>
+
                             {req.requestedPermission && (
                               <div className="text-xs text-gray-500 mt-0.5">
                                 Yêu cầu quyền:{' '}
                                 <span className="font-semibold">
-                                  {req.requestedPermission === 'EDITOR'
-                                    ? 'Chỉnh sửa'
-                                    : 'Xem'}
+                                  {req.requestedPermission === 'EDITOR' ? 'Chỉnh sửa' : 'Xem'}
                                 </span>
                               </div>
                             )}
                           </div>
+
 
                           <div className="flex items-center gap-2">
                             <select
@@ -651,21 +661,7 @@ const handleUpdatePublicAccess = async (
                   </button>
                 </div>
 
-                <div className="border-t pt-6 flex items-center gap-4 text-left">
-                  <div className="bg-white p-2 border rounded-lg shadow-sm">
-                    {/* QR Placeholder - thực tế có thể dùng qrcode.react */}
-                    <QrCode size={80} className="text-gray-800" />
-                  </div>
-                  <div>
-                    <h4 className="font-bold text-gray-800">QR Code</h4>
-                    <p className="text-xs text-gray-500 mt-1">
-                      Quét mã để xem nhanh trên điện thoại.
-                    </p>
-                    <button className="text-blue-600 text-sm font-medium mt-2 hover:underline">
-                      Tải ảnh PNG
-                    </button>
-                  </div>
-                </div>
+                
               </div>
             )}
 

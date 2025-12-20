@@ -1,13 +1,14 @@
+// src/hooks/useMindmapAccess.ts
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { mindmapsApi, Permission, AccessRequestDto } from '../services/mindmapsApi';
+import { mindmapsApi, Permission } from '../services/mindmapsApi';
 
 export type PermissionState = 'loading' | 'allowed' | 'denied';
 export type RequestStatus = 'none' | 'pending' | 'rejected';
 
-// Map structure để UI dễ hiển thị
 export interface RequestUser {
   uid: string;
   displayName: string;
+  email: string;
   timestamp: number;
   requestedPermission?: Permission;
 }
@@ -17,6 +18,7 @@ interface UseMindmapAccessResult {
   isOwner: boolean;
   pendingRequests: RequestUser[];
   requestStatus: RequestStatus;
+  publicAccessLevel: 'DISABLED' | 'VIEW' | 'EDIT';
   requestAccess: (opts?: { requestedPermission?: Permission }) => Promise<void>;
   approveRequest: (uid: string, perm: Permission) => Promise<void>;
   denyRequest: (uid: string) => Promise<void>;
@@ -31,90 +33,98 @@ export const useMindmapAccess = (
   const [requestStatus, setRequestStatus] = useState<RequestStatus>('none');
   const [pendingRequests, setPendingRequests] = useState<RequestUser[]>([]);
   const [isOwner, setIsOwner] = useState(false);
+  const [publicAccessLevel, setPublicAccessLevel] = useState<'DISABLED' | 'VIEW' | 'EDIT'>('DISABLED');
   
-  // Dùng để trigger reload thủ công từ component cha (khi approve/deny xong)
+  // State userPermission để lưu quyền cụ thể (EDITOR/VIEWER) phục vụ check realtime
+  // const [currentUserPermission, setCurrentUserPermission] = useState<Permission | null>(null); 
+
   const [refreshTrigger, setRefreshTrigger] = useState(0);
+  const refreshPermissions = useCallback(() => setRefreshTrigger(prev => prev + 1), []);
 
-  const refreshPermissions = useCallback(() => {
-    setRefreshTrigger(prev => prev + 1);
-  }, []);
+  const isLocalGuest = !!mindmapId && mindmapId.startsWith('guest-');
+  const userId = currentUser?.sub || currentUser?.id;
 
-  const isGuest = !!mindmapId && mindmapId.startsWith('guest-');
+  // =================================================================
+  // 1. CHECK ACCESS LOGIC (Hàm này dùng chung cho load đầu & polling)
+  // =================================================================
+  const checkAccess = useCallback(async () => {
+      try {
+        const data = await mindmapsApi.get(mindmapId);
+        
+        if (data.accessSettings) {
+            setPublicAccessLevel(data.accessSettings.publicAccessLevel);
+        }
+        
+        // Nếu API trả về thành công -> Allowed
+        setPermission('allowed');
+        
+        if (userId && data.ownerId === userId) {
+          setIsOwner(true);
+        } else {
+          setIsOwner(false);
+        }
+        
+        // Nếu user đang ở trạng thái pending mà vào được (do public view), vẫn giữ pending
+        // Nếu không thì reset về none
+        // Lưu ý: Logic này phụ thuộc vào việc BE có trả về status request trong API get mindmap không.
+        // Tạm thời giữ nguyên logic set none nếu vào được.
+        // setRequestStatus('none'); 
 
-  // 1. Kiểm tra quyền truy cập (Permission Check)
+      } catch (error: any) {
+        const status = error?.response?.status;
+        if (status === 403 || status === 401) {
+          setPermission('denied');
+          setIsOwner(false);
+        } else {
+          console.error("[Access] Check error:", error);
+          // 404 hoặc lỗi mạng cũng coi như denied để an toàn
+          setPermission('denied'); 
+        }
+      }
+  }, [mindmapId, userId]);
+
+  // =================================================================
+  // 2. EFFECT: CHECK LẦN ĐẦU & KHI CÓ THAY ĐỔI ID/USER
+  // =================================================================
   useEffect(() => {
-    let isMounted = true;
-
-    // Reset state khi đổi mindmap
     if (!mindmapId) {
       setPermission('allowed');
       return;
     }
 
-    // ✅ GUEST MODE: Luôn cho phép, không gọi API
-    if (isGuest) {
+    if (isLocalGuest) {
       setPermission('allowed');
-      setIsOwner(true); // Guest là chủ sở hữu bản local
-      setRequestStatus('none');
-      setPendingRequests([]);
+      setIsOwner(true);
       return;
     }
 
-    // Nếu là User thật, gọi API để check quyền chuẩn xác
-    const checkAccess = async () => {
-      // Nếu chưa có user, vẫn thử gọi (trường hợp Public View)
-      // Editor.tsx sẽ lo việc redirect nếu API trả về 401/403
-      setPermission('loading');
-
-      try {
-        const data = await mindmapsApi.get(mindmapId);
-        
-        if (!isMounted) return;
-
-        setPermission('allowed');
-        
-        // Check Owner dựa trên ID trả về từ Server
-        const uid = currentUser?.sub || currentUser?.id;
-        if (uid && data.ownerId === uid) {
-          setIsOwner(true);
-        } else {
-          setIsOwner(false);
-        }
-        setRequestStatus('none');
-
-      } catch (error: any) {
-        if (!isMounted) return;
-        
-        const status = error?.response?.status;
-
-        // 403: Đã login nhưng không có quyền
-        if (status === 403) {
-          setPermission('denied');
-          setIsOwner(false);
-          // Giữ trạng thái pending nếu người dùng vừa bấm gửi request
-          setRequestStatus(prev => prev === 'pending' ? 'pending' : 'none');
-        } 
-        // 401: Token hết hạn hoặc chưa login
-        else if (status === 401) {
-           setPermission('denied');
-           setIsOwner(false);
-        }
-        else {
-           // Các lỗi khác (404, 500...)
-           console.error("[Access] Check access failed:", error);
-           setPermission('denied'); 
-        }
-      }
-    };
-
+    // Gọi lần đầu ngay lập tức
     checkAccess();
 
-    return () => { isMounted = false; };
-  }, [mindmapId, currentUser, refreshTrigger, isGuest]);
+  }, [mindmapId, userId, refreshTrigger, isLocalGuest, checkAccess]);
 
-  // 2. Polling lấy danh sách yêu cầu (Chỉ chạy nếu là Owner và không phải Guest)
+
+  // =================================================================
+  // 3. [MỚI - QUAN TRỌNG] EFFECT POLLING: TỰ ĐỘNG CHECK QUYỀN MỖI 10s
+  // =================================================================
   useEffect(() => {
-    if (!isOwner || !mindmapId || isGuest) {
+    if (!mindmapId || isLocalGuest) return;
+
+    // Polling mỗi 10 giây để xem quyền có bị thay đổi bởi Owner không
+    // Hoặc nếu đang bị Denied thì xem đã được Approve chưa
+    const interval = setInterval(() => {
+        checkAccess();
+    }, 10000); 
+
+    return () => clearInterval(interval);
+  }, [mindmapId, isLocalGuest, checkAccess]);
+
+
+  // =================================================================
+  // 4. FETCH PENDING REQUESTS (Chỉ Owner)
+  // =================================================================
+  useEffect(() => {
+    if (!isOwner || !mindmapId || isLocalGuest) {
         setPendingRequests([]);
         return;
     }
@@ -122,61 +132,57 @@ export const useMindmapAccess = (
     let isMounted = true;
     const fetchRequests = async () => {
         try {
-            // Gọi API lấy danh sách chờ duyệt từ MongoDB
             const reqs = await mindmapsApi.getPendingRequests(mindmapId);
             if (isMounted) {
-                // Convert DTO sang format UI cần
                 const mapped: RequestUser[] = reqs.map(r => ({
                     uid: r.userId,
                     displayName: r.requesterName || r.requesterEmail || 'Unknown',
+                    email: r.requesterEmail || 'No Email',
                     timestamp: new Date(r.createdAt).getTime(),
                     requestedPermission: r.requestedPermission
                 }));
                 setPendingRequests(mapped);
             }
         } catch (e) {
-            // Lỗi quyền hoặc mạng, bỏ qua log để tránh spam console
+             // Silent fail
         }
     };
 
-    fetchRequests(); // Gọi ngay lần đầu
-    const interval = setInterval(fetchRequests, 10000); // Poll mỗi 10s
+    fetchRequests();
+    // Poll request list cũng mỗi 10s
+    const interval = setInterval(fetchRequests, 10000); 
 
     return () => {
         isMounted = false;
         clearInterval(interval);
     };
-  }, [isOwner, mindmapId, refreshTrigger, isGuest]);
+  }, [isOwner, mindmapId, isLocalGuest]);
 
-  // --- Actions (Gọi API Backend) ---
+  // ... (Phần actions requestAccess, approveRequest... giữ nguyên như file của bạn)
 
   const requestAccess = async (opts?: { requestedPermission?: Permission }) => {
-    if (isGuest) return;
+    if (isLocalGuest) return; 
     try {
         await mindmapsApi.requestAccess(mindmapId, opts?.requestedPermission || 'VIEWER');
         setRequestStatus('pending');
     } catch (e: any) {
-        // Nếu API trả về 409 (Conflict) nghĩa là đã request rồi -> vẫn set pending
         const status = e?.response?.status;
-        if (status === 400 || status === 409) {
+        if (status === 409 || status === 400) {
             setRequestStatus('pending');
         } else {
-            console.error("Request access failed", e);
             throw e;
         }
     }
   };
 
   const approveRequest = async (requesterId: string, perm: Permission) => {
-    if (isGuest) return;
-    // Cập nhật UI ngay lập tức (Optimistic update)
+    if (isLocalGuest) return;
     setPendingRequests(prev => prev.filter(r => r.uid !== requesterId));
-    // Trigger refresh để đảm bảo đồng bộ với server lần sau
     setTimeout(refreshPermissions, 1000); 
   };
 
   const denyRequest = async (requesterId: string) => {
-    if (isGuest) return;
+    if (isLocalGuest) return;
     setPendingRequests(prev => prev.filter(r => r.uid !== requesterId));
     setTimeout(refreshPermissions, 1000);
   };
@@ -186,6 +192,7 @@ export const useMindmapAccess = (
     requestStatus,
     pendingRequests,
     isOwner,
+    publicAccessLevel,
     requestAccess,
     approveRequest,
     denyRequest,
