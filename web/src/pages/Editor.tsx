@@ -1178,25 +1178,16 @@ const undo = useCallback(() => {
     [id, approveRequest, addToast],
   );
 
-  // --- Collaboration: Prompt Upgrade Permission ---
-  const promptUpgradeToEditorIfNeeded = useCallback(() => {
+  // --- Collaboration: Check Permission (REFACTORED - Mở Modal thay vì window.confirm) ---
+  const checkEditPermission = useCallback(() => {
+    // Nếu không ở chế độ readonly -> Cho phép chỉnh sửa
     if (!isReadOnly) return true;
 
-    if (userPermission === 'VIEWER') {
-      const ok = window.confirm(
-        'Bạn hiện chỉ có quyền xem. Bạn có muốn gửi yêu cầu quyền chỉnh sửa không?',
-      );
-      if (ok && id) {
-        mindmapsApi.requestAccess(id, 'EDITOR').catch(console.error);
-        requestAccess({ requestedPermission: 'EDITOR' }).catch(console.error);
-        addToast('Đã gửi yêu cầu quyền chỉnh sửa', 'info');
-      }
-    } else {
-      addToast('Bạn không có quyền chỉnh sửa mindmap này.', 'error');
-    }
-
+    // Nếu readonly -> Mở Modal xin quyền
+    console.log('[Permission] User tried to edit in readonly mode, opening modal');
+    setIsPermissionModalOpen(true);
     return false;
-  }, [isReadOnly, userPermission, id, requestAccess, addToast]);
+  }, [isReadOnly]);
 
   // [RESIZE OBSERVER] Update canvas dimensions accounting for panel width
   useEffect(() => {
@@ -2661,8 +2652,8 @@ const handleFitToScreen = useCallback(() => {
 
 
   const startEditing = useCallback((nodeId: string) => {
-    // --- Collaboration: Permission Check ---
-    if (!promptUpgradeToEditorIfNeeded()) return;
+    // ⭐ ĐỒNG NHẤT: Kiểm tra quyền trước khi cho phép edit
+    if (!checkEditPermission()) return;
     
     setSelectedNodeIds([nodeId]);
     setEditingNodeId(nodeId);
@@ -2671,7 +2662,7 @@ const handleFitToScreen = useCallback(() => {
       editingInputRef.current?.focus();
       editingInputRef.current?.select();
     }, 50);
-  }, [promptUpgradeToEditorIfNeeded]);
+  }, [checkEditPermission]);
 
   const justStoppedEditingRef = useRef(false);
 
@@ -2739,12 +2730,8 @@ const handleFitToScreen = useCallback(() => {
   );
 
   const handleAddChild = useCallback((parentId: string) => {
-    if (isReadOnly) { 
-        setIsPermissionModalOpen(true); // Hiện modal thông báo
-        return; 
-    }
-    // --- Collaboration: Permission Check ---
-    if (!promptUpgradeToEditorIfNeeded()) return;
+    // ⭐ ĐỒNG NHẤT: Kiểm tra quyền trước
+    if (!checkEditPermission()) return;
     
     // Track renders for this action
     startRenderTracking('addChild');
@@ -2898,12 +2885,8 @@ const handleFitToScreen = useCallback(() => {
   }, [nodes, edges, pushHistory, setGraph, nodeMap, nodeVisuals, startEditing, handleLayout, startNodeBirthAnimation, ensureNodeVisible]);
 
   const handleAddSibling = useCallback((nodeId: string) => {
-    if (isReadOnly) { 
-        setIsPermissionModalOpen(true); // Hiện modal thông báo
-        return; 
-    }
-    // --- Collaboration: Permission Check ---
-    if (!promptUpgradeToEditorIfNeeded()) return;
+    // ⭐ ĐỒNG NHẤT: Kiểm tra quyền trước
+    if (!checkEditPermission()) return;
     
     // Track renders for this action
     startRenderTracking('addSibling');
@@ -3017,9 +3000,8 @@ const handleFitToScreen = useCallback(() => {
 
   const handleDeleteNode = useCallback(
     () => {
-      if (isReadOnly) return;
-      // --- Collaboration: Permission Check ---
-      if (!promptUpgradeToEditorIfNeeded()) return;
+      // ⭐ ĐỒNG NHẤT: Kiểm tra quyền trước khi xóa
+      if (!checkEditPermission()) return;
       
       if (selectedNodeIds.length === 0) return;
 
@@ -3054,7 +3036,7 @@ const handleFitToScreen = useCallback(() => {
     },
     [
       nodes, edges, setGraph, selectedNodeIds, handleLayout, 
-      debouncedPersistData, sendPatch, promptUpgradeToEditorIfNeeded,
+      debouncedPersistData, sendPatch, checkEditPermission,
     ]
   );
 
@@ -3286,7 +3268,9 @@ const handleFitToScreen = useCallback(() => {
   }, [handleKeyDown]);
 
   const handleDragStart = (nodeId: string) => {
-    if (isReadOnly) return;
+    // ⭐ ĐỒNG NHẤT: Dùng checkEditPermission
+    if (!checkEditPermission()) return;
+    
     pushHistory(useEditorStore.getState().nodes, useEditorStore.getState().edges);
     setDragStartState({ nodes, edges });
     setDraggingNodeId(nodeId);
