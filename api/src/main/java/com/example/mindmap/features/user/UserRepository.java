@@ -1,10 +1,12 @@
 // src/main/java/com/example/mindmap/features/user/UserRepository.java
 package com.example.mindmap.features.user;
 
+import java.util.List;
 import java.util.Optional;
 
 import org.springframework.data.mongodb.repository.MongoRepository;
 
 public interface UserRepository extends MongoRepository<User, String> {
     Optional<User> findByEmail(String email);
+    List<User> findAllByEmail(String email);
 }

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useCallback, useState } from 'react';
 import { useAuth } from './useAuth';
 import { useToast } from './useToast';
-import { EdgeData, useEditorStore } from '../app/store/useEditorStore';
+import { EdgeData, colorThemes, useEditorStore } from '../app/store/useEditorStore';
 import { useChatStore } from '../app/store/useChatStore';
 
 
@@ -57,7 +57,7 @@ export function useRealtime({
   const { getAccessToken, isAuthed, user } = useAuth();
   const { addToast } = useToast();
 
-  const { setGraph, setPeerInfo, updatePeerCursor, removePeer } = useEditorStore();
+  const { setGraph, setPeerInfo, updatePeerCursor, removePeer, set } = useEditorStore();
   const addChatMessage = useChatStore((s) => s.addMessage);
 
   const wsRef = useRef<WebSocket | null>(null);
@@ -375,6 +375,120 @@ export function useRealtime({
                 const newNodes = currentNodes.map((n) => (n.id === nodeId ? { ...n, ...(updates || {}) } : n));
                 setGraph(newNodes, currentEdges);
                 // Style update có thể ảnh hưởng layout nếu có border/padding thay đổi
+                debouncedLayout(true);
+                break;
+              }
+
+              case 'NODE_QUICK_STYLE_APPLY': {
+                const { id: nodeId, styleId } = payload || {};
+                if (!nodeId) break;
+                const newNodes = currentNodes.map((n) => {
+                  if (n.id !== nodeId) return n;
+                  return {
+                    ...n,
+                    quickStyleId: styleId,
+                    color: undefined,
+                    borderColor: undefined,
+                    textColor: undefined,
+                    borderWidth: undefined,
+                    fontWeight: undefined,
+                    textDecoration: undefined,
+                    fontSize: undefined,
+                    textCase: undefined,
+                  };
+                });
+                setGraph(newNodes, currentEdges);
+                debouncedLayout(true);
+                break;
+              }
+
+              case 'NODE_STYLE_PASTE': {
+                const { id, style } = payload || {};
+                if (!style) break;
+                const ids = Array.isArray(id) ? id : (id ? [id] : []);
+                if (ids.length === 0) break;
+                const idSet = new Set(ids);
+                const needsLayout = style.fontSize !== undefined || style.borderWidth !== undefined;
+                const newNodes = currentNodes.map((n) =>
+                  idSet.has(n.id) ? { ...n, ...style } : n,
+                );
+                setGraph(newNodes, currentEdges);
+                if (needsLayout) debouncedLayout(true);
+                break;
+              }
+
+              case 'NODE_STYLE_RESET': {
+                const { id, resetStyle } = payload || {};
+                if (!resetStyle) break;
+                const ids = Array.isArray(id) ? id : (id ? [id] : []);
+                if (ids.length === 0) break;
+                const idSet = new Set(ids);
+                const needsLayout = resetStyle.fontSize !== undefined || resetStyle.borderWidth !== undefined;
+                const newNodes = currentNodes.map((n) =>
+                  idSet.has(n.id) ? { ...n, ...resetStyle } : n,
+                );
+                setGraph(newNodes, currentEdges);
+                if (needsLayout) debouncedLayout(true);
+                break;
+              }
+
+              case 'GLOBAL_STRUCTURE_CHANGE': {
+                const structure = payload?.structure;
+                if (!structure) break;
+                set({ globalStructure: structure, isDirty: true });
+                debouncedLayout(true);
+                break;
+              }
+
+              case 'GLOBAL_FONT_CHANGE': {
+                const font = payload?.font;
+                if (!font) break;
+                set({ globalFont: font, isDirty: true });
+                debouncedLayout(true);
+                break;
+              }
+
+              case 'BRANCH_LINE_WIDTH_CHANGE': {
+                const width = payload?.width;
+                if (typeof width !== 'number') break;
+                set({ branchLineWidth: width, isDirty: true });
+                break;
+              }
+
+              case 'COLOR_THEME_CHANGE': {
+                const themeName = payload?.themeName;
+                if (!themeName) break;
+                const theme = colorThemes[themeName];
+                if (theme) {
+                  set({ activeColorThemeId: themeName, backgroundColor: theme.background, isDirty: true });
+                } else {
+                  set({ activeColorThemeId: themeName, isDirty: true });
+                }
+                break;
+              }
+
+              case 'BACKGROUND_CHANGE': {
+                const color = payload?.color;
+                if (!color) break;
+                set({ backgroundColor: color, isDirty: true });
+                break;
+              }
+
+              case 'GLOBAL_BRANCH_COLOR_CHANGE': {
+                const color = payload?.color;
+                if (!color) break;
+                const newNodes = currentNodes.map((n) => {
+                  if (n.styleLocked) return n;
+                  return {
+                    ...n,
+                    branchColor: undefined,
+                    color: undefined,
+                    borderColor: undefined,
+                    textColor: undefined,
+                  };
+                });
+                setGraph(newNodes, currentEdges);
+                set({ globalBranchColor: color, isDirty: true });
                 debouncedLayout(true);
                 break;
               }

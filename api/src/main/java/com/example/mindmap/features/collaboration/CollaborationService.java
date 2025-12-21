@@ -152,37 +152,54 @@ public class CollaborationService {
             throw new IllegalArgumentException("Cannot assign OWNER permission.");
         }
 
-        // Lấy hoặc tạo user nếu chưa tồn tại (Logic Safe Invite)
-        User userToInvite = userService.getOrCreateUserByEmail(request.email());
+        // Lấy tất cả user có cùng email (multi-identity)
+        List<User> usersToInvite = userRepository.findAllByEmail(request.email());
+        if (usersToInvite.isEmpty()) {
+            User pendingUser = userService.getOrCreateUserByEmail(request.email());
+            usersToInvite = List.of(pendingUser);
+        }
 
-        if (userToInvite.getId().equals(currentUserId)) {
+        boolean hasNonSelfUser = usersToInvite.stream()
+                .anyMatch(user -> !user.getId().equals(currentUserId));
+        if (!hasNonSelfUser) {
             throw new IllegalArgumentException("Cannot invite yourself.");
         }
 
-        Collaboration collaboration = collaborationRepository
-                .findByMindmapIdAndUserId(mindmapId, userToInvite.getId())
-                .orElse(new Collaboration());
+        for (User targetUser : usersToInvite) {
+            if (targetUser.getId().equals(currentUserId)) {
+                continue;
+            }
 
-        collaboration.setMindmapId(mindmapId);
-        collaboration.setUserId(userToInvite.getId());
-        collaboration.setPermission(request.permission());
+            Collaboration collaboration = collaborationRepository
+                    .findByMindmapIdAndUserId(mindmapId, targetUser.getId())
+                    .orElse(new Collaboration());
 
-        // [QUAN TRỌNG] Owner mời trực tiếp -> Trạng thái là ACCEPTED (ACTIVE) luôn
-        collaboration.setStatus(Collaboration.InviteStatus.ACCEPTED);
-        collaboration.setType(Collaboration.InviteType.INVITE);
-        collaboration.setInvitedBy(currentUserId);
+            collaboration.setMindmapId(mindmapId);
+            collaboration.setUserId(targetUser.getId());
+            collaboration.setPermission(request.permission());
 
-        // Reset thông tin duyệt cũ (nếu có)
-        collaboration.setDecidedBy(currentUserId);
-        collaboration.setDecidedAt(Instant.now());
+            // [QUAN TRỌNG] Owner mời trực tiếp -> Trạng thái là ACCEPTED (ACTIVE) luôn
+            collaboration.setStatus(Collaboration.InviteStatus.ACCEPTED);
+            collaboration.setType(Collaboration.InviteType.INVITE);
+            collaboration.setInvitedBy(currentUserId);
 
-        collaborationRepository.save(collaboration);
+            // Reset thông tin duyệt cũ (nếu có)
+            collaboration.setDecidedBy(currentUserId);
+            collaboration.setDecidedAt(Instant.now());
+
+            collaborationRepository.save(collaboration);
+        }
+
+        User displayUser = usersToInvite.stream()
+                .filter(user -> !user.getId().equals(currentUserId))
+                .findFirst()
+                .orElse(usersToInvite.get(0));
 
         return new CollaboratorResponse(
-                userToInvite.getId(),
-                userToInvite.getDisplayName(),
-                userToInvite.getEmail(),
-                userToInvite.getAvatarUrl(),
+                displayUser.getId(),
+                displayUser.getDisplayName(),
+                displayUser.getEmail(),
+                displayUser.getAvatarUrl(),
                 request.permission()
         );
     }

@@ -1,4 +1,4 @@
-
+﻿
 import React, {
   useEffect,
   useLayoutEffect,
@@ -515,7 +515,11 @@ const {
   const handleToggleBoundary = () => {
     if (selectedNodeIds.length === 1) {
       const targetId = selectedNodeIds[0];
+      const targetNode = nodes.find(n => n.id === targetId);
+      if (!targetNode) return;
+      const nextBoundary = !targetNode.boundary;
       toggleNodeBoundary(targetId);
+      sendPatch('NODE_UPDATE', { id: targetId, updates: { boundary: nextBoundary } });
       // Re-run layout so boundary sizing/padding is updated immediately
       setTimeout(() => handleLayout(), 0);
     }
@@ -581,6 +585,7 @@ const {
     );
     applyUserAction(newNodes, edges);
     setSelectedBoundaryId(null);
+    sendPatch('NODE_UPDATE', { id: nodeId, updates: { boundary: false } });
     debouncedPersistData();
   };
 
@@ -626,7 +631,14 @@ const {
   const [dropTargetSide, setDropTargetSide] = useState<'left' | 'right' | null>(null);
   const [dropTargetIndex, setDropTargetIndex] = useState<number | null>(null);
   const [draggingNodeId, setDraggingNodeId] = useState<string | null>(null);
+  const storeBackgroundColor = useEditorStore(s => s.backgroundColor);
   const [backgroundColor, setBackgroundColor] = useState('#FAFAFB');
+
+  useEffect(() => {
+    if (storeBackgroundColor) {
+      setBackgroundColor(storeBackgroundColor);
+    }
+  }, [storeBackgroundColor]);
   const [styleClipboard, setStyleClipboard] = useState<Partial<NodeData> | null>(
     null
   );
@@ -714,10 +726,10 @@ const isReadOnly = useMemo(() => {
           // Gửi request với quyền EDITOR thay vì mặc định VIEWER
           console.log('[REQUEST_ACCESS] Calling requestAccess API...');
           await requestAccess({ requestedPermission: 'EDITOR' });
-          console.log('[REQUEST_ACCESS] ✅ Request sent successfully');
+          console.log('[REQUEST_ACCESS] Γ£à Request sent successfully');
           addToast('Đã gửi yêu cầu quyền chỉnh sửa (Edit).', 'success');
       } catch (e) {
-          console.error('[REQUEST_ACCESS] ❌ Request failed:', e);
+          console.error('[REQUEST_ACCESS] Γ¥î Request failed:', e);
           addToast('Gửi yêu cầu thất bại.', 'error');
       }
       setIsPermissionModalOpen(false);
@@ -999,7 +1011,7 @@ const isReadOnly = useMemo(() => {
     // ✅ CRITICAL: Chỉ save nếu user có quyền EDIT
     // Viewer chỉ xem realtime updates, không được persist
     if (isReadOnly) {
-      console.log('[DEBUG] ⏭️ Skipping save - user is VIEWER (read-only)');
+      console.log('[DEBUG] ΓÅ¡∩╕Å Skipping save - user is VIEWER (read-only)');
       return;
     }
     
@@ -1013,7 +1025,7 @@ const isReadOnly = useMemo(() => {
         name,
         content: { nodes: currentNodes, edges: currentEdges, relationships, summaries },
       };
-      console.log('[DEBUG] ✅ Saving data (from both local and realtime):', {
+      console.log('[DEBUG] Γ£à Saving data (from both local and realtime):', {
         nodesCount: currentNodes.length,
         edgesCount: currentEdges.length,
         relationshipsCount: relationships?.length || 0,
@@ -1055,7 +1067,7 @@ const undo = useCallback(() => {
     // 2. Lấy dữ liệu mới nhất sau khi Undo
     const { nodes: newNodes, edges: newEdges } = useEditorStore.getState();
 
-    console.log('[UNDO] 📤 Sending GRAPH_UPDATE. IsConnected:', isConnected, 'Nodes:', newNodes.length, 'Edges:', newEdges.length);
+    console.log('[UNDO] ≡ƒôñ Sending GRAPH_UPDATE. IsConnected:', isConnected, 'Nodes:', newNodes.length, 'Edges:', newEdges.length);
 
     // 3. Gửi dữ liệu mới cho mọi người (Real-time)
     if (isConnected) { // Kiểm tra kết nối trước khi gửi
@@ -1063,9 +1075,9 @@ const undo = useCallback(() => {
             nodes: newNodes, 
             edges: newEdges 
         });
-        console.log('[UNDO] ✅ GRAPH_UPDATE sent via WebSocket');
+        console.log('[UNDO] Γ£à GRAPH_UPDATE sent via WebSocket');
     } else {
-        console.warn('[UNDO] ⚠️ Cannot send GRAPH_UPDATE - WebSocket not connected');
+        console.warn('[UNDO] ΓÜá∩╕Å Cannot send GRAPH_UPDATE - WebSocket not connected');
     }
 
     // 4. Lưu lại vào DB (để đảm bảo dữ liệu bền vững)
@@ -1085,7 +1097,7 @@ const undo = useCallback(() => {
     // 2. Lấy dữ liệu mới nhất sau khi Redo
     const { nodes: newNodes, edges: newEdges } = useEditorStore.getState();
 
-    console.log('[REDO] 📤 Sending GRAPH_UPDATE. IsConnected:', isConnected, 'Nodes:', newNodes.length, 'Edges:', newEdges.length);
+    console.log('[REDO] ≡ƒôñ Sending GRAPH_UPDATE. IsConnected:', isConnected, 'Nodes:', newNodes.length, 'Edges:', newEdges.length);
 
     // 3. Gửi dữ liệu mới cho mọi người
     if (isConnected) {
@@ -1093,9 +1105,9 @@ const undo = useCallback(() => {
             nodes: newNodes, 
             edges: newEdges 
         });
-        console.log('[REDO] ✅ GRAPH_UPDATE sent via WebSocket');
+        console.log('[REDO] Γ£à GRAPH_UPDATE sent via WebSocket');
     } else {
-        console.warn('[REDO] ⚠️ Cannot send GRAPH_UPDATE - WebSocket not connected');
+        console.warn('[REDO] ΓÜá∩╕Å Cannot send GRAPH_UPDATE - WebSocket not connected');
     }
 
     // 4. Lưu DB
@@ -1185,7 +1197,6 @@ const undo = useCallback(() => {
   }, [isReadOnly, userPermission, id, requestAccess, addToast]);
 
   // [RESIZE OBSERVER] Update canvas dimensions accounting for panel width
-  // [OPTIMIZATION] Debounce resize để tránh layout liên tục (theo spec: 100-200ms)
   useEffect(() => {
     let resizeTimer: number;
     
@@ -1393,7 +1404,6 @@ const undo = useCallback(() => {
 
         const status = error?.response?.status;
 
-        // 403/401 => bị deny
         if (status === 403 || status === 401) {
           setAccessDenied(true);
           setIsDataLoaded(true);
@@ -1433,7 +1443,6 @@ const undo = useCallback(() => {
       login();
     } else if (id) {
       if (isOwner) {
-        // [FIX] Phải gửi đầy đủ nodes, edges, relationships, summaries
         const content = { 
           nodes: nodes, 
           edges,
@@ -1561,10 +1570,10 @@ const undo = useCallback(() => {
   // VIEWERS chỉ xem, không save
   useEffect(() => {
     if (isDirty && isDataLoaded && !isReadOnly) {
-      console.log('[DEBUG] 💾 isDirty changed to true, triggering debouncedPersistData');
+      console.log('[DEBUG] ≡ƒÆ╛ isDirty changed to true, triggering debouncedPersistData');
       debouncedPersistData();
     } else if (isDirty && isReadOnly) {
-      console.log('[DEBUG] 👁️ isDirty=true but user is VIEWER - skipping save');
+      console.log('[DEBUG] ≡ƒæü∩╕Å isDirty=true but user is VIEWER - skipping save');
     }
   }, [isDirty, isDataLoaded, isReadOnly, debouncedPersistData]);
 
@@ -2871,7 +2880,6 @@ const handleFitToScreen = useCallback(() => {
         edge: newEdgeData 
     });
 
-    // [FIX YÊU CẦU 1] Call layout immediately to get correct position, then animate
     // Smart viewport: ensure new node is visible without full fit-to-screen
     setTimeout(() => {
       handleLayout();
@@ -3639,7 +3647,7 @@ const handleFitToScreen = useCallback(() => {
       checkChildren(draggedNodeId);
 
       if (isDroppingOnChild) {
-        addToast('Khong the tha vao con chau!', 'error');
+        addToast('Không thể thả vào node con/cháu!', 'error');
         handleLayout();
         return;
       }
@@ -3686,6 +3694,7 @@ const handleFitToScreen = useCallback(() => {
         const finalEdges = [...otherEdges, ...newSortedEdges];
 
         applyUserAction(updatedNodes, finalEdges);
+        sendPatch('GRAPH_UPDATE', { nodes: updatedNodes, edges: finalEdges });
       } else {
         let siblings = updatedNodes.filter(n => n.parentId === newParentId && n.id !== draggedNodeId);
         siblings.sort((a, b) => (nodeVisuals.get(a.id)?.style.y || 0) - (nodeVisuals.get(b.id)?.style.y || 0));
@@ -3703,6 +3712,7 @@ const handleFitToScreen = useCallback(() => {
         const finalEdges = [...otherEdges, ...newSortedEdges];
 
         applyUserAction(updatedNodes, finalEdges);
+        sendPatch('GRAPH_UPDATE', { nodes: updatedNodes, edges: finalEdges });
       }
 
       sendPatch('NODE_UPDATE', {
@@ -3738,6 +3748,7 @@ const handleFitToScreen = useCallback(() => {
         });
 
         applyUserAction(newNodes, newEdges);
+        sendPatch('GRAPH_UPDATE', { nodes: newNodes, edges: newEdges });
 
         sendPatch('NODE_UPDATE', { id: draggedNodeId, updates: { x: finalX, y: finalY } });
 
@@ -4364,7 +4375,7 @@ const handleFitToScreen = useCallback(() => {
 
         <Sidebar />
 
-        {/* ✅ CHAT SIDEBAR */}
+        {/* Γ£à CHAT SIDEBAR */}
         {isConnected && id && (
           <ChatSidebar
             mindmapId={id}
@@ -4372,7 +4383,7 @@ const handleFitToScreen = useCallback(() => {
           />
         )}
 
-        {mode === 'share' && (
+        {mode === 'share' && isReadOnly && (
           <div className="absolute top-14 left-1/2 -translate-x-1/2 bg-blue-100 text-blue-800 px-4 py-1 rounded-full text-xs font-medium z-50 pointer-events-none opacity-80">
             Chế độ xem (View Only)
           </div>
@@ -4741,7 +4752,6 @@ const handleFitToScreen = useCallback(() => {
                 x: worldX,
                 y: worldY,
                 parentId: undefined,
-                // Thêm các thuộc tính style mặc định
                 ...DEFAULT_NODE_STYLE,
                 quickStyleId: 'default',
               };
@@ -5349,12 +5359,11 @@ const handleFitToScreen = useCallback(() => {
           {/* Status */}
           {requestStatus === 'pending' ? (
             <div className="bg-yellow-50 text-yellow-700 px-3 py-2 rounded-md border border-yellow-200 w-full text-sm">
-              ⏳ Đã gửi yêu cầu, vui lòng chờ phê duyệt.
+              Đã gửi yêu cầu, vui lòng chờ phê duyệt.
             </div>
           ) : (
             <div className="flex gap-2 w-full justify-center">
 
-              {/* Gửi yêu cầu */}
               <button 
                 onClick={handleRequestEditAccess}
                 className="px-4 py-1.5 text-sm bg-blue-600 text-white rounded-md hover:bg-blue-700 transition"
@@ -5394,6 +5403,12 @@ const handleFitToScreen = useCallback(() => {
                 } else {
                   handleLayout();
                 }
+
+                setTimeout(() => {
+                  const { nodes: currentNodes, edges: currentEdges } = useEditorStore.getState();
+                  sendPatch('GLOBAL_STRUCTURE_CHANGE', { structure });
+                  sendPatch('GRAPH_UPDATE', { nodes: currentNodes, edges: currentEdges });
+                }, 0);
                 
                 useEditorStore.setState({ isDirty: true });
 
@@ -5435,6 +5450,7 @@ const handleFitToScreen = useCallback(() => {
                     });
                   }
                 }
+                sendPatch('GLOBAL_FONT_CHANGE', { font });
               }}
               onSetBranchLineWidth={(width: number) => {
                 pushHistory(useEditorStore.getState().nodes, useEditorStore.getState().edges);
@@ -5452,6 +5468,7 @@ const handleFitToScreen = useCallback(() => {
                     });
                   }
                 }
+                sendPatch('BRANCH_LINE_WIDTH_CHANGE', { width });
               }}
               onSetGlobalBranchColor={handleSetGlobalBranchColor}
               onSetActiveColorTheme={(themeName: keyof typeof colorThemes) => {
@@ -5472,6 +5489,7 @@ const handleFitToScreen = useCallback(() => {
                     });
                   }
                 }
+                sendPatch('COLOR_THEME_CHANGE', { themeName });
               }}
               
               onUpdateNode={handleUpdateNode}
@@ -5481,6 +5499,10 @@ const handleFitToScreen = useCallback(() => {
               onResetStyle={handleResetStyle}
               onLayoutAll={() => {
                 handleRebalanceLayout();
+                setTimeout(() => {
+                  const { nodes: currentNodes, edges: currentEdges } = useEditorStore.getState();
+                  sendPatch('GRAPH_UPDATE', { nodes: currentNodes, edges: currentEdges });
+                }, 0);
                 setTimeout(() => handleFitToScreen(), 100);
               }}
               
@@ -5537,3 +5559,4 @@ const handleFitToScreen = useCallback(() => {
     </>
   );
 }
+

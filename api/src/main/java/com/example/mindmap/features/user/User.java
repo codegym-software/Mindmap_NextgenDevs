@@ -11,7 +11,7 @@ public class User extends Auditable {
     @Id
     private String id;
 
-    @Indexed(unique = true, sparse = true)
+    @Indexed
     private String email;
 
     @Indexed
