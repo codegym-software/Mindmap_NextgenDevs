@@ -10,6 +10,7 @@ import com.example.mindmap.features.mindmap.MindmapService;
 import com.example.mindmap.features.user.User;
 import com.example.mindmap.features.user.UserRepository;
 import com.example.mindmap.features.user.UserService;
+import com.example.mindmap.websocket.MindmapUpdateHandler; // ⭐ THÊM IMPORT
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -37,6 +38,7 @@ public class CollaborationService {
     private final UserService userService; // Đã thêm UserService để sync
     private final AuthUtils authUtils;
     private final AccessRequestRepository accessRequestRepository;
+    private final MindmapUpdateHandler websocketHandler; // ⭐ THÊM MỚI
 
     private static final Logger log = LoggerFactory.getLogger(CollaborationService.class);
 
@@ -49,7 +51,8 @@ public class CollaborationService {
                                 UserRepository userRepository,
                                 UserService userService,
                                 AuthUtils authUtils,
-                                AccessRequestRepository accessRequestRepository) {
+                                AccessRequestRepository accessRequestRepository,
+                                MindmapUpdateHandler websocketHandler) { // ⭐ THÊM THAM SỐ
         this.collaborationRepository = collaborationRepository;
         this.mindmapService = mindmapService;
         this.mindmapRepository = mindmapRepository;
@@ -57,6 +60,7 @@ public class CollaborationService {
         this.userService = userService;
         this.authUtils = authUtils;
         this.accessRequestRepository = accessRequestRepository;
+        this.websocketHandler = websocketHandler; // ⭐ GÁN HANDLER
     }
 
     // ===================================================================
@@ -205,7 +209,7 @@ public class CollaborationService {
     }
 
     // ===================================================================
-    // 4. XÓA NGƯỜI HỢP TÁC (REMOVE)
+    // 4. XÓA NGƯỜI HỢP TÁC (REMOVE) - ⭐ CÓ REALTIME KICK
     // ===================================================================
     @Transactional
     public void removeCollaborator(String mindmapId, String collaboratorId) {
@@ -224,7 +228,24 @@ public class CollaborationService {
                 .findByMindmapIdAndUserId(mindmapId, collaboratorId)
                 .orElseThrow(() -> new ResourceNotFoundException("Collaboration", "user_id", collaboratorId));
 
+        // 1️⃣ XÓA KHỎI DATABASE TRƯỚC
         collaborationRepository.delete(collaboration);
+        log.info("🗑️ Removed collaborator {} from mindmap {}", collaboratorId, mindmapId);
+
+        // 2️⃣ KICK USER REALTIME (nếu đang online)
+        try {
+            boolean kicked = websocketHandler.kickUser(mindmapId, collaboratorId);
+            if (kicked) {
+                log.info("✅ Successfully kicked user {} from mindmap {} WebSocket room", collaboratorId, mindmapId);
+            } else {
+                log.info("ℹ️ User {} was not online in mindmap {} (no active WebSocket session)", collaboratorId, mindmapId);
+            }
+        } catch (Exception e) {
+            // KHÔNG throw exception để tránh rollback transaction
+            // Việc kick thất bại không ảnh hưởng đến việc xóa quyền trong DB
+            log.error("⚠️ Failed to kick user {} via WebSocket, but permission was removed from DB: {}", 
+                    collaboratorId, e.getMessage());
+        }
     }
 
     // ===================================================================
@@ -360,7 +381,7 @@ public class CollaborationService {
     }
 
     // ===================================================================
-    // 7. DUYỆT YÊU CẦU (APPROVE) - XOÁ REQUEST + UPSERT COLLAB ACCEPTED
+    // 7. DUYỆT YÊU CẦU (APPROVE) - XOÁ REQUEST + UPSERT COLLAB ACCEPTED + 🔔 REALTIME NOTIFY
     // ===================================================================
     @Transactional
     public void approveRequest(String mindmapId, String requesterId, Permission permissionToGrant) {
@@ -390,7 +411,34 @@ public class CollaborationService {
         collab.setDecidedAt(Instant.now());
 
         collaborationRepository.save(collab);
-        log.info("Owner {} approved access for {} with permission {}", currentOwnerId, requesterId, permissionToGrant);
+        log.info("✅ Owner {} approved access for {} with permission {}", currentOwnerId, requesterId, permissionToGrant);
+
+        // 3️⃣ 🔔 GỬI THÔNG BÁO REALTIME ĐẾN USER B (requesterId)
+        try {
+            org.springframework.web.socket.TextMessage message = new org.springframework.web.socket.TextMessage(
+                new com.fasterxml.jackson.databind.ObjectMapper().writeValueAsString(
+                    new com.example.mindmap.websocket.dto.BroadcastPatch(
+                        "PERMISSION_UPDATED",
+                        new com.fasterxml.jackson.databind.ObjectMapper().createObjectNode()
+                            .put("targetUserId", requesterId)
+                            .put("newPermission", permissionToGrant.toString())
+                            .put("mindmapId", mindmapId),
+                        "SYSTEM"
+                    )
+                )
+            );
+            
+            boolean sent = websocketHandler.sendToUser(mindmapId, requesterId, message);
+            if (sent) {
+                log.info("🔔 Sent PERMISSION_UPDATED notification to user {} in mindmap {}", requesterId, mindmapId);
+            } else {
+                log.info("ℹ️ User {} is offline, will see permission update on next visit", requesterId);
+            }
+        } catch (Exception e) {
+            // KHÔNG throw exception để tránh rollback transaction
+            // Việc gửi thông báo thất bại không ảnh hưởng đến việc cấp quyền trong DB
+            log.error("⚠️ Failed to send PERMISSION_UPDATED notification to user {}: {}", requesterId, e.getMessage());
+        }
     }
 
     // ===================================================================

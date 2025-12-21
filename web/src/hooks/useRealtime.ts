@@ -3,6 +3,7 @@ import { useAuth } from './useAuth';
 import { useToast } from './useToast';
 import { EdgeData, colorThemes, useEditorStore } from '../app/store/useEditorStore';
 import { useChatStore } from '../app/store/useChatStore';
+import { Permission } from '../services/mindmapsApi'; // ⭐ IMPORT TYPE
 
 
 type BroadcastPatch = {
@@ -20,6 +21,7 @@ type UseRealtimeProps = {
   onLayoutRequest: (keepCamera: boolean) => void;
   onSetRootCollapse: (side: 'left' | 'right', collapsed: boolean) => void;
   shouldConnect: boolean;
+  onPermissionUpdate?: (newPermission: Permission) => void; // ⭐ SỬA KIỂU
 };
 
 // Helper throttle để giảm tải việc gửi cursor liên tục
@@ -53,6 +55,7 @@ export function useRealtime({
   onLayoutRequest,
   onSetRootCollapse,
   shouldConnect,
+  onPermissionUpdate, // ⭐ NHẬN CALLBACK
 }: UseRealtimeProps) {
   const { getAccessToken, isAuthed, user } = useAuth();
   const { addToast } = useToast();
@@ -70,11 +73,12 @@ export function useRealtime({
     userInfo,
     onLayoutRequest,
     onSetRootCollapse,
+    onPermissionUpdate, // ⭐ LƯU VÀO REF
   });
 
   useEffect(() => {
-    latestProps.current = { isOwner, userInfo, onLayoutRequest, onSetRootCollapse };
-  }, [isOwner, userInfo, onLayoutRequest, onSetRootCollapse]);
+    latestProps.current = { isOwner, userInfo, onLayoutRequest, onSetRootCollapse, onPermissionUpdate };
+  }, [isOwner, userInfo, onLayoutRequest, onSetRootCollapse, onPermissionUpdate]);
 
   // --- Hàm gửi (Senders) ---
 
@@ -518,6 +522,61 @@ export function useRealtime({
                   // Graph update toàn bộ cần layout
                   debouncedLayout(true);
                   console.log('[REALTIME] ✅ Applied GRAPH_UPDATE - New graph state:', payload.nodes.length, 'nodes');
+                }
+                break;
+              }
+
+              // ⭐ [SECURITY] XỬ LÝ THU HỒI QUYỀN REALTIME
+              case 'PERMISSION_REVOKED': {
+                const targetUserId = payload?.targetUserId;
+                const myId = getMySenderId(user);
+                
+                console.warn('🚨 [SECURITY] Received PERMISSION_REVOKED. Target:', targetUserId, 'MyId:', myId);
+                
+                // Chỉ xử lý nếu message này dành cho mình
+                if (targetUserId && myId && targetUserId === myId) {
+                  console.error('🚨 [SECURITY] Your access has been revoked! Disconnecting...');
+                  
+                  // 1. Hiển thị thông báo cho user
+                  addToast('⛔ Bạn đã bị thu hồi quyền truy cập mindmap này.', 'error');
+                  
+                  // 2. Đóng WebSocket connection
+                  if (wsRef.current) {
+                    wsRef.current.close();
+                    wsRef.current = null;
+                  }
+                  
+                  // 3. Chờ 1 giây để user đọc thông báo, sau đó redirect về Dashboard
+                  setTimeout(() => {
+                    window.location.href = '/dashboard';
+                  }, 1000);
+                }
+                break;
+              }
+
+              // ⭐ [REALTIME] XỬ LÝ CẤP QUYỀN MỚI (ZERO-RELOAD)
+              case 'PERMISSION_UPDATED': {
+                const targetUserId = payload?.targetUserId;
+                const newPermission = payload?.newPermission as Permission; // ⭐ CAST TO PERMISSION TYPE
+                const myId = getMySenderId(user);
+                
+                console.log('🔔 [PERMISSION_UPDATED] Received. Target:', targetUserId, 'MyId:', myId, 'New Permission:', newPermission);
+                
+                // Chỉ xử lý nếu message này dành cho mình
+                if (targetUserId && myId && targetUserId === myId && newPermission) {
+                  console.log('✅ [PERMISSION_UPDATED] Permission granted! Updating state...');
+                  
+                  // 1. Hiển thị thông báo cho user
+                  const permissionText = newPermission === 'EDITOR' ? 'chỉnh sửa' : 'xem';
+                  addToast(`✅ Yêu cầu của bạn đã được chấp nhận! Bạn hiện có quyền ${permissionText}.`, 'success');
+                  
+                  // 2. Gọi callback để update state trong useMindmapAccess
+                  if (latestProps.current.onPermissionUpdate) {
+                    latestProps.current.onPermissionUpdate(newPermission);
+                  }
+                  
+                  // 3. Reload lại mindmap data để đồng bộ với server
+                  // (State sẽ tự động update thông qua useMindmapAccess.refreshPermissions)
                 }
                 break;
               }

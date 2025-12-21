@@ -23,6 +23,7 @@ interface UseMindmapAccessResult {
   approveRequest: (uid: string, perm: Permission) => Promise<void>;
   denyRequest: (uid: string) => Promise<void>;
   refreshPermissions: () => void;
+  handlePermissionUpdate: (newPermission: Permission) => void; // ⭐ THÊM MỚI
 }
 
 export const useMindmapAccess = (
@@ -199,6 +200,23 @@ export const useMindmapAccess = (
     }
   };
 
+  // ⭐ [REALTIME] Hàm xử lý khi nhận PERMISSION_UPDATED từ WebSocket
+  const handlePermissionUpdate = useCallback((newPermission: Permission) => {
+    console.log('🔔 [PERMISSION_UPDATE] Received permission update:', newPermission);
+    
+    // 1. Cập nhật trạng thái permission thành 'allowed' (nếu đang denied)
+    setPermission('allowed');
+    
+    // 2. Reset request status về 'none' (vì đã được duyệt)
+    setRequestStatus('none');
+    
+    // 3. Trigger refresh để load lại dữ liệu mới nhất
+    // Sẽ trigger useEffect checkAccess và reload mindmap data
+    refreshPermissions();
+    
+    console.log('✅ [PERMISSION_UPDATE] Permission state updated, triggering refresh');
+  }, [refreshPermissions]);
+
   return {
     permission,
     requestStatus,
@@ -208,6 +226,7 @@ export const useMindmapAccess = (
     requestAccess,
     approveRequest,
     denyRequest,
-    refreshPermissions
+    refreshPermissions,
+    handlePermissionUpdate, // ⭐ EXPORT CALLBACK
   };
 };

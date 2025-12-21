@@ -477,6 +477,7 @@ const {
     approveRequest,
     denyRequest,
     refreshPermissions,
+    handlePermissionUpdate, // ⭐ NHẬN CALLBACK TỪ HOOK
   } = useMindmapAccess(id || '', user);
 
   // State từ store 
@@ -1057,6 +1058,7 @@ const isReadOnly = useMemo(() => {
     onLayoutRequest: (keepCamera = false) => handleLayout(),
     onSetRootCollapse: handleSetRootCollapse,
     shouldConnect: !!id && !isGuest && !accessDenied && isAuthed,
+    onPermissionUpdate: handlePermissionUpdate, // ⭐ BRIDGE: Truyền callback từ useMindmapAccess vào useRealtime
   });
 
     // Wrap undo/redo to trigger layout after state change

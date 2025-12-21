@@ -254,4 +254,87 @@ public class MindmapUpdateHandler extends TextWebSocketHandler {
             }
         }
     }
+
+    /**
+     * Gửi tin nhắn WebSocket đến một user cụ thể trong mindmap
+     * Dùng cho các thao tác như kick user, revoke permission
+     * 
+     * @param mindmapId ID của mindmap
+     * @param targetUserId ID của user cần nhận message
+     * @param message Tin nhắn cần gửi
+     * @return true nếu gửi thành công, false nếu không tìm thấy session
+     */
+    public boolean sendToUser(String mindmapId, String targetUserId, TextMessage message) {
+        Map<String, WebSocketSession> room = mindmapRooms.get(mindmapId);
+        if (room == null) {
+            log.warn("Cannot send to user {}: mindmap room {} not found", targetUserId, mindmapId);
+            return false;
+        }
+
+        boolean sent = false;
+        for (WebSocketSession session : room.values()) {
+            String userId = getUserId(session);
+            if (userId != null && userId.equals(targetUserId) && session.isOpen()) {
+                try {
+                    session.sendMessage(message);
+                    log.info("✅ Sent targeted message to user {} in mindmap {}", targetUserId, mindmapId);
+                    sent = true;
+                } catch (IOException e) {
+                    log.error("Failed to send message to user {}: {}", targetUserId, e.getMessage());
+                }
+            }
+        }
+
+        if (!sent) {
+            log.warn("⚠️ User {} not found in mindmap {} WebSocket room (might be offline)", targetUserId, mindmapId);
+        }
+        
+        return sent;
+    }
+
+    /**
+     * Force disconnect một user khỏi mindmap room
+     * Dùng khi Owner thu hồi quyền (Permission Revoked)
+     * 
+     * @param mindmapId ID của mindmap
+     * @param targetUserId ID của user cần kick
+     * @return true nếu kick thành công
+     */
+    public boolean kickUser(String mindmapId, String targetUserId) {
+        Map<String, WebSocketSession> room = mindmapRooms.get(mindmapId);
+        if (room == null) {
+            log.warn("Cannot kick user {}: mindmap room {} not found", targetUserId, mindmapId);
+            return false;
+        }
+
+        boolean kicked = false;
+        for (WebSocketSession session : room.values()) {
+            String userId = getUserId(session);
+            if (userId != null && userId.equals(targetUserId) && session.isOpen()) {
+                try {
+                    // Gửi thông báo trước khi đóng connection
+                    BroadcastPatch revokeMessage = new BroadcastPatch(
+                            "PERMISSION_REVOKED",
+                            objectMapper.createObjectNode()
+                                    .put("reason", "Owner has removed your access to this mindmap")
+                                    .put("targetUserId", targetUserId),
+                            "SYSTEM"
+                    );
+                    session.sendMessage(new TextMessage(objectMapper.writeValueAsString(revokeMessage)));
+                    
+                    // Đợi 500ms để message kịp gửi trước khi đóng
+                    Thread.sleep(500);
+                    
+                    // Đóng connection
+                    session.close(CloseStatus.POLICY_VIOLATION);
+                    log.info("🚪 Kicked user {} from mindmap {}", targetUserId, mindmapId);
+                    kicked = true;
+                } catch (IOException | InterruptedException e) {
+                    log.error("Failed to kick user {}: {}", targetUserId, e.getMessage());
+                }
+            }
+        }
+
+        return kicked;
+    }
 }
