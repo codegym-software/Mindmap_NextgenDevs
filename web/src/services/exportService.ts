@@ -1,5 +1,6 @@
 import { jsPDF } from 'jspdf';
 import { NodeData, EdgeData } from '../app/store/useEditorStore';
+import Konva from 'konva';
 
 /**
  * Service để xuất Mindmap sang các định dạng khác nhau (Text, PDF, PNG)
@@ -91,42 +92,132 @@ export function downloadAsText(nodes: NodeData[], edges: EdgeData[], filename: s
 }
 
 // =====================================
-// 2. XUẤT SANG PDF (Đơn giản - Tiếng Việt)
-// =====================================
-// 3. XUẤT SANG PNG (từ Canvas Konva)
+// 2. XUẤT SANG PNG (FULL MINDMAP - REFACTORED)
 // =====================================
 
 export function downloadAsImagePNG(
   stageRef: any,
+  nodes: NodeData[],
+  backgroundColor: string = '#FFFFFF',
   filename: string = 'mindmap.png'
 ): void {
   if (!stageRef || !stageRef.current) {
     console.error('Stage reference not found');
+    alert('Không thể xuất PNG - tham chiếu Stage không khả dụng');
     return;
   }
 
+  // ⭐ VALIDATE NODES
+  if (!nodes || nodes.length === 0) {
+    console.error('[Export] No nodes to export');
+    alert('Không thể xuất PNG - Mindmap không có dữ liệu');
+    return;
+  }
+
+  console.log('[Export PNG] Starting export with', nodes.length, 'nodes');
+
+  const stage = stageRef.current as Konva.Stage;
+
+  // ===== BƯỚC 1: TÍNH BOUNDING BOX =====
+  const { minX, minY, maxX, maxY } = calculateBoundingBox(nodes);
+  
+  // ⭐ VALIDATE BOUNDING BOX
+  if (!isFinite(minX) || !isFinite(minY) || !isFinite(maxX) || !isFinite(maxY)) {
+    console.error('[Export] Invalid bounding box:', { minX, minY, maxX, maxY });
+    alert('Không thể xuất PNG - Dữ liệu tọa độ không hợp lệ');
+    return;
+  }
+  
+  const padding = 50;
+  const fullWidth = maxX - minX + padding * 2;
+  const fullHeight = maxY - minY + padding * 2;
+
+  // ⭐ VALIDATE DIMENSIONS
+  if (fullWidth <= 0 || fullHeight <= 0 || !isFinite(fullWidth) || !isFinite(fullHeight)) {
+    console.error('[Export] Invalid dimensions:', { fullWidth, fullHeight });
+    alert('Không thể xuất PNG - Kích thước không hợp lệ');
+    return;
+  }
+
+  console.log('[Export PNG] Dimensions:', { fullWidth, fullHeight, padding });
+
+  // ===== BƯỚC 2: LƯU TRẠNG THÁI CŨ =====
+  const oldScale = { x: stage.scaleX(), y: stage.scaleY() };
+  const oldPosition = { x: stage.x(), y: stage.y() };
+  const oldWidth = stage.width();
+  const oldHeight = stage.height();
+
+  // ===== BƯỚC 3: ẨN CURSOR LAYER =====
+  const cursorLayer = findCursorLayer(stage);
+  const wasCursorVisible = cursorLayer?.visible() ?? false;
+  if (cursorLayer) {
+    cursorLayer.visible(false);
+  }
+
+  // ===== BƯỚC 4: VẼ BACKGROUND =====
+  const bgLayer = stage.children?.[0] as Konva.Layer | undefined;
+  const bgRect = new Konva.Rect({
+    x: minX - padding,
+    y: minY - padding,
+    width: fullWidth,
+    height: fullHeight,
+    fill: backgroundColor,
+    listening: false,
+  });
+  
+  if (bgLayer) {
+    bgLayer.add(bgRect);
+    bgRect.moveToBottom(); // Đảm bảo background nằm dưới cùng
+  }
+
   try {
-    const stage = stageRef.current;
-    // Lấy URL từ canvas
+    // ===== BƯỚC 5: RESET VIEWPORT =====
+    stage.scale({ x: 1, y: 1 });
+    stage.position({ x: -minX + padding, y: -minY + padding });
+    stage.width(fullWidth);
+    stage.height(fullHeight);
+    stage.batchDraw();
+
+    // ===== BƯỚC 6: EXPORT =====
     const dataURL = stage.toDataURL({
-      pixelRatio: 2, // Độ phân giải cao hơn
-      mimeType: 'image/png'
+      pixelRatio: 2, // Độ phân giải cao
+      mimeType: 'image/png',
     });
 
     const blob = dataURItoBlob(dataURL);
     downloadBlob(blob, filename);
+
   } catch (error) {
     console.error('Error exporting as PNG:', error);
+    alert('Lỗi khi xuất PNG: ' + (error instanceof Error ? error.message : 'Không xác định'));
+  } finally {
+    // ===== BƯỚC 7: KHÔI PHỤC =====
+    console.log('[Export PNG] Restoring viewport...');
+    try {
+      bgRect.destroy(); // Xóa background tạm
+      if (cursorLayer) {
+        cursorLayer.visible(wasCursorVisible);
+      }
+      stage.scale(oldScale);
+      stage.position(oldPosition);
+      stage.width(oldWidth);
+      stage.height(oldHeight);
+      stage.batchDraw();
+      console.log('[Export PNG] Viewport restored successfully');
+    } catch (restoreError) {
+      console.error('[Export PNG] Error restoring viewport:', restoreError);
+    }
   }
 }
 
 // =====================================
-// 3. XUẤT SANG PDF (Chụp canvas vào PDF)
+// 3. XUẤT SANG PDF (FULL MINDMAP - REFACTORED)
 // =====================================
 
 export function downloadAsPDF(
   stageRef: any,
-  nodes?: NodeData[],
+  nodes: NodeData[],
+  backgroundColor: string = '#FFFFFF',
   filename: string = 'mindmap.pdf'
 ): void {
   if (!stageRef || !stageRef.current) {
@@ -135,17 +226,85 @@ export function downloadAsPDF(
     return;
   }
 
-  try {
-    const stage = stageRef.current;
-    stage.draw();
-    
-    // Capture full stage
-    const stageWidth = stage.width ? stage.width() : 1200;
-    const stageHeight = stage.height ? stage.height() : 800;
-    const dataURL = stage.toDataURL({ pixelRatio: 2, mimeType: 'image/png' });
+  // ⭐ VALIDATE NODES
+  if (!nodes || nodes.length === 0) {
+    console.error('[Export] No nodes to export');
+    alert('Không thể xuất PDF - Mindmap không có dữ liệu');
+    return;
+  }
 
-    // Determine orientation based on stage dimensions
-    const orientation = stageWidth >= stageHeight ? 'l' : 'p';
+  console.log('[Export PDF] Starting export with', nodes.length, 'nodes');
+
+  const stage = stageRef.current as Konva.Stage;
+
+  // ===== BƯỚC 1: TÍNH BOUNDING BOX =====
+  const { minX, minY, maxX, maxY } = calculateBoundingBox(nodes);
+  
+  // ⭐ VALIDATE BOUNDING BOX
+  if (!isFinite(minX) || !isFinite(minY) || !isFinite(maxX) || !isFinite(maxY)) {
+    console.error('[Export] Invalid bounding box:', { minX, minY, maxX, maxY });
+    alert('Không thể xuất PDF - Dữ liệu tọa độ không hợp lệ');
+    return;
+  }
+  
+  const padding = 50;
+  const fullWidth = maxX - minX + padding * 2;
+  const fullHeight = maxY - minY + padding * 2;
+
+  // ⭐ VALIDATE DIMENSIONS
+  if (fullWidth <= 0 || fullHeight <= 0 || !isFinite(fullWidth) || !isFinite(fullHeight)) {
+    console.error('[Export] Invalid dimensions:', { fullWidth, fullHeight });
+    alert('Không thể xuất PDF - Kích thước không hợp lệ');
+    return;
+  }
+
+  console.log('[Export PDF] Dimensions:', { fullWidth, fullHeight, padding });
+
+  // ===== BƯỚC 2: LƯU TRẠNG THÁI CŨ =====
+  const oldScale = { x: stage.scaleX(), y: stage.scaleY() };
+  const oldPosition = { x: stage.x(), y: stage.y() };
+  const oldWidth = stage.width();
+  const oldHeight = stage.height();
+
+  // ===== BƯỚC 3: ẨN CURSOR LAYER =====
+  const cursorLayer = findCursorLayer(stage);
+  const wasCursorVisible = cursorLayer?.visible() ?? false;
+  if (cursorLayer) {
+    cursorLayer.visible(false);
+  }
+
+  // ===== BƯỚC 4: VẼ BACKGROUND =====
+  const bgLayer = stage.children?.[0] as Konva.Layer | undefined;
+  const bgRect = new Konva.Rect({
+    x: minX - padding,
+    y: minY - padding,
+    width: fullWidth,
+    height: fullHeight,
+    fill: backgroundColor,
+    listening: false,
+  });
+  
+  if (bgLayer) {
+    bgLayer.add(bgRect);
+    bgRect.moveToBottom();
+  }
+
+  try {
+    // ===== BƯỚC 5: RESET VIEWPORT =====
+    stage.scale({ x: 1, y: 1 });
+    stage.position({ x: -minX + padding, y: -minY + padding });
+    stage.width(fullWidth);
+    stage.height(fullHeight);
+    stage.batchDraw();
+
+    // ===== BƯỚC 6: EXPORT TO PDF =====
+    const dataURL = stage.toDataURL({ 
+      pixelRatio: 2,
+      mimeType: 'image/png' 
+    });
+
+    // Determine orientation
+    const orientation = fullWidth >= fullHeight ? 'l' : 'p';
     const doc = new jsPDF({ orientation, unit: 'mm', format: 'a4' });
     
     // A4 dimensions in mm
@@ -155,10 +314,10 @@ export function downloadAsPDF(
     const availW = pageWidth - marginMM * 2;
     const availH = pageHeight - marginMM * 2;
 
-    // Calculate scale to fit stage into available space while preserving aspect ratio
-    const ratio = Math.min(availW / stageWidth, availH / stageHeight);
-    const renderWidth = stageWidth * ratio;
-    const renderHeight = stageHeight * ratio;
+    // Calculate scale to fit
+    const ratio = Math.min(availW / fullWidth, availH / fullHeight);
+    const renderWidth = fullWidth * ratio;
+    const renderHeight = fullHeight * ratio;
     
     // Center on page
     const offsetX = (pageWidth - renderWidth) / 2;
@@ -166,9 +325,27 @@ export function downloadAsPDF(
 
     doc.addImage(dataURL, 'PNG', offsetX, offsetY, renderWidth, renderHeight, undefined, 'FAST');
     doc.save(filename);
+
   } catch (error) {
     console.error('Error exporting as PDF:', error);
     alert('Lỗi khi xuất PDF: ' + (error instanceof Error ? error.message : 'Không xác định'));
+  } finally {
+    // ===== BƯỚC 7: KHÔI PHỤC =====
+    console.log('[Export PDF] Restoring viewport...');
+    try {
+      bgRect.destroy();
+      if (cursorLayer) {
+        cursorLayer.visible(wasCursorVisible);
+      }
+      stage.scale(oldScale);
+      stage.position(oldPosition);
+      stage.width(oldWidth);
+      stage.height(oldHeight);
+      stage.batchDraw();
+      console.log('[Export PDF] Viewport restored successfully');
+    } catch (restoreError) {
+      console.error('[Export PDF] Error restoring viewport:', restoreError);
+    }
   }
 }
 
@@ -328,6 +505,105 @@ export function downloadAsSVG(nodes: NodeData[], edges: EdgeData[], filename: st
 // =====================================
 // HỖ TRỢ FUNCTIONS
 // =====================================
+
+/**
+ * Tính toán Bounding Box của toàn bộ mindmap
+ * @param nodes Danh sách tất cả các nodes
+ * @returns { minX, minY, maxX, maxY }
+ */
+function calculateBoundingBox(nodes: NodeData[]): {
+  minX: number;
+  minY: number;
+  maxX: number;
+  maxY: number;
+} {
+  // Edge case 1: Không có nodes
+  if (!nodes || nodes.length === 0) {
+    console.warn('[Export] No nodes found, using default bounding box');
+    return { minX: 0, minY: 0, maxX: 1200, maxY: 800 };
+  }
+
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+  let validNodeCount = 0;
+
+  nodes.forEach(node => {
+    // Edge case 2: Node thiếu tọa độ hoặc có tọa độ không hợp lệ
+    if (typeof node.x !== 'number' || typeof node.y !== 'number' || 
+        isNaN(node.x) || isNaN(node.y)) {
+      console.warn('[Export] Invalid node coordinates:', node.id, node.x, node.y);
+      return; // Skip node này
+    }
+
+    // Ước lượng kích thước node
+    const nodeWidth = (typeof node.nodeLength === 'number' && !isNaN(node.nodeLength) && node.nodeLength > 0) 
+      ? node.nodeLength / 2 
+      : 50; // Default width nếu không có nodeLength
+    
+    const nodeHeight = 23; // Nửa chiều cao node (46/2)
+
+    const left = node.x - nodeWidth;
+    const top = node.y - nodeHeight;
+    const right = node.x + nodeWidth;
+    const bottom = node.y + nodeHeight;
+
+    // Kiểm tra giá trị hợp lệ trước khi cập nhật min/max
+    if (isFinite(left) && isFinite(top) && isFinite(right) && isFinite(bottom)) {
+      minX = Math.min(minX, left);
+      minY = Math.min(minY, top);
+      maxX = Math.max(maxX, right);
+      maxY = Math.max(maxY, bottom);
+      validNodeCount++;
+    }
+  });
+
+  // Edge case 3: Không có node hợp lệ nào
+  if (validNodeCount === 0 || !isFinite(minX) || !isFinite(minY) || !isFinite(maxX) || !isFinite(maxY)) {
+    console.warn('[Export] No valid nodes found, using default bounding box');
+    return { minX: 0, minY: 0, maxX: 1200, maxY: 800 };
+  }
+
+  // Edge case 4: Bounding box quá nhỏ (mindmap chỉ có 1 node)
+  if (maxX - minX < 100) {
+    console.warn('[Export] Bounding box too small, expanding width');
+    const centerX = (minX + maxX) / 2;
+    minX = centerX - 100;
+    maxX = centerX + 100;
+  }
+  
+  if (maxY - minY < 100) {
+    console.warn('[Export] Bounding box too small, expanding height');
+    const centerY = (minY + maxY) / 2;
+    minY = centerY - 100;
+    maxY = centerY + 100;
+  }
+
+  console.log('[Export] Calculated bounding box:', { minX, minY, maxX, maxY, validNodeCount });
+  return { minX, minY, maxX, maxY };
+}
+
+/**
+ * Tìm CursorLayer trong Stage
+ * @param stage Konva Stage instance
+ * @returns Cursor Layer hoặc null
+ */
+function findCursorLayer(stage: Konva.Stage): Konva.Layer | null {
+  // Giả định CursorLayer là layer cuối cùng (convention)
+  // Hoặc tìm theo tên nếu có đặt name
+  const layers = stage.children as Konva.Collection<Konva.Layer>;
+  
+  // Tìm layer có listening = false (CursorLayer có listening={false})
+  for (let i = 0; i < layers.length; i++) {
+    const layer = layers[i] as Konva.Layer;
+    if (layer.listening() === false) {
+      return layer;
+    }
+  }
+  
+  return null;
+}
 
 function downloadBlob(blob: Blob, filename: string): void {
   const url = URL.createObjectURL(blob);

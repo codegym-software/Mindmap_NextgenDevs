@@ -1,5 +1,4 @@
-﻿// src/features/collaboration/ShareModal.tsx
-import React, { useEffect, useState } from 'react';
+﻿import React, { useEffect, useState } from 'react';
 import {
   X,
   Copy,
@@ -25,6 +24,7 @@ import {
 } from '../../services/mindmapsApi';
 import { useAuth } from '../../hooks/useAuth';
 import type { RequestUser } from '../../hooks/useMindmapAccess';
+import ConfirmModal from '../../components/common/ConfirmModal'; // ⭐ THÊM IMPORT
 
 type Props = {
   isOpen: boolean;
@@ -71,6 +71,10 @@ export default function ShareModal({
   const [requestPermissions, setRequestPermissions] = useState<
   Record<string, Permission>
 >({});
+
+  // ⭐ STATE CHO CONFIRM MODAL (XÓA USER)
+  const [isConfirmModalOpen, setIsConfirmModalOpen] = useState(false);
+  const [userToRemove, setUserToRemove] = useState<{ userId: string; name: string } | null>(null);
 
   // Load dữ liệu khi mở modal
   useEffect(() => {
@@ -151,17 +155,35 @@ export default function ShareModal({
     }
   };
 
-  const handleRemove = async (userId: string) => {
-    if (!confirm('Bạn chắc chắn muốn xóa người này?')) return;
+  // ⭐ HÀM MỞ CONFIRM MODAL TRƯỚC KHI XÓA
+  const handleRemoveClick = (userId: string, displayName: string) => {
+    setUserToRemove({ userId, name: displayName });
+    setIsConfirmModalOpen(true);
+  };
+
+  // ⭐ HÀM XÓA THỰC SỰ (CHỈ CHẠY KHI CONFIRM)
+  const handleRemoveConfirm = async () => {
+    if (!userToRemove) return;
+
     try {
-      await mindmapsApi.removeCollaborator(mindmapId, userId);
+      await mindmapsApi.removeCollaborator(mindmapId, userToRemove.userId);
       setCollaborators((prev: Collaborator[]) =>
-        prev.filter((c: Collaborator) => c.userId !== userId),
+        prev.filter((c: Collaborator) => c.userId !== userToRemove.userId),
       );
       addToast('Đã xóa thành công', 'success');
     } catch (e) {
       addToast('Xóa thất bại', 'error');
+    } finally {
+      // Đóng modal và reset state
+      setIsConfirmModalOpen(false);
+      setUserToRemove(null);
     }
+  };
+
+  // ⭐ HÀM HỦY BỎ
+  const handleRemoveCancel = () => {
+    setIsConfirmModalOpen(false);
+    setUserToRemove(null);
   };
 
   const handleUpdateWorkspaceVisibility = async (
@@ -531,7 +553,7 @@ const handleUpdatePublicAccess = async (
                               </select>
                               <button
                                 onClick={() =>
-                                  handleRemove(collab.userId)
+                                  handleRemoveClick(collab.userId, collab.displayName)
                                 }
                                 className="text-gray-400 hover:text-red-600 p-1 rounded-full hover:bg-red-50 transition-colors"
                               >
@@ -741,6 +763,17 @@ const handleUpdatePublicAccess = async (
           </div>
         )}
       </div>
+
+      {/* ⭐ CONFIRM MODAL - XÓA COLLABORATOR */}
+      <ConfirmModal
+        isOpen={isConfirmModalOpen}
+        onClose={handleRemoveCancel}
+        onConfirm={handleRemoveConfirm}
+        title="Xóa người dùng"
+        message={`Bạn có chắc chắn muốn xóa "${userToRemove?.name}" khỏi danh sách cộng tác viên? Họ sẽ không thể truy cập mindmap này nữa.`}
+        confirmText="Xóa"
+        cancelText="Hủy"
+      />
     </div>
   );
 }

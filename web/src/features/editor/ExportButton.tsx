@@ -9,9 +9,16 @@ interface ExportButtonProps {
   edges: EdgeData[];
   stageRef?: React.RefObject<any>;
   mindmapName?: string;
+  backgroundColor?: string; // ⭐ THÊM PROPS
 }
 
-export default function ExportButton({ nodes, edges, stageRef, mindmapName = 'mindmap' }: ExportButtonProps) {
+export default function ExportButton({ 
+  nodes, 
+  edges, 
+  stageRef, 
+  mindmapName = 'mindmap',
+  backgroundColor = '#FFFFFF' // ⭐ DEFAULT BACKGROUND
+}: ExportButtonProps) {
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
   const [exporting, setExporting] = useState<{ active: boolean; label: string } | null>(null);
 
@@ -23,6 +30,18 @@ export default function ExportButton({ nodes, edges, stageRef, mindmapName = 'mi
       format === 'pdf' ? 'Đang xuất PDF…' : format === 'png' ? 'Đang xuất PNG…' : 'Đang xuất Text…';
     setExporting({ active: true, label });
 
+    // ⭐ DEBUG: Kiểm tra nodes trước khi export
+    console.log('[ExportButton] Exporting format:', format);
+    console.log('[ExportButton] Nodes count:', nodes?.length || 0);
+    console.log('[ExportButton] Background color:', backgroundColor);
+    
+    if (!nodes || nodes.length === 0) {
+      console.error('[ExportButton] No nodes available for export');
+      alert('Không thể xuất - Mindmap không có dữ liệu');
+      setExporting(null);
+      return;
+    }
+
     try {
       switch (format) {
         case 'text':
@@ -30,7 +49,8 @@ export default function ExportButton({ nodes, edges, stageRef, mindmapName = 'mi
           break;
         case 'pdf':
           if (stageRef?.current) {
-            downloadAsPDF(stageRef, nodes, `${filename}.pdf`);
+            // ⭐ TRUYỀN NODES VÀ BACKGROUND COLOR
+            downloadAsPDF(stageRef, nodes, backgroundColor, `${filename}.pdf`);
           } else {
             console.error('Stage reference not available for PDF export');
             alert('Không thể xuất PDF - tham chiếu Stage không khả dụng');
@@ -38,7 +58,8 @@ export default function ExportButton({ nodes, edges, stageRef, mindmapName = 'mi
           break;
         case 'png':
           if (stageRef?.current) {
-            downloadAsImagePNG(stageRef, `${filename}.png`);
+            // ⭐ TRUYỀN NODES VÀ BACKGROUND COLOR
+            downloadAsImagePNG(stageRef, nodes, backgroundColor, `${filename}.png`);
           } else {
             console.error('Stage reference not available for PNG export');
             alert('Không thể xuất PNG - tham chiếu Stage không khả dụng');

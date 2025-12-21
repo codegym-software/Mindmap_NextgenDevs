@@ -398,6 +398,7 @@ const EditorToolbar: React.FC<EditorToolbarProps> = ({
             edges={useEditorStore.getState().edges}
             stageRef={stageRef}
             mindmapName={name || 'mindmap'}
+            backgroundColor={useEditorStore.getState().backgroundColor} // ⭐ TRUYỀN BACKGROUND
           />
           
           <button
