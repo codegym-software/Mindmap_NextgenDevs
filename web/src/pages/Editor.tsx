@@ -709,11 +709,15 @@ const isReadOnly = useMemo(() => {
   ]);
 
   const handleRequestEditAccess = async () => {
+      console.log('[REQUEST_ACCESS] Button clicked - sending request...');
       try {
           // Gửi request với quyền EDITOR thay vì mặc định VIEWER
+          console.log('[REQUEST_ACCESS] Calling requestAccess API...');
           await requestAccess({ requestedPermission: 'EDITOR' });
+          console.log('[REQUEST_ACCESS] ✅ Request sent successfully');
           addToast('Đã gửi yêu cầu quyền chỉnh sửa (Edit).', 'success');
       } catch (e) {
+          console.error('[REQUEST_ACCESS] ❌ Request failed:', e);
           addToast('Gửi yêu cầu thất bại.', 'error');
       }
       setIsPermissionModalOpen(false);
@@ -991,6 +995,13 @@ const isReadOnly = useMemo(() => {
   const debouncedPersistData = useDebouncedCallback(() => {
     if (!isDataLoaded || !id) return;
     // ❌ REMOVED: if (isConnected) return; // Dòng này gây lỗi bất đồng bộ!
+    
+    // ✅ CRITICAL: Chỉ save nếu user có quyền EDIT
+    // Viewer chỉ xem realtime updates, không được persist
+    if (isReadOnly) {
+      console.log('[DEBUG] ⏭️ Skipping save - user is VIEWER (read-only)');
+      return;
+    }
     
     const { nodes: currentNodes, edges: currentEdges, relationships, summaries } =
       useEditorStore.getState();
@@ -1547,12 +1558,15 @@ const undo = useCallback(() => {
 
   // ✅ FIX CRITICAL: Auto-save khi isDirty thay đổi
   // Khi user thao tác hoặc nhận realtime update → isDirty = true → trigger debounced save
+  // VIEWERS chỉ xem, không save
   useEffect(() => {
-    if (isDirty && isDataLoaded) {
+    if (isDirty && isDataLoaded && !isReadOnly) {
       console.log('[DEBUG] 💾 isDirty changed to true, triggering debouncedPersistData');
       debouncedPersistData();
+    } else if (isDirty && isReadOnly) {
+      console.log('[DEBUG] 👁️ isDirty=true but user is VIEWER - skipping save');
     }
-  }, [isDirty, isDataLoaded, debouncedPersistData]);
+  }, [isDirty, isDataLoaded, isReadOnly, debouncedPersistData]);
 
   // ================================================
   // Style & Layout Logic

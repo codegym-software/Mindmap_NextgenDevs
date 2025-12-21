@@ -253,10 +253,14 @@ public class CollaborationService {
     @Transactional
     public void requestAccess(String mindmapId, Permission requestedPerm) {
         String currentUserId = authUtils.getRequiredCurrentUserId();
+        log.info("[REQUEST_ACCESS] Starting request for mindmap={}, user={}, requestedPerm={}", mindmapId, currentUserId, requestedPerm);
         Mindmap mindmap = mindmapService.findMindmapById(mindmapId);
 
         // Owner không cần xin quyền
-        if (mindmap.getOwnerId().equals(currentUserId)) return;
+        if (mindmap.getOwnerId().equals(currentUserId)) {
+            log.info("[REQUEST_ACCESS] User is owner, no request needed");
+            return;
+        }
 
         // 1) Kiểm tra xem đã là collaborator (ACCEPTED) chưa
         Optional<Collaboration> existingCollab = collaborationRepository
@@ -281,6 +285,43 @@ public class CollaborationService {
             
             // Gọi UserService để Sync (Tạo mới hoặc Update) ngay lập tức
             user = userService.syncUserFromJwt(jwt);
+            
+        } catch (org.springframework.dao.DuplicateKeyException e) {
+            // Nếu bị duplicate key (email=null conflict), tìm user đã tồn tại
+            log.warn("DuplicateKeyException in requestAccess (likely email=null conflict), finding existing user", e);
+            user = userRepository.findById(currentUserId).orElse(null);
+            
+            // Nếu vẫn không tìm thấy, tạo user tối thiểu với email unique tạm thời
+            if (user == null) {
+                log.info("User not found after DuplicateKeyException, creating minimal user record for: {}", currentUserId);
+                
+                // Lấy thông tin từ JWT
+                Jwt jwt = authUtils.getCurrentJwt().orElse(null);
+                String email = jwt != null ? jwt.getClaimAsString("email") : null;
+                String name = jwt != null ? jwt.getClaimAsString("name") : null;
+                String username = jwt != null ? jwt.getClaimAsString("cognito:username") : null;
+                
+                // Tạo displayName từ email hoặc name hoặc username
+                String displayName;
+                if (name != null && !name.isEmpty()) {
+                    displayName = name;
+                } else if (email != null && !email.isEmpty()) {
+                    displayName = email.split("@")[0]; // Lấy phần trước @
+                } else if (username != null && !username.isEmpty()) {
+                    displayName = username;
+                } else {
+                    displayName = "User " + currentUserId.substring(0, 8);
+                }
+                
+                user = new User();
+                user.setId(currentUserId);
+                user.setEmail(currentUserId + "@temp.local"); // Email unique tạm để tránh duplicate key
+                user.setDisplayName(displayName);
+                user.setAvatarUrl("https://ui-avatars.com/api/?name=" + displayName.substring(0, 1) + "&background=random");
+                user.setStatus(User.UserStatus.ACTIVE);
+                user.setSettings(new User.UserSettings());
+                user = userRepository.save(user);
+            }
             
         } catch (Exception e) {
             // Fallback: Nếu không lấy được JWT (hiếm), mới tìm trong DB như cũ
