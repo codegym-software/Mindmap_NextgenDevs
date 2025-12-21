@@ -10,7 +10,7 @@
     <description>Scalable Mindmap API with Collaboration and GenAI features</description>
 
     <properties>
-        <java.version>21</java.version>
+        <java.version>17</java.version>
         <spring-boot.version>3.4.0</spring-boot.version>
         <bucket4j.version>8.0.1</bucket4j.version>
         <caffeine.version>3.1.8</caffeine.version>

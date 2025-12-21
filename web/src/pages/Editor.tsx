@@ -987,8 +987,11 @@ const isReadOnly = useMemo(() => {
   // No separate push needed - applyUserAction handles it
 
   // Luồng Lưu trữ (5s)
+  // ✅ FIX: Xóa điều kiện `if (isConnected) return` để đảm bảo cả User A và B đều lưu DB
   const debouncedPersistData = useDebouncedCallback(() => {
     if (!isDataLoaded || !id) return;
+    // ❌ REMOVED: if (isConnected) return; // Dòng này gây lỗi bất đồng bộ!
+    
     const { nodes: currentNodes, edges: currentEdges, relationships, summaries } =
       useEditorStore.getState();
 
@@ -999,7 +1002,7 @@ const isReadOnly = useMemo(() => {
         name,
         content: { nodes: currentNodes, edges: currentEdges, relationships, summaries },
       };
-      console.log('[DEBUG] Saving data:', {
+      console.log('[DEBUG] ✅ Saving data (from both local and realtime):', {
         nodesCount: currentNodes.length,
         edgesCount: currentEdges.length,
         relationshipsCount: relationships?.length || 0,
@@ -1041,12 +1044,17 @@ const undo = useCallback(() => {
     // 2. Lấy dữ liệu mới nhất sau khi Undo
     const { nodes: newNodes, edges: newEdges } = useEditorStore.getState();
 
+    console.log('[UNDO] 📤 Sending GRAPH_UPDATE. IsConnected:', isConnected, 'Nodes:', newNodes.length, 'Edges:', newEdges.length);
+
     // 3. Gửi dữ liệu mới cho mọi người (Real-time)
     if (isConnected) { // Kiểm tra kết nối trước khi gửi
         sendPatch('GRAPH_UPDATE', { 
             nodes: newNodes, 
             edges: newEdges 
         });
+        console.log('[UNDO] ✅ GRAPH_UPDATE sent via WebSocket');
+    } else {
+        console.warn('[UNDO] ⚠️ Cannot send GRAPH_UPDATE - WebSocket not connected');
     }
 
     // 4. Lưu lại vào DB (để đảm bảo dữ liệu bền vững)
@@ -1066,12 +1074,17 @@ const undo = useCallback(() => {
     // 2. Lấy dữ liệu mới nhất sau khi Redo
     const { nodes: newNodes, edges: newEdges } = useEditorStore.getState();
 
+    console.log('[REDO] 📤 Sending GRAPH_UPDATE. IsConnected:', isConnected, 'Nodes:', newNodes.length, 'Edges:', newEdges.length);
+
     // 3. Gửi dữ liệu mới cho mọi người
     if (isConnected) {
         sendPatch('GRAPH_UPDATE', { 
             nodes: newNodes, 
             edges: newEdges 
         });
+        console.log('[REDO] ✅ GRAPH_UPDATE sent via WebSocket');
+    } else {
+        console.warn('[REDO] ⚠️ Cannot send GRAPH_UPDATE - WebSocket not connected');
     }
 
     // 4. Lưu DB
@@ -1115,7 +1128,6 @@ const undo = useCallback(() => {
     async (requesterId: string) => {
       if (!id) return;
       try {
-        await mindmapsApi.rejectAccessRequest(id, requesterId);
         await denyRequest(requesterId);
         addToast('Đã từ chối yêu cầu truy cập', 'info');
       } catch (error) {
@@ -1131,9 +1143,7 @@ const undo = useCallback(() => {
       if (!id) return;
 
       try {
-        await mindmapsApi.approveAccessRequest(id, requesterId, perm);
-        const firestorePerm = perm === 'EDITOR' ? 'EDITOR' : 'VIEWER';
-        await approveRequest(requesterId, firestorePerm);
+        await approveRequest(requesterId, perm);
         addToast('Đã duyệt yêu cầu truy cập', 'success');
       } catch (error) {
         console.error('Approve access request failed', error);
@@ -1534,6 +1544,15 @@ const undo = useCallback(() => {
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isDirty, handleSave, nodes]);
+
+  // ✅ FIX CRITICAL: Auto-save khi isDirty thay đổi
+  // Khi user thao tác hoặc nhận realtime update → isDirty = true → trigger debounced save
+  useEffect(() => {
+    if (isDirty && isDataLoaded) {
+      console.log('[DEBUG] 💾 isDirty changed to true, triggering debouncedPersistData');
+      debouncedPersistData();
+    }
+  }, [isDirty, isDataLoaded, debouncedPersistData]);
 
   // ================================================
   // Style & Layout Logic
@@ -2685,7 +2704,7 @@ const handleFitToScreen = useCallback(() => {
         // và handleLayout đã có dependency vào nodeVisuals
         
         debouncedPersistData();
-        sendPatch('NODE_TEXT_CHANGE', { id: editingNodeId, text: newText }); 
+        sendPatch('NODE_UPDATE', { id: editingNodeId, updates: { nodeText: newText } });
       }
     },
     [
@@ -2833,7 +2852,7 @@ const handleFitToScreen = useCallback(() => {
 
     applyUserAction(newNodes, newEdges);
     
-    sendPatch('NODE_CREATE', { 
+    sendPatch('NODE_ADD', { 
         node: newNodeData, 
         edge: newEdgeData 
     });
@@ -2950,7 +2969,7 @@ const handleFitToScreen = useCallback(() => {
 
     applyUserAction(newNodes, newEdges);
 
-    sendPatch('NODE_CREATE', { 
+    sendPatch('NODE_ADD', { 
         node: newNodeData, 
         edge: newEdgeData 
     });
@@ -3091,7 +3110,7 @@ const handleFitToScreen = useCallback(() => {
     }
     
     selectedNodeIds.forEach(id => {
-      sendPatch('NODE_STYLE_UPDATE', { id, updates });
+      sendPatch('NODE_UPDATE', { id, updates });
     });
   };
 
@@ -3672,7 +3691,10 @@ const handleFitToScreen = useCallback(() => {
         applyUserAction(updatedNodes, finalEdges);
       }
 
-      sendPatch('NODE_REPARENT', { nodeId: draggedNodeId, newParentId, x: finalX, y: finalY, side: newSide });
+      sendPatch('NODE_UPDATE', {
+        id: draggedNodeId,
+        updates: { parentId: newParentId, x: finalX, y: finalY, side: newSide },
+      });
 
       setTimeout(() => handleLayout(), 50);
     } else {
@@ -3703,7 +3725,7 @@ const handleFitToScreen = useCallback(() => {
 
         applyUserAction(newNodes, newEdges);
 
-        sendPatch('NODE_MOVE', { id: draggedNodeId, x: finalX, y: finalY });
+        sendPatch('NODE_UPDATE', { id: draggedNodeId, updates: { x: finalX, y: finalY } });
 
         setTimeout(() => handleLayout(), 0);
       } else {
@@ -4714,7 +4736,7 @@ const handleFitToScreen = useCallback(() => {
               applyUserAction(newNodes, edges);
               startEditing(newId);
               debouncedPersistData();
-              sendPatch('NODE_CREATE', { node: newNodeData, edge: null });
+              sendPatch('NODE_ADD', { node: newNodeData, edge: null });
             }}
             style={{
               cursor: isPanning ? 'grabbing' : 'default',
@@ -4977,7 +4999,7 @@ const handleFitToScreen = useCallback(() => {
                 return (
                   <Group
                     key={node.id} id={node.id} x={style.x} y={style.y} 
-                    draggable={node.id !== 'root'}
+                    draggable={!isReadOnly && node.id !== 'root'}
                     // Hide the node while it is being edited (for root and others)
                     visible={editingNodeId !== node.id}
                     {...(isFading ? {} : { opacity: (isDragging ? 0.75 : 1) })}

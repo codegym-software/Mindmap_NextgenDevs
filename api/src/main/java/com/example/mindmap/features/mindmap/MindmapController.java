@@ -17,57 +17,58 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
-import com.example.mindmap.features.mindmap.dto.MindmapCreateRequest;
+import com.example.mindmap.features.collaboration.AccessRequest;
+import com.example.mindmap.features.collaboration.CollaborationService;
+import com.example.mindmap.features.collaboration.Permission;
+import com.example.mindmap.features.collaboration.dto.ApproveAccessRequest;
+import com.example.mindmap.features.collaboration.dto.CollaboratorResponse;
+import com.example.mindmap.features.collaboration.dto.InviteRequest;
+import com.example.mindmap.features.collaboration.dto.PermissionUpdateRequest;
+import com.example.mindmap.features.collaboration.dto.RequestAccessRequest;
+import com.example.mindmap.features.collaboration.dto.ShareSettingsRequest;
+import com.example.mindmap.features.collaboration.dto.ShareSettingsResponse;
 import com.example.mindmap.features.mindmap.dto.MindmapDetailResponse;
 import com.example.mindmap.features.mindmap.dto.MindmapSummaryResponse;
 import com.example.mindmap.features.mindmap.dto.MindmapSyncRequest;
-import com.example.mindmap.features.mindmap.dto.MindmapUpdateRequest; // [FIX] Import
+import com.example.mindmap.features.mindmap.dto.MindmapUpdateRequest;
 
 import jakarta.validation.Valid;
 
-/**
- * REST Controller quản lý các Mindmap.
- * Bao gồm CRUD cơ bản, nhân bản và xuất mindmap dưới dạng text.
- */
 @RestController
 @RequestMapping("/api/mindmaps")
 public class MindmapController {
 
     private final MindmapService mindmapService;
+    private final CollaborationService collaborationService;
 
-    public MindmapController(MindmapService mindmapService) {
+    public MindmapController(MindmapService mindmapService, CollaborationService collaborationService) {
         this.mindmapService = mindmapService;
+        this.collaborationService = collaborationService;
+        
+        // --- LOG DEBUG ĐỂ BẠN CHECK ---
+        System.out.println("\n\n========================================");
+        System.out.println(">>> MINDMAP CONTROLLER: OK! ĐÃ CÓ FULL API <<<");
+        System.out.println("========================================\n\n");
     }
 
-    /**
-     * Lấy danh sách mindmap của user hiện tại.
-     * Hỗ trợ tìm kiếm qua query param "search".
-     */
+    // ======================================================================
+    // 1. MINDMAP CORE
+    // ======================================================================
+
     @GetMapping
     @PreAuthorize("isAuthenticated()")
-    public ResponseEntity<List<MindmapSummaryResponse>> listMindmapsForCurrentUser(
-            @RequestParam(required = false) String search
-    ) {
+    public ResponseEntity<List<MindmapSummaryResponse>> listMindmapsForCurrentUser(@RequestParam(required = false) String search) {
         List<MindmapSummaryResponse> mindmaps = mindmapService.listForCurrentUser(search);
         return ResponseEntity.ok(mindmaps);
     }
 
-    /**
-     * [FIX] Tạo mới một mindmap.
-     * Đổi DTO từ MindmapCreateRequest -> MindmapUpdateRequest để nhận 'content'.
-     */
     @PostMapping
     @PreAuthorize("isAuthenticated()")
-    public ResponseEntity<MindmapDetailResponse> createMindmap(
-            @Valid @RequestBody MindmapUpdateRequest request // <-- FIX LỖI
-    ) {
+    public ResponseEntity<MindmapDetailResponse> createMindmap(@Valid @RequestBody MindmapUpdateRequest request) {
         MindmapDetailResponse createdMindmap = mindmapService.createMindmap(request);
         return new ResponseEntity<>(createdMindmap, HttpStatus.CREATED);
     }
 
-    /**
-     * Lấy thông tin chi tiết một mindmap theo id.
-     */
     @GetMapping("/{id}")
     @PreAuthorize("isAuthenticated()")
     public ResponseEntity<MindmapDetailResponse> getMindmapById(@PathVariable String id) {
@@ -75,22 +76,13 @@ public class MindmapController {
         return ResponseEntity.ok(mindmap);
     }
 
-    /**
-     * Cập nhật một mindmap theo id.
-     */
     @PutMapping("/{id}")
     @PreAuthorize("isAuthenticated()")
-    public ResponseEntity<MindmapDetailResponse> updateMindmap(
-            @PathVariable String id,
-            @Valid @RequestBody MindmapUpdateRequest request
-    ) {
+    public ResponseEntity<MindmapDetailResponse> updateMindmap(@PathVariable String id, @Valid @RequestBody MindmapUpdateRequest request) {
         MindmapDetailResponse updatedMindmap = mindmapService.updateMindmap(id, request);
         return ResponseEntity.ok(updatedMindmap);
     }
 
-    /**
-     * Xóa một mindmap theo id.
-     */
     @DeleteMapping("/{id}")
     @PreAuthorize("isAuthenticated()")
     public ResponseEntity<Void> deleteMindmap(@PathVariable String id) {
@@ -98,10 +90,6 @@ public class MindmapController {
         return ResponseEntity.noContent().build();
     }
 
-    /**
-     * Nhân bản một mindmap.
-     * Owner của bản sao là user hiện tại.
-     */
     @PostMapping("/{id}/duplicate")
     @PreAuthorize("isAuthenticated()")
     public ResponseEntity<MindmapDetailResponse> duplicateMindmap(@PathVariable String id) {
@@ -109,28 +97,114 @@ public class MindmapController {
         return new ResponseEntity<>(duplicatedMindmap, HttpStatus.CREATED);
     }
 
-    /**
-     * Xuất mindmap dưới dạng plain text.
-     */
     @GetMapping(value = "/{id}/export/text", produces = MediaType.TEXT_PLAIN_VALUE)
     @PreAuthorize("isAuthenticated()")
     public ResponseEntity<String> exportMindmapAsText(@PathVariable String id) {
         String text = mindmapService.exportMindmapAsText(id);
         return ResponseEntity.ok(text);
     }
-    /**
-     * [MỚI] Endpoint đồng bộ (sync) mindmap của Guest
-     * khi họ đăng nhập.
-     */
+
     @PostMapping("/sync")
-    @PreAuthorize("isAuthenticated() and !hasAuthority('SCOPE_GUEST')") // Chỉ user đã đăng nhập (không phải Guest)
-    public ResponseEntity<List<MindmapSummaryResponse>> syncGuestMindmaps(
-            @Valid @RequestBody List<MindmapSyncRequest> requestList
-    ) {
+    @PreAuthorize("isAuthenticated() and !hasAuthority('SCOPE_GUEST')")
+    public ResponseEntity<List<MindmapSummaryResponse>> syncGuestMindmaps(@Valid @RequestBody List<MindmapSyncRequest> requestList) {
         List<MindmapSummaryResponse> syncedMindmaps = mindmapService.syncGuestMindmaps(requestList);
-        // Trả về 201 Created và danh sách tóm tắt các mindmap đã được tạo
         return new ResponseEntity<>(syncedMindmaps, HttpStatus.CREATED);
     }
 
-    // --- Các Endpoint cho Giai đoạn 3 (Embed/SaaS) sẽ được triển khai sau ---
+    // ======================================================================
+    // 2. COLLABORATION API (Trước đó bạn bị thiếu phần này)
+    // ======================================================================
+
+    @PutMapping("/{id}/share-settings")
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<ShareSettingsResponse> updatePublicShareSettings(
+            @PathVariable String id,
+            @Valid @RequestBody ShareSettingsRequest request
+    ) {
+        ShareSettingsResponse response = collaborationService.updatePublicShareSettings(id, request);
+        return ResponseEntity.ok(response);
+    }
+
+    @GetMapping("/{id}/collaborators")
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<List<CollaboratorResponse>> getCollaborators(@PathVariable String id) {
+        List<CollaboratorResponse> collaborators = collaborationService.getCollaborators(id);
+        return ResponseEntity.ok(collaborators);
+    }
+
+    @PostMapping("/{id}/collaborators")
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<CollaboratorResponse> addCollaborator(
+            @PathVariable String id,
+            @Valid @RequestBody InviteRequest request
+    ) {
+        CollaboratorResponse collaborator = collaborationService.addCollaborator(id, request);
+        return new ResponseEntity<>(collaborator, HttpStatus.CREATED);
+    }
+
+    @PutMapping("/{id}/collaborators/{userId}")
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<CollaboratorResponse> updateCollaboratorPermission(
+            @PathVariable String id,
+            @PathVariable String userId,
+            @Valid @RequestBody PermissionUpdateRequest request
+    ) {
+        CollaboratorResponse updated = collaborationService.updateCollaboratorPermission(id, userId, request);
+        return ResponseEntity.ok(updated);
+    }
+
+    @DeleteMapping("/{id}/collaborators/{userId}")
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<Void> removeCollaborator(
+            @PathVariable String id,
+            @PathVariable String userId
+    ) {
+        collaborationService.removeCollaborator(id, userId);
+        return ResponseEntity.noContent().build();
+    }
+
+    // ======================================================================
+    // 3. ACCESS REQUEST API (Phần quan trọng nhất đang bị thiếu)
+    // ======================================================================
+
+    @PostMapping("/{id}/request-access")
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<Void> requestAccess(
+            @PathVariable String id,
+            @RequestBody(required = false) RequestAccessRequest body
+    ) {
+        Permission requestedPerm = (body != null && body.requestedPermission() != null)
+                ? body.requestedPermission()
+                : Permission.VIEWER;
+
+        collaborationService.requestAccess(id, requestedPerm);
+        return ResponseEntity.accepted().build();
+    }
+
+    @PostMapping("/{id}/requests/{userId}/approve")
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<Void> approveRequest(
+            @PathVariable String id,
+            @PathVariable String userId,
+            @Valid @RequestBody ApproveAccessRequest body
+    ) {
+        collaborationService.approveRequest(id, userId, body.permission());
+        return ResponseEntity.ok().build();
+    }
+
+    @PostMapping("/{id}/requests/{userId}/reject")
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<Void> rejectRequest(
+            @PathVariable String id,
+            @PathVariable String userId
+    ) {
+        collaborationService.rejectRequest(id, userId);
+        return ResponseEntity.ok().build();
+    }
+
+    @GetMapping("/{id}/requests")
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<List<AccessRequest>> getPendingRequests(@PathVariable String id) {
+        return ResponseEntity.ok(collaborationService.getPendingRequests(id));
+    }
 }

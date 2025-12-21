@@ -33,6 +33,15 @@ const throttleFunc = (func: Function, limit: number) => {
   };
 };
 
+// Helper debounce để gom nhiều layout requests liên tiếp
+const debounceFunc = (func: Function, wait: number) => {
+  let timeout: any;
+  return function (this: any, ...args: any[]) {
+    clearTimeout(timeout);
+    timeout = setTimeout(() => func.apply(this, args), wait);
+  };
+};
+
 const getMySenderId = (user: any) => user?.sub || user?.id || user?.uid;
 
 export function useRealtime({
@@ -71,11 +80,18 @@ export function useRealtime({
 
   const sendPatch = useCallback((type: string, payload: any) => {
     const ws = wsRef.current;
-    if (!ws || ws.readyState !== WebSocket.OPEN) return;
+    console.log('[sendPatch] Attempting to send:', type, 'WebSocket state:', ws?.readyState, 'OPEN?:', ws?.readyState === WebSocket.OPEN);
+    if (!ws || ws.readyState !== WebSocket.OPEN) {
+      console.warn('[sendPatch] ⚠️ Cannot send - WebSocket not open!', 'ws exists:', !!ws, 'readyState:', ws?.readyState);
+      return;
+    }
     try {
-      ws.send(JSON.stringify({ type, payload }));
+      const message = JSON.stringify({ type, payload });
+      console.log('[sendPatch] 📤 Sending message:', message.substring(0, 200));
+      ws.send(message);
+      console.log('[sendPatch] ✅ Message sent successfully');
     } catch (e) {
-      console.error('WS sendPatch error:', e);
+      console.error('[sendPatch] ❌ WS sendPatch error:', e);
     }
   }, []);
 
@@ -106,6 +122,17 @@ export function useRealtime({
       if (!ws || ws.readyState !== WebSocket.OPEN) return;
       ws.send(JSON.stringify({ type: 'CURSOR_MOVE', payload: { x, y } }));
     }, 50),
+  ).current;
+
+  // Debounced layout để tránh gọi quá nhiều lần khi nhận nhiều changes liên tiếp
+  const debouncedLayout = useRef(
+    debounceFunc((keepCamera: boolean) => {
+      const { onLayoutRequest: layoutFn } = latestProps.current;
+      // Dùng requestAnimationFrame để đồng bộ với browser render cycle
+      requestAnimationFrame(() => {
+        layoutFn(keepCamera);
+      });
+    }, 150), // Debounce 150ms - gom các thay đổi liên tiếp
   ).current;
 
   // Helper: Lấy tên user từ Store để hiển thị khi rời đi
@@ -163,6 +190,7 @@ export function useRealtime({
             const {
               isOwner: currentIsOwner,
               userInfo: currentUserInfo,
+              onLayoutRequest: currentOnLayoutRequest,
               onSetRootCollapse: currentSetRootCollapse,
             } = latestProps.current;
 
@@ -244,6 +272,8 @@ export function useRealtime({
                   // ✅ FIX QUAN TRỌNG: Chỉ setGraph, KHÔNG gọi handleLayout
                   // Layout tự động sẽ phá vỡ vị trí do Owner gửi xuống
                   setGraph(payload.nodes, payload.edges);
+                  // Dùng debounced layout để gom nhiều thay đổi
+                  debouncedLayout(true);
                   
                   addToast('Đã đồng bộ dữ liệu mới nhất.', 'success');
                 }
@@ -256,6 +286,8 @@ export function useRealtime({
                 const { id: nodeId, x, y } = payload || {};
                 const newNodes = currentNodes.map((n) => (n.id === nodeId ? { ...n, x, y } : n));
                 setGraph(newNodes, currentEdges);
+                // Trigger layout để cập nhật edges
+                debouncedLayout(true);
                 break;
               }
 
@@ -263,6 +295,8 @@ export function useRealtime({
                 const { id: nodeId, text } = payload || {};
                 const newNodes = currentNodes.map((n) => (n.id === nodeId ? { ...n, nodeText: text } : n));
                 setGraph(newNodes, currentEdges);
+                // Text thay đổi cần layout lại vì size node có thể thay đổi
+                debouncedLayout(true);
                 break;
               }
 
@@ -271,15 +305,50 @@ export function useRealtime({
                 if (!feNode) break;
                 const nextEdges = feEdge ? [...currentEdges, feEdge] : currentEdges;
                 setGraph([...currentNodes, feNode], nextEdges);
+                // Node mới cần layout để đặt đúng vị trí
+                debouncedLayout(true);
                 break;
               }
 
               case 'NODE_DELETE': {
-                const { nodeIds } = payload || {};
-                const set = new Set((nodeIds || []) as string[]);
+                const { id, nodeIds } = payload || {};
+                const ids = (nodeIds || (id ? [id] : [])) as string[];
+                const set = new Set(ids);
                 const newNodes = currentNodes.filter((n) => !set.has(n.id));
                 const newEdges = currentEdges.filter((e) => !set.has(e.from) && !set.has(e.to));
                 setGraph(newNodes, newEdges);
+                // Xóa node cần layout lại toàn bộ cây
+                debouncedLayout(true);
+                break;
+              }
+
+              case 'NODE_ADD': {
+                const { node, edge, edges } = payload || {};
+                const nextNode = node || payload?.nodeData;
+                if (!nextNode?.id) break;
+                const exists = currentNodes.some((n) => n.id === nextNode.id);
+                if (exists) break;
+                let nextEdges = currentEdges;
+                if (edge) {
+                  nextEdges = [...currentEdges, edge];
+                } else if (Array.isArray(edges) && edges.length > 0) {
+                  nextEdges = [...currentEdges, ...edges];
+                }
+                setGraph([...currentNodes, nextNode], nextEdges);
+                // Node mới cần layout
+                debouncedLayout(true);
+                break;
+              }
+
+              case 'NODE_UPDATE': {
+                const { id: nodeId, updates } = payload || {};
+                if (!nodeId || !updates) break;
+                const newNodes = currentNodes.map((n) =>
+                  n.id === nodeId ? { ...n, ...(updates || {}) } : n,
+                );
+                setGraph(newNodes, currentEdges);
+                // Update có thể thay đổi size, cần layout
+                debouncedLayout(true);
                 break;
               }
 
@@ -296,6 +365,8 @@ export function useRealtime({
                   newEdges = [...currentEdges, { id: `e-${nodeId}`, from: newParentId, to: nodeId }];
                 }
                 setGraph(newNodes, newEdges);
+                // Reparent cần layout toàn bộ cây
+                debouncedLayout(true);
                 break;
               }
 
@@ -303,6 +374,8 @@ export function useRealtime({
                 const { id: nodeId, updates } = payload || {};
                 const newNodes = currentNodes.map((n) => (n.id === nodeId ? { ...n, ...(updates || {}) } : n));
                 setGraph(newNodes, currentEdges);
+                // Style update có thể ảnh hưởng layout nếu có border/padding thay đổi
+                debouncedLayout(true);
                 break;
               }
 
@@ -318,13 +391,19 @@ export function useRealtime({
                     n.id === nodeId ? { ...n, collapsed: !n.collapsed } : n,
                  );
                  setGraph(newNodes, currentEdges);
+                 // Collapse/expand cần layout lại toàn bộ cây
+                 debouncedLayout(true);
                  break;
               }
 
               case 'GRAPH_UPDATE': {
+                console.log('[REALTIME] 🔄 Received GRAPH_UPDATE from:', senderId, 'Nodes:', payload?.nodes?.length, 'Edges:', payload?.edges?.length);
                 if (payload?.nodes && payload?.edges) {
                   // Cập nhật graph ngay lập tức mà không ghi vào history của người nhận
                   setGraph(payload.nodes, payload.edges);
+                  // Graph update toàn bộ cần layout
+                  debouncedLayout(true);
+                  console.log('[REALTIME] ✅ Applied GRAPH_UPDATE - New graph state:', payload.nodes.length, 'nodes');
                 }
                 break;
               }

@@ -1,9 +1,9 @@
 package com.example.mindmap.websocket;
 
 import java.io.IOException;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
-import java.time.Instant;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -24,6 +24,7 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 // Dependencies để check quyền
 import com.example.mindmap.features.mindmap.Mindmap;
 import com.example.mindmap.features.mindmap.MindmapRepository;
+import com.example.mindmap.features.mindmap.content.MindmapContent;
 import com.example.mindmap.features.collaboration.CollaborationRepository;
 import com.example.mindmap.features.chat.ChatMessage;
 import com.example.mindmap.features.chat.ChatRepository;
@@ -52,6 +53,9 @@ public class MindmapUpdateHandler extends TextWebSocketHandler {
     }
 
     private String getMindmapId(WebSocketSession session) {
+        if (session == null || session.getUri() == null) {
+            return null;
+        }
         String path = session.getUri().getPath(); // /ws/mindmap/abc-123
         try {
             return path.substring(path.lastIndexOf('/') + 1);
@@ -132,10 +136,15 @@ public class MindmapUpdateHandler extends TextWebSocketHandler {
         if (mindmapId == null || userId == null) return;
 
         String payload = message.getPayload();
+        
+        log.debug("WebSocket [User: {}] received message [Size: {} bytes] for [Mindmap: {}]", 
+                userId, payload.length(), mindmapId);
 
         try {
             GenericPatch patch = objectMapper.readValue(payload, GenericPatch.class);
             JsonNode payloadNode = patch.payload();
+
+            log.debug("WebSocket [User: {}] message type: [{}]", userId, patch.type());
 
             // ====== HANDLE CHAT PERSISTENT ======
             if ("CHAT_MESSAGE".equals(patch.type())) {
@@ -148,12 +157,11 @@ public class MindmapUpdateHandler extends TextWebSocketHandler {
                         ? payloadNode.get("senderName").asText()
                         : "Unknown";
 
-                ChatMessage chatMsg = ChatMessage.builder()
-                        .mindmapId(mindmapId)
-                        .userId(userId)
-                        .senderName(senderName)
-                        .content(content)
-                        .build();
+                ChatMessage chatMsg = new ChatMessage();
+                chatMsg.setMindmapId(mindmapId);
+                chatMsg.setUserId(userId);
+                chatMsg.setSenderName(senderName);
+                chatMsg.setContent(content);
 
                 ChatMessage savedMsg = chatRepository.save(chatMsg);
 
@@ -163,6 +171,11 @@ public class MindmapUpdateHandler extends TextWebSocketHandler {
                     node.put("createdAt", savedMsg.getCreatedAt().toString());
                 }
             }
+            
+            // ❌ REMOVED: Backend không persist GRAPH_UPDATE nữa
+            // Lý do: Type mismatch giữa frontend NodeData (có nodeText) và backend NodeData (có text)
+            // Giải pháp: Frontend tự persist qua REST API (debouncedPersistData đã được fix)
+            // Backend chỉ broadcast để realtime collaboration
             // ==========================================
 
             BroadcastPatch broadcastMessage = new BroadcastPatch(
@@ -179,8 +192,12 @@ public class MindmapUpdateHandler extends TextWebSocketHandler {
             broadcast(mindmapId, session, new TextMessage(messageToSend));
 
         } catch (JsonProcessingException e) {
-            log.warn("WebSocket [User: {}] sent invalid JSON to [Mindmap: {}]: {}",
-                    userId, mindmapId, payload, e);
+            log.error("WebSocket [User: {}] sent invalid JSON to [Mindmap: {}]. Error: {}", 
+                    userId, mindmapId, e.getMessage(), e);
+        } catch (Exception e) {
+            log.error("WebSocket [User: {}] error processing message for [Mindmap: {}]. Error: {}", 
+                    userId, mindmapId, e.getMessage(), e);
+            throw e; // Re-throw to let Spring handle it
         }
     }
 

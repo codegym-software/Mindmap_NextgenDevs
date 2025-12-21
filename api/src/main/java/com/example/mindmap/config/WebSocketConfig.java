@@ -6,6 +6,8 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.web.socket.config.annotation.EnableWebSocket;
 import org.springframework.web.socket.config.annotation.WebSocketConfigurer;
 import org.springframework.web.socket.config.annotation.WebSocketHandlerRegistry;
+import org.springframework.web.socket.server.standard.ServletServerContainerFactoryBean;
+import org.springframework.context.annotation.Bean;
 
 @Configuration
 @EnableWebSocket
@@ -26,5 +28,17 @@ public class WebSocketConfig implements WebSocketConfigurer {
                 .addInterceptors(authInterceptor) // Secure the connection
                 .setAllowedOrigins("*"); // Configure allowed origins carefully for production!
                 // Consider using SockJS for fallback: .withSockJS();
+    }
+
+    /**
+     * Increase WebSocket message size limit to handle large GRAPH_UPDATE messages
+     * Default is 64KB which is too small for mindmaps with many nodes
+     */
+    @Bean
+    public ServletServerContainerFactoryBean createWebSocketContainer() {
+        ServletServerContainerFactoryBean container = new ServletServerContainerFactoryBean();
+        container.setMaxTextMessageBufferSize(1024 * 1024); // 1MB text message buffer
+        container.setMaxBinaryMessageBufferSize(1024 * 1024); // 1MB binary message buffer
+        return container;
     }
 }

@@ -12,11 +12,7 @@ import com.example.mindmap.core.model.Auditable;
 import com.example.mindmap.features.mindmap.content.MindmapContent;
 
 import jakarta.validation.constraints.NotBlank;
-import lombok.Data;
-import lombok.EqualsAndHashCode;
 
-@Data // Tự động sinh Getter, Setter, toString, equals...
-@EqualsAndHashCode(callSuper = false)
 @Document("mindmaps")
 public class Mindmap extends Auditable {
     @Id
@@ -45,11 +41,38 @@ public class Mindmap extends Auditable {
     @Version
     private Long version;
 
+    // Manual Getters and Setters
+    public String getId() { return id; }
+    public void setId(String id) { this.id = id; }
+
+    public String getName() { return name; }
+    public void setName(String name) { this.name = name; }
+
+    public String getOwnerId() { return ownerId; }
+    public void setOwnerId(String ownerId) { this.ownerId = ownerId; }
+
+    public String getLastEditedBy() { return lastEditedBy; }
+    public void setLastEditedBy(String lastEditedBy) { this.lastEditedBy = lastEditedBy; }
+
+    public MindmapContent getContent() { return content; }
+    public void setContent(MindmapContent content) { this.content = content; }
+
+    public List<String> getTags() { return tags; }
+    public void setTags(List<String> tags) { this.tags = tags; }
+
+    public AccessSettings getAccessSettings() { return accessSettings; }
+    public void setAccessSettings(AccessSettings accessSettings) { this.accessSettings = accessSettings; }
+
+    public String getWorkspaceId() { return workspaceId; }
+    public void setWorkspaceId(String workspaceId) { this.workspaceId = workspaceId; }
+
+    public Long getVersion() { return version; }
+    public void setVersion(Long version) { this.version = version; }
+
     // ==========================================
     // INNER CLASSES & ENUMS
     // ==========================================
 
-    @Data // Tự động sinh Getter/Setter cho settings
     public static class AccessSettings {
         private boolean isPublic = false;
 
@@ -58,6 +81,16 @@ public class Mindmap extends Auditable {
 
         // Cấu hình hiển thị trong Workspace (Chuẩn bị cho Giai đoạn 4)
         private WorkspaceVisibility workspaceVisibility = WorkspaceVisibility.PRIVATE;
+
+        // Manual Getters and Setters
+        public boolean isPublic() { return isPublic; }
+        public void setPublic(boolean isPublic) { this.isPublic = isPublic; }
+
+        public PublicAccessLevel getPublicAccessLevel() { return publicAccessLevel; }
+        public void setPublicAccessLevel(PublicAccessLevel publicAccessLevel) { this.publicAccessLevel = publicAccessLevel; }
+
+        public WorkspaceVisibility getWorkspaceVisibility() { return workspaceVisibility; }
+        public void setWorkspaceVisibility(WorkspaceVisibility workspaceVisibility) { this.workspaceVisibility = workspaceVisibility; }
     }
 
     /**

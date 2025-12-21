@@ -487,8 +487,15 @@ export const useEditorStore = create<State>((set, get) => ({
   }),
 
   // 1. setGraph: Dùng khi nhận dữ liệu từ Server hoặc khi Load file
-  // Không ghi vào History để tránh Undo làm mất dữ liệu đồng bộ
-  setGraph: (n, e) => set({ nodes: n, edges: e, isDirty: true }),
+  // ✅ FIX: KHÔNG XÓA HISTORY - chỉ clear future để tránh conflict
+  // History của user vẫn được giữ để Undo hoạt động đúng
+  setGraph: (n, e) => set({ 
+    nodes: n, 
+    edges: e, 
+    isDirty: true,
+    // Giữ nguyên history, chỉ clear future vì state mới từ server không compatible với future actions
+    future: []
+  }),
 
   // 2. applyUserAction: Dùng khi User thao tác (Kéo, Thêm, Sửa, Xóa)
   // Tự động tính toán Diff và ghi vào History

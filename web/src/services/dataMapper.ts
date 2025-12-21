@@ -15,7 +15,7 @@ import {
 
 export type BeNodeStyle = {
   // === Các trường BE gốc ===
-  shape: 'roundedRect' | 'rectangle' | 'diamond' | 'ellipse'; 
+  shape: 'roundedRect' | 'rectangle' | 'diamond' | 'ellipse' | 'underline';
   color?: string; // Backend's main color field
   backgroundColor: string; // Tương ứng 'color' của FE
   textColor: string;

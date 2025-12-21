@@ -13,6 +13,7 @@ import com.example.mindmap.features.user.UserService;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.security.oauth2.jwt.Jwt;
 
 import java.time.Instant;
 import java.util.List;
@@ -20,6 +21,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.function.Function;
 import java.util.stream.Collectors;
+
 import java.util.Optional;
 
 import org.slf4j.Logger;
@@ -32,10 +34,8 @@ public class CollaborationService {
     private final MindmapService mindmapService;
     private final MindmapRepository mindmapRepository;
     private final UserRepository userRepository;
-    private final UserService userService;
+    private final UserService userService; // Đã thêm UserService để sync
     private final AuthUtils authUtils;
-
-    // ✅ NEW: MongoDB queue for access requests
     private final AccessRequestRepository accessRequestRepository;
 
     private static final Logger log = LoggerFactory.getLogger(CollaborationService.class);
@@ -203,7 +203,6 @@ public class CollaborationService {
             throw new IllegalArgumentException("Owner cannot remove themselves.");
         }
 
-        @SuppressWarnings("null")
         Collaboration collaboration = collaborationRepository
                 .findByMindmapIdAndUserId(mindmapId, collaboratorId)
                 .orElseThrow(() -> new ResourceNotFoundException("Collaboration", "user_id", collaboratorId));
@@ -227,7 +226,6 @@ public class CollaborationService {
                 .map(Collaboration::getUserId)
                 .toList();
 
-        @SuppressWarnings("null")
         Map<String, User> userMap = userRepository.findAllById(userIds).stream()
                 .collect(Collectors.toMap(User::getId, Function.identity()));
 
@@ -250,7 +248,7 @@ public class CollaborationService {
     }
 
     // ===================================================================
-    // 6. YÊU CẦU QUYỀN TRUY CẬP (REQUEST ACCESS) - ✅ DÙNG MONGODB QUEUE
+    // 6. YÊU CẦU QUYỀN TRUY CẬP (REQUEST ACCESS) - CÓ AUTO SYNC
     // ===================================================================
     @Transactional
     public void requestAccess(String mindmapId, Permission requestedPerm) {
@@ -260,8 +258,7 @@ public class CollaborationService {
         // Owner không cần xin quyền
         if (mindmap.getOwnerId().equals(currentUserId)) return;
 
-        // 1) SỬA LỖI 500: Kiểm tra tường minh thay vì ném Exception
-        // Kiểm tra xem đã là collaborator (ACCEPTED) chưa
+        // 1) Kiểm tra xem đã là collaborator (ACCEPTED) chưa
         Optional<Collaboration> existingCollab = collaborationRepository
                 .findByMindmapIdAndUserId(mindmapId, currentUserId);
 
@@ -274,25 +271,38 @@ public class CollaborationService {
             throw new IllegalArgumentException("Yêu cầu của bạn đang chờ duyệt.");
         }
 
-        // 3) Tạo request mới... (Giữ nguyên đoạn code tạo request bên dưới của bạn)
-        User user = userRepository.findById(currentUserId)
-                .orElseThrow(() -> new ResourceNotFoundException("User", "id", currentUserId));
+        // 3) [FIX] Tự động Sync User từ Token nếu không tìm thấy trong DB
+        // Điều này sửa lỗi 404 ResourceNotFoundException khi user mới chưa sync mà đã bấm request
+        User user;
+        try {
+            // Cố gắng lấy JWT từ Context để sync full thông tin
+            Jwt jwt = authUtils.getCurrentJwt()
+                    .orElseThrow(() -> new IllegalStateException("JWT not found"));
+            
+            // Gọi UserService để Sync (Tạo mới hoặc Update) ngay lập tức
+            user = userService.syncUserFromJwt(jwt);
+            
+        } catch (Exception e) {
+            // Fallback: Nếu không lấy được JWT (hiếm), mới tìm trong DB như cũ
+            log.warn("Auto-sync user failed in requestAccess, falling back to DB lookup", e);
+            user = userRepository.findById(currentUserId)
+                    .orElseThrow(() -> new ResourceNotFoundException("User", "id", currentUserId));
+        }
 
-        AccessRequest request = AccessRequest.builder()
-                .mindmapId(mindmapId)
-                .userId(currentUserId)
-                .requestedPermission(requestedPerm)
-                .requesterEmail(user.getEmail())
-                .requesterName(user.getDisplayName())
-                .requesterAvatar(user.getAvatarUrl())
-                .build();
+        AccessRequest request = new AccessRequest();
+        request.setMindmapId(mindmapId);
+        request.setUserId(currentUserId);
+        request.setRequestedPermission(requestedPerm);
+        request.setRequesterEmail(user.getEmail());
+        request.setRequesterName(user.getDisplayName());
+        request.setRequesterAvatar(user.getAvatarUrl());
 
         accessRequestRepository.save(request);
         log.info("User {} requested {} access to mindmap {}", currentUserId, requestedPerm, mindmapId);
     }
 
     // ===================================================================
-    // 7. DUYỆT YÊU CẦU (APPROVE) - ✅ XOÁ REQUEST + UPSERT COLLAB ACCEPTED
+    // 7. DUYỆT YÊU CẦU (APPROVE) - XOÁ REQUEST + UPSERT COLLAB ACCEPTED
     // ===================================================================
     @Transactional
     public void approveRequest(String mindmapId, String requesterId, Permission permissionToGrant) {
@@ -308,11 +318,13 @@ public class CollaborationService {
 
         // 2) Upsert Collaboration -> ACCEPTED
         Collaboration collab = collaborationRepository.findByMindmapIdAndUserId(mindmapId, requesterId)
-                .orElse(Collaboration.builder()
-                        .mindmapId(mindmapId)
-                        .userId(requesterId)
-                        .type(Collaboration.InviteType.REQUEST_ACCESS)
-                        .build());
+                .orElseGet(() -> {
+                    Collaboration newCollab = new Collaboration();
+                    newCollab.setMindmapId(mindmapId);
+                    newCollab.setUserId(requesterId);
+                    newCollab.setType(Collaboration.InviteType.REQUEST_ACCESS);
+                    return newCollab;
+                });
 
         collab.setPermission(permissionToGrant);
         collab.setStatus(Collaboration.InviteStatus.ACCEPTED);
@@ -324,7 +336,7 @@ public class CollaborationService {
     }
 
     // ===================================================================
-    // 8. TỪ CHỐI YÊU CẦU (REJECT) - ✅ CHỈ XOÁ REQUEST
+    // 8. TỪ CHỐI YÊU CẦU (REJECT) - CHỈ XOÁ REQUEST
     // ===================================================================
     @Transactional
     public void rejectRequest(String mindmapId, String requesterId) {
@@ -341,7 +353,7 @@ public class CollaborationService {
     }
 
     // ===================================================================
-    // 9. [MỚI] LẤY DANH SÁCH YÊU CẦU (CHO OWNER)
+    // 9. LẤY DANH SÁCH YÊU CẦU (CHO OWNER)
     // ===================================================================
     @Transactional(readOnly = true)
     public List<AccessRequest> getPendingRequests(String mindmapId) {
@@ -354,5 +366,4 @@ public class CollaborationService {
 
         return accessRequestRepository.findByMindmapId(mindmapId);
     }
-
 }

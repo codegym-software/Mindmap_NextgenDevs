@@ -177,14 +177,26 @@ export const useMindmapAccess = (
 
   const approveRequest = async (requesterId: string, perm: Permission) => {
     if (isLocalGuest) return;
-    setPendingRequests(prev => prev.filter(r => r.uid !== requesterId));
-    setTimeout(refreshPermissions, 1000); 
+    try {
+      await mindmapsApi.approveAccessRequest(mindmapId, requesterId, perm);
+      setPendingRequests(prev => prev.filter(r => r.uid !== requesterId));
+      setTimeout(refreshPermissions, 1000);
+    } catch (error) {
+      console.error('Failed to approve access request:', error);
+      throw error;
+    }
   };
 
   const denyRequest = async (requesterId: string) => {
     if (isLocalGuest) return;
-    setPendingRequests(prev => prev.filter(r => r.uid !== requesterId));
-    setTimeout(refreshPermissions, 1000);
+    try {
+      await mindmapsApi.rejectAccessRequest(mindmapId, requesterId);
+      setPendingRequests(prev => prev.filter(r => r.uid !== requesterId));
+      setTimeout(refreshPermissions, 1000);
+    } catch (error) {
+      console.error('Failed to deny access request:', error);
+      throw error;
+    }
   };
 
   return {
