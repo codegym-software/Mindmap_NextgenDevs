@@ -1,4 +1,4 @@
-// src/features/collaboration/ShareModal.tsx
+﻿// src/features/collaboration/ShareModal.tsx
 import React, { useEffect, useState } from 'react';
 import {
   X,
@@ -92,14 +92,14 @@ export default function ShareModal({
       setCollaborators(collabs);
 
       const doc: any = settings;
+      const viewLink = doc.accessSettings?.isPublic
+        ? `${window.location.origin}/share/${mindmapId}`
+        : null;
       setShareSettings({
         mindmapId,
         isPublic: doc.accessSettings?.isPublic || false,
         publicAccessLevel: doc.accessSettings?.publicAccessLevel || 'DISABLED',
-        // SỬA: Luôn dùng /editor cho link chia sẻ để thống nhất logic
-        shareLink: doc.accessSettings?.isPublic
-          ? `${window.location.origin}/editor/${mindmapId}`
-          : null,
+        shareLink: viewLink,
       });
             // nếu BE có field này thì sync, còn không thì thôi
       if (doc.accessSettings?.workspaceVisibility) {
@@ -196,7 +196,7 @@ const handleUpdatePublicAccess = async (
     });
 
     const link = isPublic
-      ? `${window.location.origin}/editor/${mindmapId}`
+      ? `${window.location.origin}/share/${mindmapId}`
       : null;
 
     setShareSettings({ ...res, shareLink: link });
@@ -219,6 +219,10 @@ const handleUpdatePublicAccess = async (
 
   // --- Helpers cho Social & Embed ---
   const currentUrl = shareSettings?.shareLink || window.location.href;
+  const editLink =
+    shareSettings?.isPublic && shareSettings?.publicAccessLevel === 'EDIT'
+      ? `${window.location.origin}/editor/${mindmapId}`
+      : null;
   const embedCode = `<iframe src="${currentUrl}?embed=true" width="800" height="600" frameborder="0" style="border:1px solid #eee; border-radius:8px; box-shadow:0 4px 12px rgba(0,0,0,0.1);"></iframe>`;
 
   const shareToSocial = (platform: 'facebook' | 'twitter' | 'linkedin') => {
@@ -361,7 +365,7 @@ const handleUpdatePublicAccess = async (
                         >
                           <option value="NONE">Tắt</option>
                           <option value="VIEW">Bất kỳ ai có link: Xem</option>
-                          {/* <option value="EDIT">Bất kỳ ai có link: Chỉnh sửa</option> */}
+                          <option value="EDIT">Bất kỳ ai có link: Chỉnh sửa</option>
                         </select>
 
                         {/* WORKSPACE VISIBILITY SELECT (tạm ẩn để gọn UI) */}
@@ -388,18 +392,40 @@ const handleUpdatePublicAccess = async (
                     )}
 
                     {shareSettings?.isPublic && shareSettings.shareLink && (
-                      <div className="flex gap-2">
-                        <input
-                          readOnly
-                          value={shareSettings.shareLink}
-                          className="flex-1 bg-white border border-gray-300 text-gray-600 text-sm rounded-lg p-2 outline-none"
-                        />
-                        <button
-                          onClick={() => copyToClipboard(shareSettings.shareLink!)}
-                          className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-2 rounded-lg font-medium flex items-center gap-1 transition-colors"
-                        >
-                          <Copy size={16} />
-                        </button>
+                      <div className="space-y-2">
+                        <div className="flex gap-2">
+                          <input
+                            readOnly
+                            value={shareSettings.shareLink}
+                            className="flex-1 bg-white border border-gray-300 text-gray-600 text-sm rounded-lg p-2 outline-none"
+                            title="Link xem"
+                          />
+                          <button
+                            onClick={() => copyToClipboard(shareSettings.shareLink!)}
+                            className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-2 rounded-lg font-medium flex items-center gap-1 transition-colors"
+                            title="Sao chép link xem"
+                          >
+                            <Copy size={16} />
+                          </button>
+                        </div>
+
+                        {editLink && (
+                          <div className="flex gap-2">
+                            <input
+                              readOnly
+                              value={editLink}
+                              className="flex-1 bg-white border border-gray-300 text-gray-600 text-sm rounded-lg p-2 outline-none"
+                              title="Link sửa"
+                            />
+                            <button
+                              onClick={() => copyToClipboard(editLink)}
+                              className="bg-gray-900 hover:bg-gray-800 text-white px-3 py-2 rounded-lg font-medium flex items-center gap-1 transition-colors"
+                              title="Sao chép link sửa"
+                            >
+                              <Copy size={16} />
+                            </button>
+                          </div>
+                        )}
                       </div>
                     )}
                   </div>

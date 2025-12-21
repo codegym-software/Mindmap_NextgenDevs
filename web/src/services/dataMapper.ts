@@ -119,7 +119,7 @@ export type BeMindmapDoc = {
   content: BeMindmapContent;
   accessSettings: {
     isPublic: boolean;
-    publicAccessLevel: 'DISABLED' | 'VIEW';
+    publicAccessLevel: 'DISABLED' | 'VIEW' | 'EDIT';
   };
   workspaceId?: string | null;
   tags: string[];

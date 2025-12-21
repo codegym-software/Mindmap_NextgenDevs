@@ -67,13 +67,15 @@ public class MindmapService {
     /**
      * Kiểm tra quyền xem (VIEW):
      * 1. Là Owner
-     * 2. Mindmap Public (chế độ VIEW)
+     * 2. Mindmap Public (VIEW hoặc EDIT)
      * 3. Là Collaborator ĐÃ ĐƯỢC CHẤP NHẬN (ACTIVE)
      */
     public void checkViewPermission(String userId, Mindmap mindmap) {
         if (mindmap.getOwnerId().equals(userId)) return;
         
-        if (mindmap.getAccessSettings().isPublic() && mindmap.getAccessSettings().getPublicAccessLevel() == Mindmap.PublicAccessLevel.VIEW) return;
+        if (mindmap.getAccessSettings().isPublic()
+                && (mindmap.getAccessSettings().getPublicAccessLevel() == Mindmap.PublicAccessLevel.VIEW
+                || mindmap.getAccessSettings().getPublicAccessLevel() == Mindmap.PublicAccessLevel.EDIT)) return;
         
         // [QUAN TRỌNG] Phải check cả status ACCEPTED
         boolean hasActiveCollab = collaborationRepository.existsByMindmapIdAndUserIdAndStatus(

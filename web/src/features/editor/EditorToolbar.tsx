@@ -283,6 +283,8 @@ const EditorToolbar: React.FC<EditorToolbarProps> = ({
           </div>
         )}
 
+        {readOnly && <div className="flex-grow" />}
+
         {/* 3. PHẦN PHẢI: Zoom, Undo, Save, Chuông, Share... */}
         <div className="flex items-center gap-2 flex-shrink-0">
           
