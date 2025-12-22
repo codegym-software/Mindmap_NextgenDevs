@@ -13,7 +13,7 @@ import RegisterForm from './RegisterForm';
 import ConfirmForm from './ConfirmForm';
 import ForgotForm from './ForgotForm';
 import ResetForm from './ResetForm';
-import api from '../../services/api'; // Import API để gọi sync
+import api from '../../services/api'; 
 
 type Props = {
   isOpen: boolean;
@@ -98,7 +98,7 @@ const AuthModal: React.FC<Props> = ({ isOpen, onClose, initialMode = 'login' }) 
         // 2. Lưu token (Lúc này API Interceptor đã có token để dùng)
         setAuthTokens(tokens);
 
-        // 3. [QUAN TRỌNG] Gọi sync user ngay
+        // 3. Gọi sync user ngay
         try {
             await api.post("/users/sync-cognito");
             console.log("Synced user successfully");
@@ -109,7 +109,6 @@ const AuthModal: React.FC<Props> = ({ isOpen, onClose, initialMode = 'login' }) 
 
         onClose();
         
-        // [FIX] Chuyển hướng về dashboard sau khi login thành công
         window.location.href = '/dashboard';
     } catch (err: any) {
         if (err.name === 'UserNotConfirmedException') {

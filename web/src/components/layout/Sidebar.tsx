@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useMemo } from "react";
+﻿import { useEffect, useRef, useState, useMemo } from "react";
 import { useAuth } from "../../hooks/useAuth";
 import { useMindmapsStore } from "../../app/store/useMindmapsStore";
 import { useEditorStore } from "../../app/store/useEditorStore"; 
@@ -29,19 +29,13 @@ export default function Sidebar() {
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
-  // [FIX] Thêm Ref để kiểm soát việc fetch, tránh gọi 2 lần trong StrictMode
   const hasFetched = useRef(false);
 
   useEffect(() => {
     let isMounted = true;
-    
-    // [FIX] Nếu đã có data và chưa chuyển trạng thái auth, có thể skip fetch
-    // Nhưng để an toàn cho việc sync, ta vẫn fetch, nhưng dùng cờ để debounce
-    
     const fetchMindmaps = async () => {
       if (isAuthed) {
         try {
-          // Chỉ set loading nếu chưa có items (UX mượt hơn)
           if (items.length === 0) setMindmaps({ loading: true });
           
           const serverMaps = await mindmapsApi.list();
@@ -51,12 +45,11 @@ export default function Sidebar() {
           }
         } catch (e: any) {
           if (isMounted) {
-            // [FIX] Bỏ qua lỗi 429 nếu xảy ra để không crash UI
             if (e.response?.status !== 429) {
                 setMindmaps({ loading: false, error: e?.message || "Load failed" });
                 addToast("Tải danh sách mindmap thất bại", "error");
             } else {
-                setMindmaps({ loading: false }); // Tắt loading dù lỗi 429
+                setMindmaps({ loading: false }); 
             }
           }
         }
@@ -139,7 +132,6 @@ export default function Sidebar() {
   const handleConfirmDelete = async () => {
     if (!deletingId) return;
 
-    // Check if deleting current mindmap
     const isDeletingCurrent = deletingId === currentMindmapId;
 
     try {
@@ -151,7 +143,6 @@ export default function Sidebar() {
       }
       addToast("Đã xóa mindmap", "success");
       
-      // Navigate to dashboard if deleting current mindmap
       if (isDeletingCurrent) {
         window.location.href = '/dashboard';
       }
@@ -159,7 +150,6 @@ export default function Sidebar() {
       console.error("Delete failed:", e);
       addToast(e?.message || "Xóa thất bại", "error");
     } finally {
-      // Luôn đóng modal và reset ID
       setIsDeleteModalOpen(false);
       setDeletingId(null);
     }
@@ -181,7 +171,7 @@ export default function Sidebar() {
         <button
           onClick={() => setOpen(!open)}
           onMouseEnter={() => !pinned && setOpen(true)}
-          className="fixed top-3 left-3.5 z-50 w-5 h-5 rounded-lg bg-white/50 hover:bg-gray-100/80 text-gray-800 flex items-center justify-center transition-colors backdrop-blur-sm" 
+          className="fixed top-3 left-3.5 z-50 w-5 h-5 rounded-lg bg-white/100 hover:bg-gray-200/80 text-gray-800 flex items-center justify-center transition-colors backdrop-blur-sm" 
           aria-label="Toggle sidebar"
         >
           <PanelLeftOpen />

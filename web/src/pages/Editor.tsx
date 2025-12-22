@@ -470,6 +470,7 @@ export default function Editor({ mode = 'edit' }: EditorProps) {
 const {
     permission: accessPermissionState, // 'loading' | 'allowed' | 'denied'
     isOwner: isOwnerFromHook,
+    userPermission, // ⭐ NHẬN userPermission TỪ HOOK (thay vì local state)
     pendingRequests,
     requestStatus,
     publicAccessLevel,
@@ -604,7 +605,7 @@ const {
   
   // --- Collaboration: Permission & Modal States ---
   const [ownerId, setOwnerId] = useState<string | null>(null);
-  const [userPermission, setUserPermission] = useState<Permission | null>(null);
+  // ❌ REMOVED: const [userPermission, setUserPermission] - Giờ lấy từ useMindmapAccess hook
   const [accessDenied, setAccessDenied] = useState(false);
   const [isShareModalOpen, setIsShareModalOpen] = useState(false);
   const [isRequestModalOpen, setRequestModalOpen] = useState(false);
@@ -1260,31 +1261,11 @@ const undo = useCallback(() => {
         }
 
         if (isMounted && data) {
-          // --- Collaboration: Set Ownership & Permissions ---
+          // --- Collaboration: Set Ownership ---
           setOwnerId(data.ownerId);
+          // ⭐ NOTE: userPermission giờ được quản lý bởi useMindmapAccess hook
           
-          if (isGuest) {
-            setUserPermission('OWNER');
-          } else {
-            const uid = user?.sub || (user as any)?.id;
-            if (uid && uid === data.ownerId) {
-              setUserPermission('OWNER');
-            } else {
-              const myCollab = (data.collaborators || []).find(
-                (c) => c.userId === uid,
-              );
-              if (myCollab) {
-                setUserPermission(myCollab.permission);
-              } else {
-                const publicAccessLevel = data.accessSettings?.publicAccessLevel;
-                if (publicAccessLevel === 'VIEW') setUserPermission('VIEWER');
-                else if (publicAccessLevel === 'EDIT') setUserPermission('EDITOR');
-                else setUserPermission(null);
-              }
-            }
-          }
-          
-          useEditorStore.setState({ 
+          useEditorStore.setState({
             currentMindmapId: id, 
             currentMindmapName: data.name, 
             isDirty: false,

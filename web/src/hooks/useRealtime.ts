@@ -251,10 +251,10 @@ export function useRealtime({
                 // Cập nhật thông tin peer
                 setPeerInfo(senderId, { name, color });
 
-                // Chỉ hiện Toast nếu đây là user mới (tránh spam khi họ update màu/tên)
-                if (isNewPeer) {
-                    addToast(`${name} đã tham gia chỉnh sửa.`, 'info');
-                }
+                // ❌ REMOVED: Toast thông báo tham gia (theo yêu cầu)
+                // if (isNewPeer) {
+                //     addToast(`${name} đã tham gia chỉnh sửa.`, 'info');
+                // }
                 break;
               }
 
@@ -266,7 +266,8 @@ export function useRealtime({
               case 'USER_LEFT': {
                 const name = getPeerName(senderId);
                 removePeer(senderId);
-                addToast(`${name} đã rời đi.`, 'info');
+                // ❌ REMOVED: Toast thông báo rời đi (theo yêu cầu)
+                // addToast(`${name} đã rời đi.`, 'info');
                 break;
               }
 

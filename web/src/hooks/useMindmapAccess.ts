@@ -16,6 +16,7 @@ export interface RequestUser {
 interface UseMindmapAccessResult {
   permission: PermissionState;
   isOwner: boolean;
+  userPermission: Permission | null; // ⭐ THÊM MỚI - Export quyền cụ thể của user
   pendingRequests: RequestUser[];
   requestStatus: RequestStatus;
   publicAccessLevel: 'DISABLED' | 'VIEW' | 'EDIT';
@@ -23,7 +24,7 @@ interface UseMindmapAccessResult {
   approveRequest: (uid: string, perm: Permission) => Promise<void>;
   denyRequest: (uid: string) => Promise<void>;
   refreshPermissions: () => void;
-  handlePermissionUpdate: (newPermission: Permission) => void; // ⭐ THÊM MỚI
+  handlePermissionUpdate: (newPermission: Permission) => void;
 }
 
 export const useMindmapAccess = (
@@ -35,9 +36,7 @@ export const useMindmapAccess = (
   const [pendingRequests, setPendingRequests] = useState<RequestUser[]>([]);
   const [isOwner, setIsOwner] = useState(false);
   const [publicAccessLevel, setPublicAccessLevel] = useState<'DISABLED' | 'VIEW' | 'EDIT'>('DISABLED');
-  
-  // State userPermission để lưu quyền cụ thể (EDITOR/VIEWER) phục vụ check realtime
-  // const [currentUserPermission, setCurrentUserPermission] = useState<Permission | null>(null); 
+  const [userPermission, setUserPermission] = useState<Permission | null>(null); // ⭐ UNCOMMENT - Lưu quyền cụ thể
 
   const [refreshTrigger, setRefreshTrigger] = useState(0);
   const refreshPermissions = useCallback(() => setRefreshTrigger(prev => prev + 1), []);
@@ -49,6 +48,14 @@ export const useMindmapAccess = (
   // 1. CHECK ACCESS LOGIC (Hàm này dùng chung cho load đầu & polling)
   // =================================================================
   const checkAccess = useCallback(async () => {
+      // ⭐ Special case: Guest user
+      if (isLocalGuest) {
+        setPermission('allowed');
+        setIsOwner(true);
+        setUserPermission('OWNER');
+        return;
+      }
+      
       try {
         const data = await mindmapsApi.get(mindmapId);
         
@@ -59,30 +66,50 @@ export const useMindmapAccess = (
         // Nếu API trả về thành công -> Allowed
         setPermission('allowed');
         
+        // ⭐ SET USER PERMISSION (OWNER/EDITOR/VIEWER)
         if (userId && data.ownerId === userId) {
           setIsOwner(true);
+          setUserPermission('OWNER');
+          setRequestStatus('none'); // Owner không cần request
         } else {
           setIsOwner(false);
+          
+          // Check collaborators
+          const myCollab = (data.collaborators || []).find(c => c.userId === userId);
+          if (myCollab) {
+            setUserPermission(myCollab.permission);
+            // ✅ FIX: Nếu đã là collaborator (có quyền rồi) → Chắc chắn không còn pending request
+            setRequestStatus('none');
+          } else {
+            // Fallback to public access level
+            const publicLevel = data.accessSettings?.publicAccessLevel;
+            if (publicLevel === 'VIEW') {
+              setUserPermission('VIEWER');
+              // ✅ FIX: Public viewer không có pending request (vào được rồi)
+              setRequestStatus('none');
+            } else if (publicLevel === 'EDIT') {
+              setUserPermission('EDITOR');
+              setRequestStatus('none');
+            } else {
+              setUserPermission(null);
+              // Không set requestStatus ở đây - giữ nguyên trạng thái cũ
+            }
+          }
         }
-        
-        // Nếu user đang ở trạng thái pending mà vào được (do public view), vẫn giữ pending
-        // Nếu không thì reset về none
-        // Lưu ý: Logic này phụ thuộc vào việc BE có trả về status request trong API get mindmap không.
-        // Tạm thời giữ nguyên logic set none nếu vào được.
-        // setRequestStatus('none'); 
 
       } catch (error: any) {
         const status = error?.response?.status;
         if (status === 403 || status === 401) {
           setPermission('denied');
           setIsOwner(false);
+          setUserPermission(null);
         } else {
           console.error("[Access] Check error:", error);
-          // 404 hoặc lỗi mạng cũng coi như denied để an toàn
-          setPermission('denied'); 
+          setPermission('denied');
+          setUserPermission(null);
         }
       }
-  }, [mindmapId, userId]);
+  }, [mindmapId, userId, isLocalGuest]);
 
   // =================================================================
   // 2. EFFECT: CHECK LẦN ĐẦU & KHI CÓ THAY ĐỔI ID/USER
@@ -204,21 +231,24 @@ export const useMindmapAccess = (
   const handlePermissionUpdate = useCallback((newPermission: Permission) => {
     console.log('🔔 [PERMISSION_UPDATE] Received permission update:', newPermission);
     
-    // 1. Cập nhật trạng thái permission thành 'allowed' (nếu đang denied)
+    // 1. Cập nhật quyền cụ thể của user (quan trọng nhất!)
+    setUserPermission(newPermission);
+    
+    // 2. Cập nhật trạng thái permission thành 'allowed'
     setPermission('allowed');
     
-    // 2. Reset request status về 'none' (vì đã được duyệt)
+    // 3. Reset request status về 'none' (vì đã được duyệt)
     setRequestStatus('none');
     
-    // 3. Trigger refresh để load lại dữ liệu mới nhất
-    // Sẽ trigger useEffect checkAccess và reload mindmap data
+    // 4. Trigger refresh để load lại dữ liệu mới nhất (nếu cần)
     refreshPermissions();
     
-    console.log('✅ [PERMISSION_UPDATE] Permission state updated, triggering refresh');
+    console.log('✅ [PERMISSION_UPDATE] userPermission updated to', newPermission);
   }, [refreshPermissions]);
 
   return {
     permission,
+    userPermission, // ⭐ EXPORT
     requestStatus,
     pendingRequests,
     isOwner,

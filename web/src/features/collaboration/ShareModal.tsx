@@ -76,6 +76,29 @@ export default function ShareModal({
   const [isConfirmModalOpen, setIsConfirmModalOpen] = useState(false);
   const [userToRemove, setUserToRemove] = useState<{ userId: string; name: string } | null>(null);
 
+  // ⭐ WRAPPER: Auto-reload sau khi approve request
+  const handleApproveRequestInternal = async (uid: string, perm: Permission) => {
+    if (!onApproveRequest) return;
+    try {
+      await onApproveRequest(uid, perm);
+      // Reload để cập nhật danh sách collaborators
+      await loadData();
+    } catch (e) {
+      console.error('Approve request failed:', e);
+    }
+  };
+
+  // ⭐ WRAPPER: Auto-reload sau khi deny request
+  const handleDenyRequestInternal = async (uid: string) => {
+    if (!onDenyRequest) return;
+    try {
+      await onDenyRequest(uid);
+      // Không cần reload vì chỉ xóa khỏi pending list
+    } catch (e) {
+      console.error('Deny request failed:', e);
+    }
+  };
+
   // Load dữ liệu khi mở modal
   useEffect(() => {
     if (isOpen && mindmapId) {
@@ -634,7 +657,7 @@ const handleUpdatePublicAccess = async (
                             <button
                               type="button"
                               onClick={() =>
-                                onDenyRequest && onDenyRequest(req.uid)
+                                onDenyRequest && handleDenyRequestInternal(req.uid)
                               }
                               className="px-2 py-1 text-xs rounded-md bg-white border border-gray-200 text-gray-600 hover:bg-gray-50"
                             >
@@ -645,7 +668,7 @@ const handleUpdatePublicAccess = async (
                               onClick={() => {
                                 if (!onApproveRequest) return;
                                 const permToGrant = currentPerm;
-                                onApproveRequest(req.uid, permToGrant);
+                                handleApproveRequestInternal(req.uid, permToGrant);
                               }}
                               className="px-2 py-1 text-xs rounded-md bg-blue-600 text-white hover:bg-blue-700"
                             >

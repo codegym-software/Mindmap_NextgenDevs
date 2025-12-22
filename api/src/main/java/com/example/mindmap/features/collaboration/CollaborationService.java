@@ -305,12 +305,41 @@ public class CollaborationService {
                 .findByMindmapIdAndUserId(mindmapId, currentUserId);
 
         if (existingCollab.isPresent() && existingCollab.get().getStatus() == Collaboration.InviteStatus.ACCEPTED) {
-            return; // Đã có quyền, thoát hàm bình thường
+            Permission currentPerm = existingCollab.get().getPermission();
+            
+            // ✅ Nếu đã có quyền EDITOR hoặc OWNER → không cần request nữa
+            if (currentPerm == Permission.EDITOR || currentPerm == Permission.OWNER) {
+                log.info("[REQUEST_ACCESS] User already has EDITOR/OWNER permission, no upgrade needed");
+                return;
+            }
+            
+            // ✅ Nếu đang là VIEWER nhưng request VIEWER → không cần request
+            if (currentPerm == Permission.VIEWER && requestedPerm == Permission.VIEWER) {
+                log.info("[REQUEST_ACCESS] User already has VIEWER permission, no duplicate request");
+                return;
+            }
+            
+            // ✅ Nếu đang là VIEWER nhưng request EDITOR → Cho phép upgrade request
+            log.info("[REQUEST_ACCESS] User has VIEWER, requesting upgrade to EDITOR");
+            // Tiếp tục xuống dưới để tạo request mới
         }
 
-        // 2) Đã có request đang chờ duyệt?
-        if (accessRequestRepository.findByMindmapIdAndUserId(mindmapId, currentUserId).isPresent()) {
-            throw new IllegalArgumentException("Yêu cầu của bạn đang chờ duyệt.");
+        // 2) Kiểm tra xem đã có request đang chờ duyệt không
+        Optional<AccessRequest> existingRequest = accessRequestRepository
+                .findByMindmapIdAndUserId(mindmapId, currentUserId);
+
+        if (existingRequest.isPresent()) {
+            Permission existingRequestedPerm = existingRequest.get().getRequestedPermission();
+            
+            // ✅ Nếu request cũ cùng quyền với request mới → không tạo duplicate
+            if (existingRequestedPerm == requestedPerm) {
+                log.info("[REQUEST_ACCESS] Duplicate request detected, throwing error");
+                throw new IllegalArgumentException("Yêu cầu của bạn đang chờ duyệt.");
+            }
+            
+            // ✅ Nếu request mới cao hơn request cũ (VIEW → EDIT) → Xóa request cũ, tạo mới
+            log.info("[REQUEST_ACCESS] Upgrading pending request from {} to {}", existingRequestedPerm, requestedPerm);
+            accessRequestRepository.deleteByMindmapIdAndUserId(mindmapId, currentUserId);
         }
 
         // 3) [FIX] Tự động Sync User từ Token nếu không tìm thấy trong DB
@@ -377,7 +406,8 @@ public class CollaborationService {
         request.setRequesterAvatar(user.getAvatarUrl());
 
         accessRequestRepository.save(request);
-        log.info("User {} requested {} access to mindmap {}", currentUserId, requestedPerm, mindmapId);
+        log.info("✅ [REQUEST_ACCESS] Successfully created new {} access request for user {} on mindmap {}", 
+                requestedPerm, currentUserId, mindmapId);
     }
 
     // ===================================================================
