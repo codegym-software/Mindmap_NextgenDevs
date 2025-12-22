@@ -11,9 +11,12 @@ import {
   Twitter,
   Linkedin,
   Code,
-  QrCode,
   Bell,
   Mail,
+  Link as LinkIcon,
+  ChevronDown,
+  Shield,
+  Layout,
 } from 'lucide-react';
 import { useToast } from '../../hooks/useToast';
 import {
@@ -24,15 +27,13 @@ import {
 } from '../../services/mindmapsApi';
 import { useAuth } from '../../hooks/useAuth';
 import type { RequestUser } from '../../hooks/useMindmapAccess';
-import ConfirmModal from '../../components/common/ConfirmModal'; // ⭐ THÊM IMPORT
+import ConfirmModal from '../../components/common/ConfirmModal';
 
 type Props = {
   isOpen: boolean;
   onClose: () => void;
   mindmapId: string;
   isOwner: boolean;
-
-  // mới: queue request từ Firestore
   pendingRequests?: RequestUser[];
   onApproveRequest?: (uid: string, perm: Permission) => void;
   onDenyRequest?: (uid: string) => void;
@@ -55,55 +56,45 @@ export default function ShareModal({
   const [activeTab, setActiveTab] = useState<TabType>('invite');
   const [loading, setLoading] = useState(false);
   const [collaborators, setCollaborators] = useState<Collaborator[]>([]);
-  const [shareSettings, setShareSettings] = useState<ShareSettingsResponse | null>(
-    null,
-  );
-  
+  const [shareSettings, setShareSettings] = useState<ShareSettingsResponse | null>(null);
+
   const [workspaceVisibility, setWorkspaceVisibility] = useState<
-  'PRIVATE' | 'WORKSPACE_VIEW' | 'WORKSPACE_EDIT'
->('PRIVATE');
+    'PRIVATE' | 'WORKSPACE_VIEW' | 'WORKSPACE_EDIT'
+  >('PRIVATE');
 
   // State cho form mời
   const [inviteEmail, setInviteEmail] = useState('');
-  const [invitePermission, setInvitePermission] =
-    useState<Permission>('VIEWER');
+  const [invitePermission, setInvitePermission] = useState<Permission>('VIEWER');
   const [isInviting, setIsInviting] = useState(false);
-  const [requestPermissions, setRequestPermissions] = useState<
-  Record<string, Permission>
->({});
+  const [requestPermissions, setRequestPermissions] = useState<Record<string, Permission>>({});
 
-  // ⭐ STATE CHO CONFIRM MODAL (XÓA USER)
+  // State cho Confirm Modal
   const [isConfirmModalOpen, setIsConfirmModalOpen] = useState(false);
   const [userToRemove, setUserToRemove] = useState<{ userId: string; name: string } | null>(null);
 
-  // ⭐ WRAPPER: Auto-reload sau khi approve request
   const handleApproveRequestInternal = async (uid: string, perm: Permission) => {
     if (!onApproveRequest) return;
     try {
       await onApproveRequest(uid, perm);
-      // Reload để cập nhật danh sách collaborators
       await loadData();
     } catch (e) {
       console.error('Approve request failed:', e);
     }
   };
 
-  // ⭐ WRAPPER: Auto-reload sau khi deny request
   const handleDenyRequestInternal = async (uid: string) => {
     if (!onDenyRequest) return;
     try {
       await onDenyRequest(uid);
-      // Không cần reload vì chỉ xóa khỏi pending list
     } catch (e) {
       console.error('Deny request failed:', e);
     }
   };
 
-  // Load dữ liệu khi mở modal
   useEffect(() => {
     if (isOpen && mindmapId) {
       void loadData();
-      setActiveTab('invite'); // Reset về tab đầu tiên
+      setActiveTab('invite');
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, mindmapId]);
@@ -113,7 +104,7 @@ export default function ShareModal({
     try {
       const [collabs, settings] = await Promise.all([
         mindmapsApi.getCollaborators(mindmapId),
-        mindmapsApi.get(mindmapId), // Giả lập lấy settings từ detail
+        mindmapsApi.get(mindmapId),
       ]);
 
       setCollaborators(collabs);
@@ -128,7 +119,7 @@ export default function ShareModal({
         publicAccessLevel: doc.accessSettings?.publicAccessLevel || 'DISABLED',
         shareLink: viewLink,
       });
-            // nếu BE có field này thì sync, còn không thì thôi
+
       if (doc.accessSettings?.workspaceVisibility) {
         setWorkspaceVisibility(doc.accessSettings.workspaceVisibility);
       }
@@ -145,11 +136,7 @@ export default function ShareModal({
     if (!inviteEmail) return;
     setIsInviting(true);
     try {
-      await mindmapsApi.inviteCollaborator(
-        mindmapId,
-        inviteEmail,
-        invitePermission,
-      );
+      await mindmapsApi.inviteCollaborator(mindmapId, inviteEmail, invitePermission);
       addToast(`Đã mời ${inviteEmail} thành công`, 'success');
       setInviteEmail('');
       await loadData();
@@ -162,15 +149,9 @@ export default function ShareModal({
 
   const handleUpdatePermission = async (userId: string, newPerm: Permission) => {
     try {
-      await mindmapsApi.updateCollaboratorPermission(
-        mindmapId,
-        userId,
-        newPerm,
-      );
-      setCollaborators((prev: Collaborator[]) =>
-        prev.map((c: Collaborator) =>
-          c.userId === userId ? { ...c, permission: newPerm } : c,
-        ),
+      await mindmapsApi.updateCollaboratorPermission(mindmapId, userId, newPerm);
+      setCollaborators((prev) =>
+        prev.map((c) => (c.userId === userId ? { ...c, permission: newPerm } : c))
       );
       addToast('Đã cập nhật quyền', 'success');
     } catch (e) {
@@ -178,91 +159,69 @@ export default function ShareModal({
     }
   };
 
-  // ⭐ HÀM MỞ CONFIRM MODAL TRƯỚC KHI XÓA
   const handleRemoveClick = (userId: string, displayName: string) => {
     setUserToRemove({ userId, name: displayName });
     setIsConfirmModalOpen(true);
   };
 
-  // ⭐ HÀM XÓA THỰC SỰ (CHỈ CHẠY KHI CONFIRM)
   const handleRemoveConfirm = async () => {
     if (!userToRemove) return;
-
     try {
       await mindmapsApi.removeCollaborator(mindmapId, userToRemove.userId);
-      setCollaborators((prev: Collaborator[]) =>
-        prev.filter((c: Collaborator) => c.userId !== userToRemove.userId),
-      );
+      setCollaborators((prev) => prev.filter((c) => c.userId !== userToRemove.userId));
       addToast('Đã xóa thành công', 'success');
     } catch (e) {
       addToast('Xóa thất bại', 'error');
     } finally {
-      // Đóng modal và reset state
       setIsConfirmModalOpen(false);
       setUserToRemove(null);
     }
   };
 
-  // ⭐ HÀM HỦY BỎ
   const handleRemoveCancel = () => {
     setIsConfirmModalOpen(false);
     setUserToRemove(null);
   };
 
   const handleUpdateWorkspaceVisibility = async (
-  value: 'PRIVATE' | 'WORKSPACE_VIEW' | 'WORKSPACE_EDIT',
-) => {
-  try {
-    // TODO: sau này nếu có API backend để lưu workspace visibility thì gọi ở đây
-    setWorkspaceVisibility(value);
-    addToast('Đã cập nhật chế độ chia sẻ trong Workspace', 'success');
-  } catch (e) {
-    console.error(e);
-    addToast('Cập nhật chế độ chia sẻ trong Workspace thất bại', 'error');
-  }
-};
+    value: 'PRIVATE' | 'WORKSPACE_VIEW' | 'WORKSPACE_EDIT'
+  ) => {
+    try {
+      setWorkspaceVisibility(value);
+      addToast('Đã cập nhật chế độ chia sẻ trong Workspace', 'success');
+    } catch (e) {
+      console.error(e);
+      addToast('Lỗi cập nhật', 'error');
+    }
+  };
 
+  const handleUpdatePublicAccess = async (value: 'NONE' | 'VIEW' | 'EDIT') => {
+    const isPublic = value !== 'NONE';
+    const publicAccessLevel =
+      value === 'NONE' ? 'DISABLED' : value === 'VIEW' ? 'VIEW' : 'EDIT';
 
-const handleUpdatePublicAccess = async (
-  value: 'NONE' | 'VIEW' | 'EDIT',
-) => {
-  const isPublic = value !== 'NONE';
-  const publicAccessLevel =
-    value === 'NONE'
-      ? 'DISABLED'
-      : value === 'VIEW'
-      ? 'VIEW'
-      : 'EDIT';
+    try {
+      const res = await mindmapsApi.updateShareSettings(mindmapId, {
+        isPublic,
+        publicAccessLevel,
+      });
 
-  try {
-    const res = await mindmapsApi.updateShareSettings(mindmapId, {
-      isPublic,
-      publicAccessLevel,
-    });
-
-    const link = isPublic
-      ? `${window.location.origin}/share/${mindmapId}`
-      : null;
-
-    setShareSettings({ ...res, shareLink: link });
-
-    addToast('Đã cập nhật chế độ chia sẻ công khai', 'success');
-  } catch (e) {
-    addToast('Lỗi cập nhật settings', 'error');
-  }
-};
-
+      const link = isPublic ? `${window.location.origin}/share/${mindmapId}` : null;
+      setShareSettings({ ...res, shareLink: link });
+      addToast('Đã cập nhật chế độ chia sẻ công khai', 'success');
+    } catch (e) {
+      addToast('Lỗi cập nhật settings', 'error');
+    }
+  };
 
   const copyToClipboard = (text: string) => {
     navigator.clipboard
       .writeText(text)
       .then(() => addToast('Đã sao chép vào bộ nhớ tạm', 'success'))
-      .catch(() =>
-        addToast('Không thể sao chép vào bộ nhớ tạm', 'error'),
-      );
+      .catch(() => addToast('Không thể sao chép', 'error'));
   };
 
-  // --- Helpers cho Social & Embed ---
+  // Helpers
   const currentUrl = shareSettings?.shareLink || window.location.href;
   const editLink =
     shareSettings?.isPublic && shareSettings?.publicAccessLevel === 'EDIT'
@@ -272,28 +231,19 @@ const handleUpdatePublicAccess = async (
 
   const shareToSocial = (platform: 'facebook' | 'twitter' | 'linkedin') => {
     if (!shareSettings?.isPublic) {
-      addToast(
-        'Vui lòng bật "Chia sẻ công khai" ở tab Mời & Link trước khi chia sẻ.',
-        'error',
-      );
+      addToast('Vui lòng bật "Chia sẻ công khai" trước.', 'error');
       return;
     }
     let url = '';
     switch (platform) {
       case 'facebook':
-        url = `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(
-          currentUrl,
-        )}`;
+        url = `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(currentUrl)}`;
         break;
       case 'twitter':
-        url = `https://twitter.com/intent/tweet?url=${encodeURIComponent(
-          currentUrl,
-        )}&text=Check out my mindmap!`;
+        url = `https://twitter.com/intent/tweet?url=${encodeURIComponent(currentUrl)}&text=Check out my mindmap!`;
         break;
       case 'linkedin':
-        url = `https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(
-          currentUrl,
-        )}`;
+        url = `https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(currentUrl)}`;
         break;
     }
     window.open(url, '_blank', 'width=600,height=400');
@@ -303,498 +253,423 @@ const handleUpdatePublicAccess = async (
 
   return (
     <div
-      className="fixed inset-0 bg-black/50 z-[60] flex items-center justify-center p-4 backdrop-blur-sm"
+      className="fixed inset-0 bg-black/60 z-[60] flex items-center justify-center p-4 backdrop-blur-sm animate-fade-in"
       onClick={onClose}
     >
       <div
-        className="bg-white rounded-xl shadow-2xl w-full max-w-lg overflow-hidden flex flex-col max-h-[90vh]"
+        className="bg-white rounded-2xl shadow-2xl w-full max-w-lg flex flex-col max-h-[90vh] overflow-hidden transform transition-all border border-gray-100"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="px-6 py-4 border-b flex justify-between items-center bg-gray-50">
-          <h3 className="font-bold text-lg text-gray-800">
-            Chia sẻ Mindmap
-          </h3>
+        <div className="px-6 py-5 border-b border-gray-100 flex justify-between items-center bg-white sticky top-0 z-10">
+          <div>
+            <h3 className="font-bold text-xl text-gray-900">Chia sẻ</h3>
+            <p className="text-xs text-gray-500 mt-0.5">Quản lý quyền truy cập và liên kết</p>
+          </div>
           <button
             onClick={onClose}
-            className="text-gray-500 hover:text-gray-700 transition-colors"
+            className="text-gray-400 hover:text-gray-600 hover:bg-gray-100 p-2 rounded-full transition-all"
           >
             <X size={20} />
           </button>
         </div>
 
-        {/* Tabs */}
-        <div className="flex border-b px-6 pt-2 gap-6 text-sm font-medium text-gray-500">
-          <button
-            onClick={() => setActiveTab('invite')}
-            className={`pb-3 border-b-2 transition-colors ${
-              activeTab === 'invite'
-                ? 'border-blue-600 text-blue-600'
-                : 'border-transparent hover:text-gray-800'
-            }`}
-          >
-            Mời & Link
-          </button>
-          <button
-            onClick={() => setActiveTab('social')}
-            className={`pb-3 border-b-2 transition-colors ${
-              activeTab === 'social'
-                ? 'border-blue-600 text-blue-600'
-                : 'border-transparent hover:text-gray-800'
-            }`}
-          >
-            Mạng xã hội
-          </button>
-          <button
-            onClick={() => setActiveTab('embed')}
-            className={`pb-3 border-b-2 transition-colors ${
-              activeTab === 'embed'
-                ? 'border-blue-600 text-blue-600'
-                : 'border-transparent hover:text-gray-800'
-            }`}
-          >
-            Nhúng (Embed)
-          </button>
+        {/* Custom Tabs (Segmented Control) */}
+        <div className="px-6 py-4 pb-0 bg-white">
+          <div className="flex p-1 bg-gray-100 rounded-xl">
+            {(['invite', 'social', 'embed'] as TabType[]).map((tab) => (
+              <button
+                key={tab}
+                onClick={() => setActiveTab(tab)}
+                className={`flex-1 py-2 text-sm font-medium rounded-lg transition-all duration-200 ${
+                  activeTab === tab
+                    ? 'bg-white text-blue-600 shadow-sm'
+                    : 'text-gray-500 hover:text-gray-700'
+                }`}
+              >
+                {tab === 'invite' && 'Mời & Link'}
+                {tab === 'social' && 'Mạng xã hội'}
+                {tab === 'embed' && 'Nhúng'}
+              </button>
+            ))}
+          </div>
         </div>
 
         {/* Body */}
-        {loading ? (
-          <div className="p-8 text-center text-gray-500">Đang tải...</div>
-        ) : (
-          <div className="p-6 overflow-y-auto">
-            {/* TAB 1: INVITE */}
-            {activeTab === 'invite' && (
-              <div className="space-y-6">
-                {/* Public Access */}
-                <div className="flex items-start gap-4 p-3 bg-gray-50 rounded-lg border border-gray-100">
-                  <div
-                    className={`p-2 rounded-full mt-1 ${
-                      shareSettings?.isPublic
-                        ? 'bg-green-100 text-green-600'
-                        : 'bg-gray-200 text-gray-500'
-                    }`}
-                  >
-                    {shareSettings?.isPublic ? <Globe size={20} /> : <Lock size={20} />}
-                  </div>
-
-                  <div className="flex-1">
-                    <div className="flex justify-between items-center mb-1">
-                      <h4 className="font-medium text-gray-900">Chia sẻ công khai</h4>
-                    </div>
-
-                    <p className="text-sm text-gray-500 mb-2">
-                      {shareSettings?.publicAccessLevel === 'DISABLED'
-                        ? 'Chỉ những người được mời mới có thể truy cập'
-                        : shareSettings?.publicAccessLevel === 'VIEW'
-                        ? 'Bất kỳ ai có liên kết đều có thể xem'
-                        : 'Bất kỳ ai có liên kết đều có thể chỉnh sửa'}
-                    </p>
-
-                    {isOwner && (
-                      <div className="space-y-2 mb-3">
-                        {/* PUBLIC ACCESS SELECT */}
-                        <select
-                          value={
-                            shareSettings?.publicAccessLevel === 'DISABLED'
-                              ? 'NONE'
-                              : shareSettings?.publicAccessLevel === 'VIEW'
-                              ? 'VIEW'
-                              : 'EDIT'
-                          }
-                          onChange={(e) =>
-                            handleUpdatePublicAccess(
-                              e.target.value as 'NONE' | 'VIEW' | 'EDIT'
-                            )
-                          }
-                          className="border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white w-full"
-                        >
-                          <option value="NONE">Tắt</option>
-                          <option value="VIEW">Bất kỳ ai có link: Xem</option>
-                          <option value="EDIT">Bất kỳ ai có link: Chỉnh sửa</option>
-                        </select>
-
-                        {/* WORKSPACE VISIBILITY SELECT (tạm ẩn để gọn UI) */}
-                        <div className="hidden">
-                          <select
-                            value={workspaceVisibility}
-                            onChange={(e) =>
-                              handleUpdateWorkspaceVisibility(
-                                e.target.value as
-                                  | 'PRIVATE'
-                                  | 'WORKSPACE_VIEW'
-                                  | 'WORKSPACE_EDIT'
-                              )
-                            }
-                            className="border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white w-full"
-                          >
-                            <option value="PRIVATE">Chỉ mình tôi và người được mời</option>
-                            <option value="WORKSPACE_VIEW">Mọi người trong Workspace: Xem</option>
-                            <option value="WORKSPACE_EDIT">Mọi người trong Workspace: Chỉnh sửa</option>
-                          </select>
-                        </div>
-
+        <div className="flex-1 overflow-y-auto p-6 scrollbar-thin scrollbar-thumb-gray-200 scrollbar-track-transparent">
+          {loading ? (
+            <div className="flex flex-col items-center justify-center h-40 space-y-3">
+              <div className="w-8 h-8 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+              <span className="text-sm text-gray-500">Đang tải thông tin...</span>
+            </div>
+          ) : (
+            <div className="space-y-6">
+              {/* === TAB 1: INVITE & LINKS === */}
+              {activeTab === 'invite' && (
+                <div className="space-y-6 animate-in fade-in zoom-in-95 duration-300">
+                  
+                  {/* Section: Public Link */}
+                  <div className="bg-gray-50/80 border border-gray-200 rounded-xl p-4 transition-all hover:border-blue-200">
+                    <div className="flex items-start gap-4">
+                      <div className={`p-2.5 rounded-full shrink-0 ${shareSettings?.isPublic ? 'bg-blue-100 text-blue-600' : 'bg-gray-200 text-gray-500'}`}>
+                        {shareSettings?.isPublic ? <Globe size={22} /> : <Lock size={22} />}
                       </div>
-                    )}
 
-                    {shareSettings?.isPublic && shareSettings.shareLink && (
-                      <div className="space-y-2">
-                        <div className="flex gap-2">
-                          <input
-                            readOnly
-                            value={shareSettings.shareLink}
-                            className="flex-1 bg-white border border-gray-300 text-gray-600 text-sm rounded-lg p-2 outline-none"
-                            title="Link xem"
-                          />
-                          <button
-                            onClick={() => copyToClipboard(shareSettings.shareLink!)}
-                            className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-2 rounded-lg font-medium flex items-center gap-1 transition-colors"
-                            title="Sao chép link xem"
-                          >
-                            <Copy size={16} />
-                          </button>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex justify-between items-center mb-1">
+                          <h4 className="font-semibold text-gray-900">Quyền truy cập chung</h4>
                         </div>
+                        
+                        <p className="text-sm text-gray-500 mb-3">
+                            Thiết lập quyền xem cho bất kỳ ai có liên kết này.
+                        </p>
 
-                        {editLink && (
-                          <div className="flex gap-2">
-                            <input
-                              readOnly
-                              value={editLink}
-                              className="flex-1 bg-white border border-gray-300 text-gray-600 text-sm rounded-lg p-2 outline-none"
-                              title="Link sửa"
-                            />
-                            <button
-                              onClick={() => copyToClipboard(editLink)}
-                              className="bg-gray-900 hover:bg-gray-800 text-white px-3 py-2 rounded-lg font-medium flex items-center gap-1 transition-colors"
-                              title="Sao chép link sửa"
-                            >
-                              <Copy size={16} />
-                            </button>
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                <hr className="border-gray-100" />
-
-                {/* Invite Form */}
-                {isOwner && (
-                  <div>
-                    <h4 className="font-medium text-gray-900 mb-3 flex items-center gap-2">
-                      <UserPlus size={18} /> Mời cộng tác viên
-                    </h4>
-                    <form
-                      onSubmit={handleInvite}
-                      className="flex gap-2 flex-wrap"
-                    >
-                      <input
-                        type="email"
-                        placeholder="Nhập email (vd: abc@gmail.com)"
-                        className="flex-1 min-w-[180px] border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 outline-none text-sm"
-                        value={inviteEmail}
-                        onChange={(e) => setInviteEmail(e.target.value)}
-                        required
-                      />
-                      <select
-                        value={invitePermission}
-                        onChange={(e) =>
-                          setInvitePermission(
-                            e.target.value as Permission,
-                          )
-                        }
-                        className="border border-gray-300 rounded-lg px-3 py-2 outline-none bg-white text-sm"
-                      >
-                        <option value="VIEWER">Xem</option>
-                        <option value="EDITOR">Sửa</option>
-                      </select>
-                      <button
-                        type="submit"
-                        disabled={isInviting}
-                        className="bg-gray-900 hover:bg-gray-800 text-white px-4 py-2 rounded-lg font-medium transition-colors disabled:opacity-50 text-sm"
-                      >
-                        {isInviting ? '...' : 'Mời'}
-                      </button>
-                    </form>
-                  </div>
-                )}
-
-                {/* Collaborators List */}
-                <div>
-                  <h4 className="font-medium text-gray-900 mb-2 text-sm">
-                    Thành viên ({collaborators.length})
-                  </h4>
-                  <div className="max-h-40 overflow-y-auto space-y-2 pr-1">
-                    {collaborators.map((collab: Collaborator) => (
-                      <div
-                        key={collab.userId}
-                        className="flex items-center justify-between p-2 hover:bg-gray-50 rounded-lg transition-colors"
-                      >
-                        <div className="flex items-center gap-3 overflow-hidden">
-                          {/* Avatar logic */}
-                          <div className="w-8 h-8 rounded-full bg-gradient-to-br from-purple-500 to-blue-500 flex items-center justify-center text-white font-bold text-xs shrink-0">
-                            {collab.avatarUrl ? (
-                                <img src={collab.avatarUrl} alt="" className="w-full h-full rounded-full object-cover"/>
-                            ) : (
-                                collab.displayName?.[0]?.toUpperCase() || '?'
-                            )}
-                          </div>
-
-                          {/* Hiển thị Tên và Email */}
-                          <div className="flex flex-col min-w-0">
-                            <div className="font-medium text-sm text-gray-900 truncate">
-                              {collab.displayName || 'Unknown User'}
-                            </div>
-                            <div className="text-xs text-gray-500 flex items-center gap-1 truncate">
-                               {/* Hiển thị Email ở đây */}
-                               <Mail size={10} />
-                               {collab.email || 'No email'} 
-                               {collab.userId === user?.sub && <span className="font-bold text-blue-600 ml-1">(Bạn)</span>}
-                            </div>
-                          </div>
-                        </div>
-
-                        <div className="flex items-center gap-2">
-                          {collab.permission === 'OWNER' ? (
-                            <span className="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded">
-                              Chủ sở hữu
-                            </span>
-                          ) : isOwner ? (
-                            <>
+                        {isOwner && (
+                           <div className="relative">
                               <select
-                                value={collab.permission}
-                                onChange={(e) =>
-                                  handleUpdatePermission(
-                                    collab.userId,
-                                    e.target.value as Permission,
-                                  )
+                                value={
+                                  shareSettings?.publicAccessLevel === 'DISABLED'
+                                    ? 'NONE'
+                                    : shareSettings?.publicAccessLevel === 'VIEW'
+                                    ? 'VIEW'
+                                    : 'EDIT'
                                 }
-                                className="text-xs border-none bg-transparent font-medium text-gray-700 focus:ring-0 cursor-pointer"
+                                onChange={(e) => handleUpdatePublicAccess(e.target.value as any)}
+                                className="appearance-none w-full bg-white border border-gray-300 hover:border-gray-400 text-gray-700 text-sm rounded-lg px-4 py-2.5 pr-8 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all cursor-pointer font-medium"
                               >
-                                <option value="VIEWER">Viewer</option>
-                                <option value="EDITOR">Editor</option>
+                                <option value="NONE">🔒 Bị giới hạn (Chỉ người được mời)</option>
+                                <option value="VIEW">👀 Bất kỳ ai có link đều có thể xem</option>
+                                <option value="EDIT">✏️ Bất kỳ ai có link đều có thể sửa</option>
                               </select>
-                              <button
-                                onClick={() =>
-                                  handleRemoveClick(collab.userId, collab.displayName)
-                                }
-                                className="text-gray-400 hover:text-red-600 p-1 rounded-full hover:bg-red-50 transition-colors"
-                              >
-                                <Trash2 size={14} />
-                              </button>
-                            </>
-                          ) : (
-                            <span className="text-xs text-gray-500">
-                              {collab.permission}
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
+                              <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-gray-400">
+                                <ChevronDown size={16} />
+                              </div>
+                           </div>
+                        )}
 
-                {/* Pending access requests (Firestore queue) */}
-                {isOwner && pendingRequests.length > 0 && (
-                <div className="mt-4">
-                  <h4 className="font-medium text-gray-900 mb-2 text-sm flex items-center gap-2">
-                    <Bell size={16} className="text-amber-500" />
-                    Yêu cầu truy cập ({pendingRequests.length})
-                  </h4>
-
-                  <div className="max-h-40 overflow-y-auto space-y-2 pr-1">
-                    {pendingRequests.map((req) => {
-                      const currentPerm =
-                        requestPermissions[req.uid] ||
-                        (req.requestedPermission as Permission) ||
-                        'VIEWER';
-
-                      return (
-                        <div
-                          key={req.uid}
-                          className="flex items-center justify-between p-2 bg-amber-50 rounded-lg border border-amber-100"
-                        >
-                          <div>
-                            <div className="font-medium text-sm text-gray-900">
-                              {req.displayName}
+                        {/* Public Links Input Group */}
+                        {shareSettings?.isPublic && shareSettings.shareLink && (
+                          <div className="mt-4 space-y-3">
+                             {/* View Link */}
+                            <div>
+                                <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1 block">Link xem</label>
+                                <div className="flex shadow-sm rounded-lg overflow-hidden group">
+                                  <div className="bg-white border border-gray-300 border-r-0 flex items-center px-3 text-gray-400">
+                                      <LinkIcon size={16}/>
+                                  </div>
+                                  <input
+                                    readOnly
+                                    value={shareSettings.shareLink}
+                                    className="flex-1 bg-white border border-gray-300 border-l-0 border-r-0 text-gray-600 text-sm py-2 px-1 focus:outline-none truncate"
+                                  />
+                                  <button
+                                    onClick={() => copyToClipboard(shareSettings.shareLink!)}
+                                    className="bg-gray-50 border border-gray-300 hover:bg-gray-100 text-gray-600 px-4 font-medium transition-colors border-l-0 flex items-center gap-2 text-sm"
+                                  >
+                                    <Copy size={14} /> Sao chép
+                                  </button>
+                                </div>
                             </div>
 
-                            {/* [MỚI] Hiển thị Email */}
-                            <div className="text-xs text-gray-600 flex items-center gap-1">
-                              <Mail size={10} /> {req.email || 'No Email'}
-                            </div>
-
-                            <div className="text-[10px] text-gray-400 mt-0.5">
-                              {new Date(req.timestamp).toLocaleString()}
-                            </div>
-
-                            {req.requestedPermission && (
-                              <div className="text-xs text-gray-500 mt-0.5">
-                                Yêu cầu quyền:{' '}
-                                <span className="font-semibold">
-                                  {req.requestedPermission === 'EDITOR' ? 'Chỉnh sửa' : 'Xem'}
-                                </span>
+                            {/* Edit Link (Optional) */}
+                            {editLink && (
+                              <div>
+                                  <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1 block">Link chỉnh sửa</label>
+                                  <div className="flex shadow-sm rounded-lg overflow-hidden group">
+                                     <div className="bg-white border border-gray-300 border-r-0 flex items-center px-3 text-gray-400">
+                                         <Shield size={16}/>
+                                     </div>
+                                    <input
+                                      readOnly
+                                      value={editLink}
+                                      className="flex-1 bg-white border border-gray-300 border-l-0 border-r-0 text-gray-600 text-sm py-2 px-1 focus:outline-none truncate"
+                                    />
+                                    <button
+                                      onClick={() => copyToClipboard(editLink)}
+                                      className="bg-gray-50 border border-gray-300 hover:bg-gray-100 text-gray-600 px-4 font-medium transition-colors border-l-0 flex items-center gap-2 text-sm"
+                                    >
+                                      <Copy size={14} /> Sao chép
+                                    </button>
+                                  </div>
                               </div>
                             )}
                           </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
 
+                  <hr className="border-gray-100" />
+
+                  {/* Section: Invite */}
+                  {isOwner && (
+                    <div className="space-y-3">
+                        <div className="flex items-center gap-2">
+                             <h4 className="font-semibold text-gray-900">Mời thành viên</h4>
+                             <span className="text-xs px-2 py-0.5 rounded-full bg-blue-50 text-blue-600 font-medium border border-blue-100">Qua email</span>
+                        </div>
+                      <form onSubmit={handleInvite} className="flex gap-2">
+                        <div className="flex-1 relative">
+                             <div className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">
+                                <Mail size={18} />
+                             </div>
+                            <input
+                              type="email"
+                              placeholder="Nhập email (vd: abc@gmail.com)"
+                              className="w-full border border-gray-300 rounded-lg pl-10 pr-3 py-2.5 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none text-sm shadow-sm transition-all"
+                              value={inviteEmail}
+                              onChange={(e) => setInviteEmail(e.target.value)}
+                              required
+                            />
+                        </div>
+                        <div className="relative w-28 shrink-0">
+                            <select
+                                value={invitePermission}
+                                onChange={(e) => setInvitePermission(e.target.value as Permission)}
+                                className="w-full h-full border border-gray-300 rounded-lg px-2 py-2.5 text-sm bg-white focus:ring-2 focus:ring-blue-500/20 outline-none appearance-none font-medium text-gray-700"
+                            >
+                                <option value="VIEWER">Xem</option>
+                                <option value="EDITOR">Sửa</option>
+                            </select>
+                            <ChevronDown size={14} className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none"/>
+                        </div>
+                        <button
+                          type="submit"
+                          disabled={isInviting}
+                          className="bg-gray-900 hover:bg-black text-white px-5 py-2.5 rounded-lg font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-sm text-sm shrink-0 flex items-center gap-2"
+                        >
+                          {isInviting ? <span className="animate-spin">⏳</span> : <UserPlus size={18} />}
+                          <span>Mời</span>
+                        </button>
+                      </form>
+                    </div>
+                  )}
+
+                  {/* Section: Pending Requests */}
+                  {isOwner && pendingRequests.length > 0 && (
+                    <div className="mt-4 border border-amber-200 bg-amber-50 rounded-xl overflow-hidden">
+                        <div className="px-4 py-2 bg-amber-100/50 border-b border-amber-200 flex items-center gap-2 text-amber-800 text-sm font-semibold">
+                            <Bell size={16} className="fill-amber-600 text-amber-600" />
+                            Yêu cầu chờ duyệt ({pendingRequests.length})
+                        </div>
+                        <div className="max-h-48 overflow-y-auto p-2 space-y-2">
+                        {pendingRequests.map((req) => {
+                            const currentPerm =
+                            requestPermissions[req.uid] ||
+                            (req.requestedPermission as Permission) ||
+                            'VIEWER';
+                            return (
+                            <div key={req.uid} className="flex flex-col sm:flex-row sm:items-center justify-between p-3 bg-white rounded-lg border border-amber-100 shadow-sm gap-3">
+                                <div className="flex items-center gap-3">
+                                    <div className="w-8 h-8 rounded-full bg-amber-100 text-amber-600 flex items-center justify-center text-xs font-bold border border-amber-200">
+                                        {req.displayName?.[0]?.toUpperCase() || '?'}
+                                    </div>
+                                    <div>
+                                        <div className="font-medium text-sm text-gray-900">{req.displayName}</div>
+                                        <div className="text-xs text-gray-500 flex items-center gap-1">
+                                            {req.email} <span className="text-gray-300">•</span> {new Date(req.timestamp).toLocaleDateString('vi-VN')}
+                                        </div>
+                                    </div>
+                                </div>
+                                <div className="flex items-center gap-2 self-end sm:self-auto">
+                                    <select
+                                        value={currentPerm}
+                                        onChange={(e) => setRequestPermissions((prev) => ({ ...prev, [req.uid]: e.target.value as Permission }))}
+                                        className="text-xs border border-gray-300 rounded px-2 py-1.5 bg-gray-50 focus:outline-none focus:border-amber-500"
+                                    >
+                                        <option value="VIEWER">Viewer</option>
+                                        <option value="EDITOR">Editor</option>
+                                    </select>
+                                    <div className="flex gap-1">
+                                        <button onClick={() => onDenyRequest && handleDenyRequestInternal(req.uid)} className="p-1.5 text-red-500 hover:bg-red-50 rounded transition-colors" title="Từ chối">
+                                            <X size={16} />
+                                        </button>
+                                        <button onClick={() => onApproveRequest && handleApproveRequestInternal(req.uid, currentPerm)} className="p-1.5 text-green-600 hover:bg-green-50 rounded transition-colors" title="Duyệt">
+                                            <Check size={16} />
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                            );
+                        })}
+                        </div>
+                    </div>
+                  )}
+
+                  {/* Section: List Collaborators */}
+                  <div>
+                    <h4 className="font-semibold text-gray-900 mb-3 text-sm flex items-center justify-between">
+                         <span>Thành viên trong nhóm</span>
+                         <span className="bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full text-xs">{collaborators.length}</span>
+                    </h4>
+                    
+                    <div className="max-h-56 overflow-y-auto space-y-1 -mx-2 px-2">
+                        {collaborators.length === 0 && (
+                            <div className="text-center py-6 text-gray-400 text-sm italic">
+                                Chưa có thành viên nào. Hãy mời thêm người!
+                            </div>
+                        )}
+                      {collaborators.map((collab) => (
+                        <div
+                          key={collab.userId}
+                          className="group flex items-center justify-between p-2.5 hover:bg-gray-50 rounded-xl transition-all border border-transparent hover:border-gray-100"
+                        >
+                          <div className="flex items-center gap-3 overflow-hidden">
+                            <div className="w-9 h-9 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white font-bold text-sm shrink-0 shadow-sm border-2 border-white ring-1 ring-gray-100">
+                              {collab.avatarUrl ? (
+                                <img src={collab.avatarUrl} alt="" className="w-full h-full rounded-full object-cover" />
+                              ) : (
+                                collab.displayName?.[0]?.toUpperCase() || '?'
+                              )}
+                            </div>
+
+                            <div className="flex flex-col min-w-0">
+                              <div className="font-medium text-sm text-gray-900 truncate flex items-center gap-1.5">
+                                {collab.displayName || 'Unknown User'}
+                                {collab.userId === user?.sub && (
+                                    <span className="text-[10px] bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded font-bold uppercase tracking-wider">Bạn</span>
+                                )}
+                              </div>
+                              <div className="text-xs text-gray-500 truncate">{collab.email || 'No email'}</div>
+                            </div>
+                          </div>
 
                           <div className="flex items-center gap-2">
-                            <select
-                              value={currentPerm}
-                              onChange={(e) =>
-                                setRequestPermissions((prev) => ({
-                                  ...prev,
-                                  [req.uid]: e.target.value as Permission,
-                                }))
-                              }
-                              className="border border-gray-300 rounded-md px-2 py-1 text-xs bg-white text-gray-700"
-                            >
-                              <option value="VIEWER">Viewer</option>
-                              <option value="EDITOR">Editor</option>
-                            </select>
-
-                            <button
-                              type="button"
-                              onClick={() =>
-                                onDenyRequest && handleDenyRequestInternal(req.uid)
-                              }
-                              className="px-2 py-1 text-xs rounded-md bg-white border border-gray-200 text-gray-600 hover:bg-gray-50"
-                            >
-                              Từ chối
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                if (!onApproveRequest) return;
-                                const permToGrant = currentPerm;
-                                handleApproveRequestInternal(req.uid, permToGrant);
-                              }}
-                              className="px-2 py-1 text-xs rounded-md bg-blue-600 text-white hover:bg-blue-700"
-                            >
-                              Duyệt
-                            </button>
+                            {collab.permission === 'OWNER' ? (
+                              <div className="flex items-center gap-1 text-xs font-medium text-amber-600 bg-amber-50 px-2.5 py-1 rounded-full border border-amber-100">
+                                <Shield size={12} className="fill-amber-600" /> Chủ sở hữu
+                              </div>
+                            ) : isOwner ? (
+                              <div className="flex items-center gap-2">
+                                <div className="relative">
+                                    <select
+                                    value={collab.permission}
+                                    onChange={(e) => handleUpdatePermission(collab.userId, e.target.value as Permission)}
+                                    className="text-xs border-none bg-transparent font-medium text-gray-600 hover:text-blue-600 focus:ring-0 cursor-pointer pr-4 py-1 text-right outline-none"
+                                    >
+                                    <option value="VIEWER">Viewer</option>
+                                    <option value="EDITOR">Editor</option>
+                                    </select>
+                                    {/* Fake arrow for styling */}
+                                    <div className="absolute right-0 top-1/2 -translate-y-1/2 pointer-events-none text-gray-400">
+                                        <ChevronDown size={12} />
+                                    </div>
+                                </div>
+                                
+                                <button
+                                  onClick={() => handleRemoveClick(collab.userId, collab.displayName)}
+                                  className="text-gray-300 hover:text-red-500 hover:bg-red-50 p-1.5 rounded-lg transition-all opacity-0 group-hover:opacity-100"
+                                  title="Xóa quyền truy cập"
+                                >
+                                  <Trash2 size={15} />
+                                </button>
+                              </div>
+                            ) : (
+                              <span className="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded">{collab.permission}</span>
+                            )}
                           </div>
                         </div>
-                      );
-                    })}
+                      ))}
+                    </div>
                   </div>
                 </div>
               )}
 
-              </div>
-            )}
+              {/* === TAB 2: SOCIAL === */}
+              {activeTab === 'social' && (
+                <div className="space-y-6 pt-2 animate-in fade-in zoom-in-95 duration-300">
+                  {!shareSettings?.isPublic && (
+                    <div className="bg-orange-50 text-orange-800 text-sm p-4 rounded-xl border border-orange-100 flex items-start gap-3">
+                      <Lock className="shrink-0 mt-0.5 text-orange-500" size={18} />
+                      <div>
+                        <strong className="block font-semibold mb-1">Mindmap đang ở chế độ riêng tư</strong>
+                        Bạn cần bật "Chia sẻ công khai" ở tab <em>Mời & Link</em> để người khác có thể xem mindmap khi bạn chia sẻ.
+                      </div>
+                    </div>
+                  )}
 
-            {/* TAB 2: SOCIAL */}
-            {activeTab === 'social' && (
-              <div className="space-y-8 text-center pt-4">
-                {!shareSettings?.isPublic && (
-                  <div className="bg-yellow-50 text-yellow-800 text-sm p-3 rounded-lg border border-yellow-200 mb-4 text-left">
-                    Lưu ý: Bạn cần bật chế độ{' '}
-                    <strong>Công khai</strong> ở tab &quot;Mời & Link&quot; để
-                    người khác có thể xem mindmap từ liên kết chia sẻ.
+                  <div className="grid grid-cols-3 gap-4">
+                    {[
+                        { id: 'facebook', name: 'Facebook', color: 'bg-[#1877F2]', icon: Facebook },
+                        { id: 'twitter', name: 'Twitter (X)', color: 'bg-black', icon: Twitter },
+                        { id: 'linkedin', name: 'LinkedIn', color: 'bg-[#0077B5]', icon: Linkedin }
+                    ].map((item) => (
+                        <button
+                        key={item.id}
+                        onClick={() => shareToSocial(item.id as any)}
+                        className="flex flex-col items-center gap-3 p-4 rounded-xl hover:bg-gray-50 transition-all group border border-transparent hover:border-gray-200"
+                        >
+                        <div className={`w-14 h-14 ${item.color} rounded-2xl flex items-center justify-center text-white shadow-lg group-hover:scale-110 group-hover:shadow-xl transition-all duration-300`}>
+                            <item.icon size={28} fill="white" />
+                        </div>
+                        <span className="text-sm font-medium text-gray-600 group-hover:text-gray-900">{item.name}</span>
+                        </button>
+                    ))}
                   </div>
-                )}
-
-                <div className="flex justify-center gap-8">
-                  <button
-                    onClick={() => shareToSocial('facebook')}
-                    className="flex flex-col items-center gap-2 group"
-                  >
-                    <div className="w-14 h-14 bg-[#1877F2] rounded-full flex items-center justify-center text-white shadow-lg group-hover:scale-110 transition-transform">
-                      <Facebook size={28} fill="white" />
-                    </div>
-                    <span className="text-xs font-medium text-gray-600">
-                      Facebook
-                    </span>
-                  </button>
-                  <button
-                    onClick={() => shareToSocial('twitter')}
-                    className="flex flex-col items-center gap-2 group"
-                  >
-                    <div className="w-14 h-14 bg-black rounded-full flex items-center justify-center text-white shadow-lg group-hover:scale-110 transition-transform">
-                      <Twitter size={28} fill="white" />
-                    </div>
-                    <span className="text-xs font-medium text-gray-600">
-                      X (Twitter)
-                    </span>
-                  </button>
-                  <button
-                    onClick={() => shareToSocial('linkedin')}
-                    className="flex flex-col items-center gap-2 group"
-                  >
-                    <div className="w-14 h-14 bg-[#0077B5] rounded-full flex items-center justify-center text-white shadow-lg group-hover:scale-110 transition-transform">
-                      <Linkedin size={28} fill="white" />
-                    </div>
-                    <span className="text-xs font-medium text-gray-600">
-                      LinkedIn
-                    </span>
-                  </button>
                 </div>
+              )}
 
-                
-              </div>
-            )}
+              {/* === TAB 3: EMBED === */}
+              {activeTab === 'embed' && (
+                <div className="space-y-5 pt-2 animate-in fade-in zoom-in-95 duration-300">
+                  <div className="flex items-start gap-3 p-4 bg-blue-50 text-blue-800 rounded-xl border border-blue-100 text-sm">
+                        <Layout size={20} className="shrink-0 mt-0.5 text-blue-600" />
+                        <div>
+                            <span className="font-semibold block mb-1">Nhúng vào website</span>
+                            Sao chép mã iframe bên dưới để nhúng mindmap này vào blog hoặc website cá nhân của bạn.
+                        </div>
+                  </div>
 
-            {/* TAB 3: EMBED */}
-            {activeTab === 'embed' && (
-              <div className="space-y-4 pt-2">
-                <p className="text-sm text-gray-600">
-                  Sao chép mã iframe bên dưới để nhúng mindmap này vào blog
-                  hoặc website cá nhân của bạn.
-                </p>
-
-                <div className="relative">
-                  <textarea
-                    readOnly
-                    value={embedCode}
-                    className="w-full h-28 bg-gray-50 text-gray-600 font-mono text-xs rounded-lg p-3 border border-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
-                  />
-                  <button
-                    onClick={() => copyToClipboard(embedCode)}
-                    className="absolute top-2 right-2 p-1.5 bg-white border border-gray-200 hover:bg-gray-50 rounded text-gray-600 transition-colors shadow-sm"
-                    title="Sao chép mã"
-                  >
-                    <Copy size={14} />
-                  </button>
-                </div>
-
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-xs font-medium text-gray-700 mb-1">
-                      Chiều rộng
+                  <div className="relative group">
+                    <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5 flex items-center gap-2">
+                        <Code size={14}/> Mã nhúng (Iframe)
                     </label>
-                    <input
-                      type="text"
-                      defaultValue="800px"
-                      className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm outline-none focus:border-blue-500"
+                    <textarea
+                      readOnly
+                      value={embedCode}
+                      className="w-full h-32 bg-gray-800 text-gray-300 font-mono text-xs rounded-xl p-4 border border-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none leading-relaxed"
                     />
+                    <button
+                      onClick={() => copyToClipboard(embedCode)}
+                      className="absolute top-8 right-3 p-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg transition-colors shadow-sm opacity-0 group-hover:opacity-100"
+                      title="Sao chép mã"
+                    >
+                      <Copy size={16} />
+                    </button>
                   </div>
-                  <div>
-                    <label className="block text-xs font-medium text-gray-700 mb-1">
-                      Chiều cao
-                    </label>
-                    <input
-                      type="text"
-                      defaultValue="600px"
-                      className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm outline-none focus:border-blue-500"
-                    />
+
+                  <div className="grid grid-cols-2 gap-5">
+                    <div>
+                      <label className="block text-xs font-medium text-gray-500 mb-1.5 uppercase">Chiều rộng (Width)</label>
+                      <input
+                        type="text"
+                        defaultValue="800px"
+                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-500 mb-1.5 uppercase">Chiều cao (Height)</label>
+                      <input
+                        type="text"
+                        defaultValue="600px"
+                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+                      />
+                    </div>
                   </div>
                 </div>
-              </div>
-            )}
-          </div>
-        )}
+              )}
+            </div>
+          )}
+        </div>
       </div>
 
-      {/* ⭐ CONFIRM MODAL - XÓA COLLABORATOR */}
       <ConfirmModal
         isOpen={isConfirmModalOpen}
         onClose={handleRemoveCancel}
         onConfirm={handleRemoveConfirm}
-        title="Xóa người dùng"
+        title="Xóa quyền truy cập"
         message={`Bạn có chắc chắn muốn xóa "${userToRemove?.name}" khỏi danh sách cộng tác viên? Họ sẽ không thể truy cập mindmap này nữa.`}
-        confirmText="Xóa"
+        confirmText="Xóa bỏ"
         cancelText="Hủy"
       />
     </div>

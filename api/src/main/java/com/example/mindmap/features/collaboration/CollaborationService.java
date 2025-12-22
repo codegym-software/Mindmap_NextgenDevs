@@ -39,6 +39,7 @@ public class CollaborationService {
     private final AuthUtils authUtils;
     private final AccessRequestRepository accessRequestRepository;
     private final MindmapUpdateHandler websocketHandler; // ⭐ THÊM MỚI
+    private final EmailService emailService; // ⭐ THÊM EMAIL SERVICE
 
     private static final Logger log = LoggerFactory.getLogger(CollaborationService.class);
 
@@ -52,7 +53,8 @@ public class CollaborationService {
                                 UserService userService,
                                 AuthUtils authUtils,
                                 AccessRequestRepository accessRequestRepository,
-                                MindmapUpdateHandler websocketHandler) { // ⭐ THÊM THAM SỐ
+                                MindmapUpdateHandler websocketHandler,
+                                EmailService emailService) { // ⭐ THÊM THAM SỐ
         this.collaborationRepository = collaborationRepository;
         this.mindmapService = mindmapService;
         this.mindmapRepository = mindmapRepository;
@@ -61,6 +63,7 @@ public class CollaborationService {
         this.authUtils = authUtils;
         this.accessRequestRepository = accessRequestRepository;
         this.websocketHandler = websocketHandler; // ⭐ GÁN HANDLER
+        this.emailService = emailService; // ⭐ GÁN EMAIL SERVICE
     }
 
     // ===================================================================
@@ -193,6 +196,17 @@ public class CollaborationService {
 
             collaborationRepository.save(collaboration);
         }
+
+        // ⭐ GỬI EMAIL MỜI
+        User inviter = userRepository.findById(currentUserId).orElse(null);
+        String inviterName = inviter != null ? inviter.getDisplayName() : "Someone";
+        emailService.sendInvitationEmail(
+            request.email(),
+            inviterName,
+            mindmap.getName(),
+            mindmapId,
+            request.permission().toString()
+        );
 
         User displayUser = usersToInvite.stream()
                 .filter(user -> !user.getId().equals(currentUserId))
