@@ -39,7 +39,7 @@ type EditorToolbarProps = {
     onSave: () => void;
     isDirty: boolean;
 
-    // NEW: cần biết trạng thái hiện tại để auto-close giống click PanelRight khi < lg
+    // NEW: needed to auto-close on small screens like clicking PanelRight
     isFormattingToolbarOpen: boolean;
     onToggleFormattingToolbar: () => void;
 
@@ -199,7 +199,6 @@ const EditorToolbar: React.FC<EditorToolbarProps> = ({
         if (isSmallScreen && !readOnly && isFormattingToolbarOpen) {
             onToggleFormattingToolbar();
         }
-        // also close More if switching to large to avoid weird state
         if (!isSmallScreen) {
             setIsMoreOpen(false);
         }
@@ -301,11 +300,7 @@ const EditorToolbar: React.FC<EditorToolbarProps> = ({
                             title="Về Dashboard"
                             className="flex items-center justify-center rounded-lg hover:bg-gray-300/60 transition-colors ml-9"
                         >
-                            <img
-                                src="/icons/logo.png"
-                                alt="Logo"
-                                className="w-8 h-8 rounded-md object-cover"
-                            />
+                            <img src="/icons/logo.png" alt="Logo" className="w-8 h-8 rounded-md object-cover" />
                         </a>
                         <div className="w-px h-6 bg-gray-300 mx-2" />
                         <input
@@ -329,19 +324,11 @@ const EditorToolbar: React.FC<EditorToolbarProps> = ({
                         {/* CENTER */}
                         {!readOnly && (
                             <div className="flex-grow flex items-center justify-center gap-2">
-                                <ToolbarButton
-                                    onClick={onAddChild}
-                                    disabled={!isSingleNodeFocused}
-                                    title="Thêm Node con (Tab)"
-                                >
+                                <ToolbarButton onClick={onAddChild} disabled={!isSingleNodeFocused} title="Thêm Node con (Tab)">
                                     <AlignHorizontalJustifyCenter size={20} />
                                 </ToolbarButton>
 
-                                <ToolbarButton
-                                    onClick={onAddSibling}
-                                    disabled={!isNotRootAndSingle}
-                                    title="Thêm Node anh em (Enter)"
-                                >
+                                <ToolbarButton onClick={onAddSibling} disabled={!isNotRootAndSingle} title="Thêm Node anh em (Enter)">
                                     <AlignStartVertical size={20} />
                                 </ToolbarButton>
 
@@ -375,9 +362,7 @@ const EditorToolbar: React.FC<EditorToolbarProps> = ({
                             <button
                                 onClick={onUndo}
                                 disabled={readOnly}
-                                className={`p-2 rounded-md ${
-                                    readOnly ? 'opacity-40 cursor-not-allowed' : 'hover:bg-gray-300/50'
-                                } text-gray-700`}
+                                className={`p-2 rounded-md ${readOnly ? 'opacity-40 cursor-not-allowed' : 'hover:bg-gray-300/50'} text-gray-700`}
                                 title={readOnly ? 'Bạn đang ở chế độ chỉ xem' : 'Hoàn tác (Ctrl+Z)'}
                             >
                                 <Undo size={20} />
@@ -386,9 +371,7 @@ const EditorToolbar: React.FC<EditorToolbarProps> = ({
                             <button
                                 onClick={onRedo}
                                 disabled={readOnly}
-                                className={`p-2 rounded-md ${
-                                    readOnly ? 'opacity-40 cursor-not-allowed' : 'hover:bg-gray-300/50'
-                                } text-gray-700`}
+                                className={`p-2 rounded-md ${readOnly ? 'opacity-40 cursor-not-allowed' : 'hover:bg-gray-300/50'} text-gray-700`}
                                 title={readOnly ? 'Bạn đang ở chế độ chỉ xem' : 'Làm lại (Ctrl+Y)'}
                             >
                                 <Redo size={20} />
@@ -396,11 +379,7 @@ const EditorToolbar: React.FC<EditorToolbarProps> = ({
 
                             <div className="w-px h-6 bg-gray-300 mx-2" />
 
-                            <button
-                                onClick={onZoomOut}
-                                className="p-2 rounded-md hover:bg-gray-300/50 text-gray-700"
-                                title="Thu nhỏ (Ctrl + Scroll)"
-                            >
+                            <button onClick={onZoomOut} className="p-2 rounded-md hover:bg-gray-300/50 text-gray-700" title="Thu nhỏ (Ctrl + Scroll)">
                                 <ZoomOut size={20} />
                             </button>
 
@@ -422,17 +401,10 @@ const EditorToolbar: React.FC<EditorToolbarProps> = ({
                                         </option>
                                     )}
                                 </select>
-                                <ChevronDown
-                                    size={16}
-                                    className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none"
-                                />
+                                <ChevronDown size={16} className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" />
                             </div>
 
-                            <button
-                                onClick={onZoomIn}
-                                className="p-2 rounded-md hover:bg-gray-300/50 text-gray-700"
-                                title="Phóng to (Ctrl + Scroll)"
-                            >
+                            <button onClick={onZoomIn} className="p-2 rounded-md hover:bg-gray-300/50 text-gray-700" title="Phóng to (Ctrl + Scroll)">
                                 <ZoomIn size={20} />
                             </button>
 
@@ -442,13 +414,9 @@ const EditorToolbar: React.FC<EditorToolbarProps> = ({
                                 onClick={onSave}
                                 disabled={!isDirty || readOnly}
                                 className={`p-2 rounded-md transition-all ${
-                                    !isDirty || readOnly
-                                        ? 'opacity-40 cursor-not-allowed'
-                                        : 'hover:bg-gray-300/50 text-gray-700'
+                                    !isDirty || readOnly ? 'opacity-40 cursor-not-allowed' : 'hover:bg-gray-300/50 text-gray-700'
                                 }`}
-                                title={
-                                    readOnly ? 'Bạn đang ở chế độ chỉ xem' : isDirty ? 'Lưu thay đổi (Ctrl+S)' : 'Đã lưu'
-                                }
+                                title={readOnly ? 'Bạn đang ở chế độ chỉ xem' : isDirty ? 'Lưu thay đổi (Ctrl+S)' : 'Đã lưu'}
                             >
                                 <Save size={20} />
                             </button>
@@ -460,9 +428,7 @@ const EditorToolbar: React.FC<EditorToolbarProps> = ({
                                     type="button"
                                     onClick={toggleChat}
                                     className={`relative p-2 rounded-md transition-colors ${
-                                        isChatOpen
-                                            ? 'bg-gray-200 text-blue-600'
-                                            : 'text-gray-700 hover:bg-gray-300/50'
+                                        isChatOpen ? 'bg-gray-200 text-blue-600' : 'text-gray-700 hover:bg-gray-300/50'
                                     }`}
                                     title="Chat thảo luận"
                                 >
@@ -478,9 +444,7 @@ const EditorToolbar: React.FC<EditorToolbarProps> = ({
                             <button
                                 onClick={handleShareClick}
                                 className={`relative p-2 rounded-md transition-colors ${
-                                    pendingRequestsCount > 0
-                                        ? 'bg-blue-50 text-blue-600'
-                                        : 'hover:bg-gray-300/50 text-gray-700'
+                                    pendingRequestsCount > 0 ? 'bg-blue-50 text-blue-600' : 'hover:bg-gray-300/50 text-gray-700'
                                 }`}
                                 title={isGuest ? 'Đăng nhập để chia sẻ' : 'Chia sẻ & Quản lý quyền'}
                             >
@@ -525,7 +489,7 @@ const EditorToolbar: React.FC<EditorToolbarProps> = ({
                         </div>
                     </div>
 
-                    {/* SMALL (<lg): collapse center+right into dropdown */}
+                    {/* SMALL (<lg): collapse center+right into dropdown (grouped like large toolbar) */}
                     <div className="flex lg:hidden flex-grow justify-end" ref={moreRef}>
                         <button
                             type="button"
@@ -537,218 +501,258 @@ const EditorToolbar: React.FC<EditorToolbarProps> = ({
                         </button>
 
                         {isMoreOpen && (
-                            <div className="absolute top-12 right-4 mt-1 w-[312px] bg-white border border-gray-200 shadow-lg rounded-xl z-50 p-2">
-                                <div className="grid grid-cols-6 gap-1">
+                            <div className="absolute top-12 right-4 mt-1 w-[360px] bg-white border border-gray-200 shadow-lg rounded-xl z-50 p-3">
+                                <div className="flex flex-col gap-2">
+                                    {/* ===== GROUP 1: Center actions ===== */}
                                     {!readOnly && (
                                         <>
-                                            <IconTileButton
-                                                onClick={() => {
-                                                    setIsMoreOpen(false);
-                                                    onAddChild();
-                                                }}
-                                                disabled={!isSingleNodeFocused}
-                                                title="Thêm Node con (Tab)"
-                                            >
-                                                <AlignHorizontalJustifyCenter size={18} />
-                                            </IconTileButton>
+                                            <div className="flex items-center gap-2">
+                                                <div className="grid grid-cols-6 gap-1">
+                                                    <IconTileButton
+                                                        onClick={() => {
+                                                            setIsMoreOpen(false);
+                                                            onAddChild();
+                                                        }}
+                                                        disabled={!isSingleNodeFocused}
+                                                        title="Thêm Node con (Tab)"
+                                                    >
+                                                        <AlignHorizontalJustifyCenter size={18} />
+                                                    </IconTileButton>
 
-                                            <IconTileButton
-                                                onClick={() => {
-                                                    setIsMoreOpen(false);
-                                                    onAddSibling();
-                                                }}
-                                                disabled={!isNotRootAndSingle}
-                                                title="Thêm Node anh em (Enter)"
-                                            >
-                                                <AlignStartVertical size={18} />
-                                            </IconTileButton>
+                                                    <IconTileButton
+                                                        onClick={() => {
+                                                            setIsMoreOpen(false);
+                                                            onAddSibling();
+                                                        }}
+                                                        disabled={!isNotRootAndSingle}
+                                                        title="Thêm Node anh em (Enter)"
+                                                    >
+                                                        <AlignStartVertical size={18} />
+                                                    </IconTileButton>
 
-                                            <IconTileButton
-                                                onClick={() => {
-                                                    setIsMoreOpen(false);
-                                                    onToggleBoundary();
-                                                }}
-                                                disabled={!isSingleNodeFocused}
-                                                title="Tạo hoặc xóa đường viền"
-                                                active={!!selectedNode?.boundary}
-                                            >
-                                                <BoxSelect size={18} />
-                                            </IconTileButton>
+                                                    <div className="w-px h-8 bg-gray-200 mx-1" />
 
-                                            <IconTileButton
-                                                onClick={() => {
-                                                    setIsMoreOpen(false);
-                                                    setIsLinkModalOpen(true);
-                                                }}
-                                                disabled={!isSingleNodeFocused}
-                                                title="Chèn link"
-                                            >
-                                                <LinkIcon size={18} />
-                                            </IconTileButton>
+                                                    <IconTileButton
+                                                        onClick={() => {
+                                                            setIsMoreOpen(false);
+                                                            onToggleBoundary();
+                                                        }}
+                                                        disabled={!isSingleNodeFocused}
+                                                        title="Tạo hoặc xóa đường viền"
+                                                        active={!!selectedNode?.boundary}
+                                                    >
+                                                        <BoxSelect size={18} />
+                                                    </IconTileButton>
 
-                                            <IconTileButton
-                                                onClick={() => {
-                                                    setIsMoreOpen(false);
-                                                    setIsImageModalOpen(true);
-                                                }}
-                                                disabled={!isSingleNodeFocused}
-                                                title="Chèn ảnh"
-                                            >
-                                                <ImageIcon size={18} />
-                                            </IconTileButton>
+                                                    <div className="w-px h-8 bg-gray-200 mx-1" />
 
-                                            <IconTileButton
-                                                onClick={() => {
-                                                    setIsMoreOpen(false);
-                                                    handleRemoveImage();
-                                                }}
-                                                disabled={!selectedNode?.imageUrl}
-                                                title="Xóa ảnh"
-                                            >
-                                                <Trash2 size={18} />
-                                            </IconTileButton>
+                                                    <IconTileButton
+                                                        onClick={() => {
+                                                            setIsMoreOpen(false);
+                                                            setIsLinkModalOpen(true);
+                                                        }}
+                                                        disabled={!isSingleNodeFocused}
+                                                        title="Chèn link"
+                                                    >
+                                                        <LinkIcon size={18} />
+                                                    </IconTileButton>
+
+                                                    <IconTileButton
+                                                        onClick={() => {
+                                                            setIsMoreOpen(false);
+                                                            setIsImageModalOpen(true);
+                                                        }}
+                                                        disabled={!isSingleNodeFocused}
+                                                        title="Chèn ảnh"
+                                                    >
+                                                        <ImageIcon size={18} />
+                                                    </IconTileButton>
+
+                                                    <IconTileButton
+                                                        onClick={() => {
+                                                            setIsMoreOpen(false);
+                                                            handleRemoveImage();
+                                                        }}
+                                                        disabled={!selectedNode?.imageUrl}
+                                                        title="Xóa ảnh"
+                                                    >
+                                                        <Trash2 size={18} />
+                                                    </IconTileButton>
+                                                </div>
+                                            </div>
+
+                                            <div className="h-px bg-gray-200" />
                                         </>
                                     )}
 
-                                    <IconTileButton
-                                        onClick={() => {
-                                            setIsMoreOpen(false);
-                                            onUndo();
-                                        }}
-                                        disabled={readOnly}
-                                        title={readOnly ? 'Bạn đang ở chế độ chỉ xem' : 'Hoàn tác (Ctrl+Z)'}
-                                    >
-                                        <Undo size={18} />
-                                    </IconTileButton>
+                                    {/* ===== GROUP 2: Undo/Redo ===== */}
+                                    <div className="flex items-center gap-2">
+                                        <div className="grid grid-cols-2 gap-1">
+                                            <IconTileButton
+                                                onClick={() => {
+                                                    setIsMoreOpen(false);
+                                                    onUndo();
+                                                }}
+                                                disabled={readOnly}
+                                                title={readOnly ? 'Bạn đang ở chế độ chỉ xem' : 'Hoàn tác (Ctrl+Z)'}
+                                            >
+                                                <Undo size={18} />
+                                            </IconTileButton>
 
-                                    <IconTileButton
-                                        onClick={() => {
-                                            setIsMoreOpen(false);
-                                            onRedo();
-                                        }}
-                                        disabled={readOnly}
-                                        title={readOnly ? 'Bạn đang ở chế độ chỉ xem' : 'Làm lại (Ctrl+Y)'}
-                                    >
-                                        <Redo size={18} />
-                                    </IconTileButton>
-
-                                    <IconTileButton
-                                        onClick={() => {
-                                            setIsMoreOpen(false);
-                                            onZoomOut();
-                                        }}
-                                        title="Thu nhỏ (Ctrl + Scroll)"
-                                    >
-                                        <ZoomOut size={18} />
-                                    </IconTileButton>
-
-                                    <IconTileButton
-                                        onClick={() => {
-                                            setIsMoreOpen(false);
-                                            onZoomIn();
-                                        }}
-                                        title="Phóng to (Ctrl + Scroll)"
-                                    >
-                                        <ZoomIn size={18} />
-                                    </IconTileButton>
-
-                                    <IconTileButton
-                                        onClick={() => {
-                                            setIsMoreOpen(false);
-                                            onSave();
-                                        }}
-                                        disabled={!isDirty || readOnly}
-                                        title={
-                                            readOnly ? 'Bạn đang ở chế độ chỉ xem' : isDirty ? 'Lưu thay đổi (Ctrl+S)' : 'Đã lưu'
-                                        }
-                                    >
-                                        <Save size={18} />
-                                    </IconTileButton>
-
-                                    {!isGuest && (
-                                        <IconTileButton
-                                            onClick={() => {
-                                                setIsMoreOpen(false);
-                                                toggleChat();
-                                            }}
-                                            title="Chat thảo luận"
-                                            badge={unreadCount}
-                                            active={isChatOpen}
-                                        >
-                                            <MessageSquare size={18} />
-                                        </IconTileButton>
-                                    )}
-
-                                    <IconTileButton
-                                        onClick={() => {
-                                            setIsMoreOpen(false);
-                                            handleShareClick();
-                                        }}
-                                        title={isGuest ? 'Đăng nhập để chia sẻ' : 'Chia sẻ & Quản lý quyền'}
-                                        badge={isOwner ? pendingRequestsCount : undefined}
-                                        active={pendingRequestsCount > 0}
-                                    >
-                                        <Share2 size={18} />
-                                    </IconTileButton>
-
-                                    <IconTileButton
-                                        onClick={() => {
-                                            setIsMoreOpen(false);
-                                            onSetPresentationMode(true);
-                                        }}
-                                        title="Trình chiếu"
-                                    >
-                                        <Presentation size={18} />
-                                    </IconTileButton>
-
-                                    {!readOnly && (
-                                        <IconTileButton
-                                            onClick={() => {
-                                                setIsMoreOpen(false);
-                                                onToggleFormattingToolbar();
-                                            }}
-                                            title="Bật/tắt thanh định dạng"
-                                            active={isFormattingToolbarOpen}
-                                        >
-                                            <PanelRight size={18} />
-                                        </IconTileButton>
-                                    )}
-
-                                    {/* Export placeholder: để làm export đúng 100% cần code ExportButton.
-                      Nếu bạn gửi ExportButton.tsx mình sẽ bọc được vào dropdown. */}
-                                    <IconTileButton
-                                        onClick={() => {
-                                            setIsMoreOpen(false);
-                                            // TODO: integrate ExportButton behavior here
-                                        }}
-                                        title="Export"
-                                    >
-                                        <Download size={18} />
-                                    </IconTileButton>
-
-                                    {/* Zoom select full width row */}
-                                    <div className="col-span-6 mt-1 px-1">
-                                        <select
-                                            value={zoomLevels.includes(currentZoomPercent) ? currentZoomPercent : 'custom'}
-                                            onChange={(e) => handleZoomSelect(e)}
-                                            className="w-full px-3 py-2 rounded-lg bg-gray-50 border border-gray-200 text-sm"
-                                            title="Chọn mức zoom"
-                                        >
-                                            <option value="fit">Vừa vặn</option>
-                                            {zoomLevels.map((level) => (
-                                                <option key={level} value={level}>
-                                                    {level}%
-                                                </option>
-                                            ))}
-                                            {!zoomLevels.includes(currentZoomPercent) && (
-                                                <option value="custom" disabled>
-                                                    {currentZoomPercent}%
-                                                </option>
-                                            )}
-                                        </select>
+                                            <IconTileButton
+                                                onClick={() => {
+                                                    setIsMoreOpen(false);
+                                                    onRedo();
+                                                }}
+                                                disabled={readOnly}
+                                                title={readOnly ? 'Bạn đang ở chế độ chỉ xem' : 'Làm lại (Ctrl+Y)'}
+                                            >
+                                                <Redo size={18} />
+                                            </IconTileButton>
+                                        </div>
                                     </div>
 
-                                    <div className="col-span-6 mt-2 flex justify-end">
+                                    <div className="h-px bg-gray-200" />
+
+                                    {/* ===== GROUP 3: Zoom (Out + select + In) ===== */}
+                                    <div className="flex items-center gap-2">
+                                        <IconTileButton
+                                            onClick={() => {
+                                                setIsMoreOpen(false);
+                                                onZoomOut();
+                                            }}
+                                            title="Thu nhỏ (Ctrl + Scroll)"
+                                        >
+                                            <ZoomOut size={18} />
+                                        </IconTileButton>
+
+                                        <div className="flex-1">
+                                            <select
+                                                value={zoomLevels.includes(currentZoomPercent) ? currentZoomPercent : 'custom'}
+                                                onChange={handleZoomSelect}
+                                                className="w-full px-3 py-2 rounded-lg bg-gray-50 border border-gray-200 text-sm text-center"
+                                                title="Chọn mức zoom"
+                                            >
+                                                <option value="fit">Vừa vặn</option>
+                                                {zoomLevels.map((level) => (
+                                                    <option key={level} value={level}>
+                                                        {level}%
+                                                    </option>
+                                                ))}
+                                                {!zoomLevels.includes(currentZoomPercent) && (
+                                                    <option value="custom" disabled>
+                                                        {currentZoomPercent}%
+                                                    </option>
+                                                )}
+                                            </select>
+                                        </div>
+
+                                        <IconTileButton
+                                            onClick={() => {
+                                                setIsMoreOpen(false);
+                                                onZoomIn();
+                                            }}
+                                            title="Phóng to (Ctrl + Scroll)"
+                                        >
+                                            <ZoomIn size={18} />
+                                        </IconTileButton>
+                                    </div>
+
+                                    <div className="h-px bg-gray-200" />
+
+                                    {/* ===== GROUP 4: Save ===== */}
+                                    <div className="flex items-center gap-2">
+                                        <IconTileButton
+                                            onClick={() => {
+                                                setIsMoreOpen(false);
+                                                onSave();
+                                            }}
+                                            disabled={!isDirty || readOnly}
+                                            title={
+                                                readOnly
+                                                    ? 'Bạn đang ở chế độ chỉ xem'
+                                                    : isDirty
+                                                        ? 'Lưu thay đổi (Ctrl+S)'
+                                                        : 'Đã lưu'
+                                            }
+                                        >
+                                            <Save size={18} />
+                                        </IconTileButton>
+                                    </div>
+
+                                    <div className="h-px bg-gray-200" />
+
+                                    {/* ===== GROUP 5: Chat / Share ===== */}
+                                    <div className="flex items-center gap-2">
+                                        {!isGuest && (
+                                            <IconTileButton
+                                                onClick={() => {
+                                                    setIsMoreOpen(false);
+                                                    toggleChat();
+                                                }}
+                                                title="Chat thảo luận"
+                                                badge={unreadCount}
+                                                active={isChatOpen}
+                                            >
+                                                <MessageSquare size={18} />
+                                            </IconTileButton>
+                                        )}
+
+                                        <IconTileButton
+                                            onClick={() => {
+                                                setIsMoreOpen(false);
+                                                handleShareClick();
+                                            }}
+                                            title={isGuest ? 'Đăng nhập để chia sẻ' : 'Chia sẻ & Quản lý quyền'}
+                                            badge={isOwner ? pendingRequestsCount : undefined}
+                                            active={pendingRequestsCount > 0}
+                                        >
+                                            <Share2 size={18} />
+                                        </IconTileButton>
+                                    </div>
+
+                                    <div className="h-px bg-gray-200" />
+
+                                    {/* ===== GROUP 6: Export / Presentation / Formatting ===== */}
+                                    <div className="flex items-center gap-2">
+                                        <IconTileButton
+                                            onClick={() => {
+                                                setIsMoreOpen(false);
+                                                // TODO: integrate ExportButton behavior here
+                                            }}
+                                            title="Export"
+                                        >
+                                            <Download size={18} />
+                                        </IconTileButton>
+
+                                        <IconTileButton
+                                            onClick={() => {
+                                                setIsMoreOpen(false);
+                                                onSetPresentationMode(true);
+                                            }}
+                                            title="Trình chiếu"
+                                        >
+                                            <Presentation size={18} />
+                                        </IconTileButton>
+
+                                        {!readOnly && (
+                                            <IconTileButton
+                                                onClick={() => {
+                                                    setIsMoreOpen(false);
+                                                    onToggleFormattingToolbar();
+                                                }}
+                                                title="Bật/tắt thanh định dạng"
+                                                active={isFormattingToolbarOpen}
+                                            >
+                                                <PanelRight size={18} />
+                                            </IconTileButton>
+                                        )}
+                                    </div>
+
+                                    <div className="h-px bg-gray-200" />
+
+                                    {/* ===== GROUP 7: User ===== */}
+                                    <div className="flex justify-end">
                                         <UserAvatarMenu />
                                     </div>
                                 </div>

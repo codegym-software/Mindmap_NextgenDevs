@@ -94,10 +94,7 @@ export default function FormattingToolbar({
     }, [isDisabled]);
 
     return (
-        <div
-            className="fixed top-12 right-0 h-[calc(100vh-3rem)] bg-white border-l border-gray-200 shadow-sm z-30 flex flex-col text-gray-700 hidden lg:flex"
-            style={{ width: '280px', fontFamily: 'Arial' }}
-        >
+        <div className="fixed top-12 right-0 h-[calc(100vh-3rem)] bg-white border-l border-gray-200 shadow-sm z-30 flex flex-col text-gray-700" style={{ width: '280px', fontFamily: 'Arial' }}>
             {/* 1. Header (Tabs) */}
             <TabHeader activeTab={activeTab} setActiveTab={setActiveTab} isDisabled={isDisabled} />
 
@@ -163,7 +160,7 @@ function TabHeader({ activeTab, setActiveTab, isDisabled }: TabHeaderProps) {
 }
 
 // =================================================================================
-// Tab "Map"
+// Tab "Map" (Cài đặt toàn cục)
 // =================================================================================
 type MapPanelProps = {
     globalStructure: GlobalStructure;
@@ -198,13 +195,16 @@ function MapPanel({
 
     return (
         <div className="p-4 space-y-4">
+            {/* 1. Layout toàn cục */}
             <button
                 onClick={onLayoutAll}
-                className="w-full py-2 rounded-lg text-gray font-medium bg-gradient-to-r from-purple-100 to-blue-100 hover:from-blue-200 hover:to-purple-200 transition-all flex items-center justify-center gap-2"
+                className={`w-full py-2 rounded-lg text-gray font-medium bg-gradient-to-r from-purple-100 to-blue-100 hover:from-blue-200 hover:to-purple-200 transition-all flex items-center justify-center gap-2`}
             >
+                {/* <Layout size={19} /> */}
                 Layout toàn bộ
             </button>
 
+            {/* 2. Cấu trúc */}
             <RowItem label="Cấu trúc">
                 <div className="flex justify-between gap-1 w-full">
                     <StructureButton
@@ -225,8 +225,14 @@ function MapPanel({
                 </div>
             </RowItem>
 
-            <ColorItem label="Màu nền" color={currentBackgroundColor} onChange={onSetBackgroundColor} />
+            {/* 3. Màu nền */}
+            <ColorItem
+                label="Màu nền"
+                color={currentBackgroundColor}
+                onChange={onSetBackgroundColor}
+            />
 
+            {/* 4. Phông chữ toàn cục */}
             <RowItem label="Phông chữ">
                 <CustomSelect value={currentFont} onChange={onSetGlobalFont}>
                     {fonts.map((font) => (
@@ -237,7 +243,12 @@ function MapPanel({
                 </CustomSelect>
             </RowItem>
 
-            <ColorItem label="Nhánh" color={globalBranchColor} onChange={onSetGlobalBranchColor}>
+            {/* 5. Nhánh */}
+            <ColorItem
+                label="Nhánh"
+                color={globalBranchColor}
+                onChange={onSetGlobalBranchColor}
+            >
                 <div className="w-20">
                     <CustomSelect
                         value={String(currentLineWidth)}
@@ -254,7 +265,7 @@ function MapPanel({
 }
 
 // =================================================================================
-// Tab "Style"
+// Tab "Style" (Cài đặt Node)
 // =================================================================================
 type NodeStylePanelProps = {
     selectedIds: string[];
@@ -277,6 +288,7 @@ function NodeStylePanel({
                             onPasteStyle,
                             onResetStyle,
                         }: NodeStylePanelProps) {
+
     const computedStyle = useMemo(() => {
         return getNodeComputedStyle(currentNode, activeTheme, useEditorStore.getState().globalFont);
     }, [currentNode, activeTheme]);
@@ -311,37 +323,71 @@ function NodeStylePanel({
         setLocalLength(style.nodeLength || 'fit');
     }, [style.nodeLength]);
 
+
     const handleUpdate = (updates: Partial<NodeData>) => {
         if (selectedIds.length > 0) {
-            onUpdateNode({ ...updates });
+            const mergedUpdates = { ...updates };
+            onUpdateNode(mergedUpdates);
         }
     };
 
     return (
         <div className="p-4 space-y-1">
+            {/* 1. Kiểu nhanh */}
             {selectedIds.length > 0 && !(selectedIds.length === 1 && selectedIds[0] === 'root') && (
                 <CollapsiblePanel label="Kiểu nhanh" defaultOpen>
                     <div className="grid grid-cols-2 gap-2">
-                        <QuickStyleButton label="Rất quan trọng" styleId="important-dark" activeTheme={activeTheme} onClick={() => onApplyQuickStyle('important-dark')} />
-                        <QuickStyleButton label="Quan trọng" styleId="important-light" activeTheme={activeTheme} onClick={() => onApplyQuickStyle('important-light')} />
-                        <QuickStyleButton label="Gạch bỏ" styleId="strikethrough" activeTheme={activeTheme} onClick={() => onApplyQuickStyle('strikethrough')} />
-                        <QuickStyleButton label="Mặc định" styleId="default" activeTheme={activeTheme} onClick={() => onApplyQuickStyle('default')} />
+                        <QuickStyleButton
+                            label="Rất quan trọng"
+                            styleId="important-dark"
+                            activeTheme={activeTheme}
+                            onClick={() => onApplyQuickStyle('important-dark')}
+                        />
+                        <QuickStyleButton
+                            label="Quan trọng"
+                            styleId="important-light"
+                            activeTheme={activeTheme}
+                            onClick={() => onApplyQuickStyle('important-light')}
+                        />
+                        <QuickStyleButton
+                            label="Gạch bỏ"
+                            styleId="strikethrough"
+                            activeTheme={activeTheme}
+                            onClick={() => onApplyQuickStyle('strikethrough')}
+                        />
+                        <QuickStyleButton
+                            label="Mặc định"
+                            styleId="default"
+                            activeTheme={activeTheme}
+                            onClick={() => onApplyQuickStyle('default')}
+                        />
                     </div>
                 </CollapsiblePanel>
             )}
 
+            {/* 2. Hình dạng */}
             <CollapsiblePanel label="Hình dạng" defaultOpen>
-                <ColorItem label="Hình dạng" color={style.color || '#FFFFFF'} onChange={(color) => handleUpdate({ color })}>
+                <ColorItem
+                    label="Hình dạng"
+                    color={style.color || '#FFFFFF'}
+                    onChange={(color) => handleUpdate({ color })}
+                >
                     <div className="w-[83px]">
-                        <CustomSelect value={style.shape} onChange={(shape) => handleUpdate({ shape: shape as NodeData['shape'] })}>
+                        <CustomSelect
+                            value={style.shape}
+                            onChange={(shape) => handleUpdate({ shape: shape as NodeData['shape'] })}
+                        >
                             <Option value="roundedRect">Bo góc</Option>
                             <Option value="rectangle">Vuông</Option>
                             <Option value="underline">Gạch dưới</Option>
                         </CustomSelect>
                     </div>
                 </ColorItem>
-
-                <ColorItem label="Viền" color={style.borderColor || '#CCCCCC'} onChange={(borderColor) => handleUpdate({ borderColor })}>
+                <ColorItem
+                    label="Viền"
+                    color={style.borderColor || '#CCCCCC'}
+                    onChange={(borderColor) => handleUpdate({ borderColor })}
+                >
                     <div className="w-[83px]">
                         <CustomSelect
                             value={style.borderStyle}
@@ -353,15 +399,16 @@ function NodeStylePanel({
                         </CustomSelect>
                     </div>
                 </ColorItem>
-
                 <RowItem label="">
-                    <CustomSelect value={String(style.borderWidth)} onChange={(borderWidth) => handleUpdate({ borderWidth: Number(borderWidth) })}>
+                    <CustomSelect
+                        value={String(style.borderWidth)}
+                        onChange={(borderWidth) => handleUpdate({ borderWidth: Number(borderWidth) })}
+                    >
                         <Option value="0">Không</Option>
                         <Option value="2">Mỏng</Option>
                         <Option value="4">Dày</Option>
                     </CustomSelect>
                 </RowItem>
-
                 <RowItem label="Độ dài">
                     <div className="flex items-center gap-1 w-full">
                         <input
@@ -369,8 +416,9 @@ function NodeStylePanel({
                             value={localLength === 'fit' ? '' : String(localLength)}
                             placeholder="Fit"
                             onKeyDown={(e) => {
+                                // Prevent global Enter shortcuts (e.g., add sibling) while typing length
                                 e.stopPropagation();
-                                if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+                                if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
                             }}
                             onBlur={(e) => {
                                 let val: number | 'fit' = parseInt(e.target.value);
@@ -389,12 +437,13 @@ function NodeStylePanel({
                             className={`w-full flex-1 p-1.5 ${INPUT_BG} rounded text-sm outline-none border border-transparent focus:border-blue-500 focus:ring-1 focus:ring-blue-500`}
                         />
                         <button
-                            type="button"
                             onClick={() => {
                                 setLocalLength('fit');
                                 handleUpdate({ nodeLength: 'fit' as any });
                             }}
-                            className={`p-1.5 rounded text-sm ${style.nodeLength === 'fit' ? BUTTON_ACTIVE_BG : BUTTON_BG}`}
+                            className={`p-1.5 rounded text-sm ${
+                                style.nodeLength === 'fit' ? BUTTON_ACTIVE_BG : BUTTON_BG
+                            }`}
                         >
                             Fit
                         </button>
@@ -403,7 +452,11 @@ function NodeStylePanel({
             </CollapsiblePanel>
 
             <CollapsiblePanel label="Văn bản" defaultOpen>
-                <ColorItem label="Cỡ chữ" color={style.textColor || '#333333'} onChange={(textColor) => handleUpdate({ textColor })}>
+                <ColorItem
+                    label="Cỡ chữ"
+                    color={style.textColor || '#333333'}
+                    onChange={(textColor) => handleUpdate({ textColor })}
+                >
                     <input
                         type="number"
                         min={8}
@@ -413,9 +466,11 @@ function NodeStylePanel({
                         className={`w-20 p-1.5 ${INPUT_BG} rounded text-sm outline-none border border-transparent focus:border-blue-500 focus:ring-1 focus:ring-blue-500`}
                     />
                 </ColorItem>
-
                 <RowItem label="Phông chữ">
-                    <CustomSelect value={style.fontFamily} onChange={(fontFamily) => handleUpdate({ fontFamily })}>
+                    <CustomSelect
+                        value={style.fontFamily}
+                        onChange={(fontFamily) => handleUpdate({ fontFamily })}
+                    >
                         {fonts.map((font) => (
                             <Option key={font.value} value={font.value}>
                                 <span style={{ fontFamily: font.value }}>{font.name}</span>
@@ -423,18 +478,64 @@ function NodeStylePanel({
                         ))}
                     </CustomSelect>
                 </RowItem>
-
                 <div className="grid grid-cols-4 gap-1">
-                    <TextFormatButton icon={<Bold size={16} />} isActive={style.fontWeight === 'bold'} onClick={() => handleUpdate({ fontWeight: style.fontWeight === 'bold' ? 'normal' : 'bold' })} />
-                    <TextFormatButton icon={<Italic size={16} />} isActive={style.fontStyle === 'italic'} onClick={() => handleUpdate({ fontStyle: style.fontStyle === 'italic' ? 'normal' : 'italic' })} />
-                    <TextFormatButton icon={<Underline size={16} />} isActive={style.textDecoration === 'underline'} onClick={() => handleUpdate({ textDecoration: style.textDecoration === 'underline' ? 'none' : 'underline' })} />
-                    <TextFormatButton icon={<Strikethrough size={16} />} isActive={style.textDecoration === 'line-through'} onClick={() => handleUpdate({ textDecoration: style.textDecoration === 'line-through' ? 'none' : 'line-through' })} />
+                    <TextFormatButton
+                        icon={<Bold size={16} />}
+                        isActive={style.fontWeight === 'bold'}
+                        onClick={() =>
+                            handleUpdate({
+                                fontWeight: style.fontWeight === 'bold' ? 'normal' : 'bold',
+                            })
+                        }
+                    />
+                    <TextFormatButton
+                        icon={<Italic size={16} />}
+                        isActive={style.fontStyle === 'italic'}
+                        onClick={() =>
+                            handleUpdate({
+                                fontStyle: style.fontStyle === 'italic' ? 'normal' : 'italic',
+                            })
+                        }
+                    />
+                    <TextFormatButton
+                        icon={<Underline size={16} />}
+                        isActive={style.textDecoration === 'underline'}
+                        onClick={() => {
+                            if (style.textDecoration === 'underline') {
+                                handleUpdate({ textDecoration: 'none' });
+                            } else {
+                                handleUpdate({ textDecoration: 'underline' });
+                            }
+                        }}
+                    />
+                    <TextFormatButton
+                        icon={<Strikethrough size={16} />}
+                        isActive={style.textDecoration === 'line-through'}
+                        onClick={() => {
+                            if (style.textDecoration === 'line-through') {
+                                handleUpdate({ textDecoration: 'none' });
+                            } else {
+                                handleUpdate({ textDecoration: 'line-through' });
+                            }
+                        }}
+                    />
                 </div>
-
                 <div className="grid grid-cols-4 gap-1">
-                    <TextFormatButton icon={<AlignLeft size={16} />} isActive={style.textAlign === 'LEFT'} onClick={() => handleUpdate({ textAlign: 'LEFT' })} />
-                    <TextFormatButton icon={<AlignCenter size={16} />} isActive={style.textAlign === 'CENTER'} onClick={() => handleUpdate({ textAlign: 'CENTER' })} />
-                    <TextFormatButton icon={<AlignRight size={16} />} isActive={style.textAlign === 'RIGHT'} onClick={() => handleUpdate({ textAlign: 'RIGHT' })} />
+                    <TextFormatButton
+                        icon={<AlignLeft size={16} />}
+                        isActive={style.textAlign === 'LEFT'}
+                        onClick={() => handleUpdate({ textAlign: 'LEFT' })}
+                    />
+                    <TextFormatButton
+                        icon={<AlignCenter size={16} />}
+                        isActive={style.textAlign === 'CENTER'}
+                        onClick={() => handleUpdate({ textAlign: 'CENTER' })}
+                    />
+                    <TextFormatButton
+                        icon={<AlignRight size={16} />}
+                        isActive={style.textAlign === 'RIGHT'}
+                        onClick={() => handleUpdate({ textAlign: 'RIGHT' })}
+                    />
                     <TextFormatButton
                         icon={
                             style.textCase === 'lowercase' ? <CaseLower size={16} /> :
@@ -455,6 +556,7 @@ function NodeStylePanel({
                 </div>
             </CollapsiblePanel>
 
+            {/* 5. Nhánh (con) */}
             <CollapsiblePanel label="Kiểu nhánh" defaultOpen>
                 <RowItem label="Đường nối">
                     <div className="flex gap-2 items-center w-full">
@@ -478,8 +580,11 @@ function NodeStylePanel({
                         </label>
                     </div>
                 </RowItem>
-
-                <ColorItem label="Màu nhánh" color={style.branchColor || '#666666'} onChange={(branchColor) => handleUpdate({ branchColor })}>
+                <ColorItem
+                    label="Màu nhánh"
+                    color={style.branchColor || '#666666'}
+                    onChange={(branchColor) => handleUpdate({ branchColor })}
+                >
                     <div className="flex-1 w-20">
                         <CustomSelect
                             value={style.branchLineThickness}
@@ -493,6 +598,7 @@ function NodeStylePanel({
                 </ColorItem>
             </CollapsiblePanel>
 
+            {/* 6. Thao tác nhanh */}
             <CollapsiblePanel label="Thao tác" defaultOpen>
                 <div className="grid grid-cols-3 gap-1">
                     <TextFormatButton icon={<Copy size={16} />} onClick={onCopyStyle} />
@@ -505,7 +611,7 @@ function NodeStylePanel({
 }
 
 // =================================================================================
-// Helpers (giữ nguyên)
+// Components con (Helpers)
 // =================================================================================
 
 type TabButtonProps = {
