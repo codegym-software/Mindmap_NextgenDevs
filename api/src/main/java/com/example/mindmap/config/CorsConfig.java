@@ -13,7 +13,7 @@ import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 public class CorsConfig {
 
     // Allow multiple origins from config, split by comma
-    @Value("#{'${app.cors.allowed-origins:http://localhost:3000,http://127.0.0.1:3000}'.split(',')}")
+    @Value("#{'${app.cors.allowed-origins:https://app.nhom7nextgen.cloud}'.split(',')}")
     private List<String> allowedOrigins;
 
     @Value("${app.cors.allowed-methods:GET,POST,PUT,DELETE,OPTIONS,PATCH}") // Allow PATCH too
