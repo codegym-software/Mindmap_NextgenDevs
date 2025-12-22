@@ -15,6 +15,7 @@ import UserAvatarMenu from '../auth/UserAvatarMenu';
 import { useEditorStore, NodeData } from '../../app/store/useEditorStore'; 
 import { useMindmapsStore } from '../../app/store/useMindmapsStore';
 import ExportButton from './ExportButton';
+import { useAuth } from '../../hooks/useAuth';
 
 // New components
 import InsertDropdown from './InsertDropdown';
@@ -123,6 +124,12 @@ const EditorToolbar: React.FC<EditorToolbarProps> = ({
 
   // Hooks cho Chat (ft/chat)
   const { toggleChat, unreadCount, isOpen } = useChatStore();
+  
+  // Check if guest user
+  const isGuest = !!currentMindmapId && currentMindmapId.startsWith('guest-');
+  
+  // Auth hook
+  const { login } = useAuth();
   // --- MERGED STATE END ---
 
   const setName = (newName: string) => useEditorStore.setState({ 
@@ -163,6 +170,18 @@ const EditorToolbar: React.FC<EditorToolbarProps> = ({
       // no-op
     } else {
       onSetZoom(Number(value) / 100);
+    }
+  };
+
+  // Handle Share button - yêu cầu đăng nhập nếu là guest
+  const handleShareClick = () => {
+    if (isGuest) {
+      // Guest cần đăng nhập để sử dụng tính năng share
+      sessionStorage.setItem('returnTo', window.location.pathname);
+      login('login' as any);
+    } else {
+      // User đã đăng nhập, mở modal share
+      onShare();
     }
   };
 
@@ -355,31 +374,34 @@ const EditorToolbar: React.FC<EditorToolbarProps> = ({
           
           <div className="w-px h-6 bg-gray-300 mx-2" />
 
-          <button
-            type="button"
-            onClick={toggleChat}
-            className={`relative p-2 rounded-md transition-colors ${
-              isOpen
-                ? 'bg-gray-200 text-blue-600'
-                : 'text-gray-700 hover:bg-gray-300/50'
-            }`}
-            title="Chat thảo luận"
-          >
-            <MessageSquare size={20} />
-            {unreadCount > 0 && (
-              <span className="absolute -top-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-red-500 text-[10px] text-white">
-                {unreadCount}
-              </span>
-            )}
-          </button>
+          {/* Chat Button - Ẩn nếu là Guest */}
+          {!isGuest && (
+            <button
+              type="button"
+              onClick={toggleChat}
+              className={`relative p-2 rounded-md transition-colors ${
+                isOpen
+                  ? 'bg-gray-200 text-blue-600'
+                  : 'text-gray-700 hover:bg-gray-300/50'
+              }`}
+              title="Chat thảo luận"
+            >
+              <MessageSquare size={20} />
+              {unreadCount > 0 && (
+                <span className="absolute -top-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-red-500 text-[10px] text-white">
+                  {unreadCount}
+                </span>
+              )}
+            </button>
+          )}
 
           <button 
-            onClick={onShare} 
+            onClick={handleShareClick}
             className={`relative p-2 rounded-md transition-colors ${
                // Nếu có request thì highlight nhẹ
                pendingRequestsCount > 0 ? 'bg-blue-50 text-blue-600' : 'hover:bg-gray-300/50 text-gray-700'
             }`} 
-            title="Chia sẻ & Quản lý quyền"
+            title={isGuest ? "Đăng nhập để chia sẻ" : "Chia sẻ & Quản lý quyền"}
           >
             <Share2 size={20} />
             

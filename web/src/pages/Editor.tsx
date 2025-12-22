@@ -4342,8 +4342,8 @@ const handleFitToScreen = useCallback(() => {
 
         <Sidebar />
 
-        {/* Γ£à CHAT SIDEBAR */}
-        {isConnected && id && (
+        {/* Γ£à CHAT SIDEBAR - Chỉ hiện cho user đã đăng nhập (không phải guest) */}
+        {isConnected && id && !isGuest && (
           <ChatSidebar
             mindmapId={id}
             sendPatch={sendPatch}
