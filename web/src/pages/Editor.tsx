@@ -211,10 +211,6 @@ function getCursorColor(seed: string): string {
 // Component
 // =================================================================================
 
-interface EditorProps {
-  mode?: 'edit' | 'share';
-}
-
 export function loadGuestDoc(id: string): FeMindmapDoc | null {
   try {
     const raw = localStorage.getItem(GUEST_BUCKET);
@@ -456,7 +452,7 @@ const URLImage = ({ src, x, y, width, height, onImageLoad }: any) => {
   return <KonvaImage image={image} x={x} y={y} width={width} height={height} cornerRadius={4} />;
 };
 
-export default function Editor({ mode = 'edit' }: EditorProps) {
+export default function Editor() {
   const { id } = useParams<{ id?: string }>();
   const navigate = useNavigate();
   const { addToast } = useToast();
@@ -665,7 +661,6 @@ const {
     }, [isFormattingToolbarOpen, dimensions.width]);
   const editingInputRef = useRef<HTMLTextAreaElement | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
-  const isShareRoute = mode === 'share';
 
   // [DOCKING SIDEBAR] Panel width constant - must be before useEffect that uses it
   const PANEL_WIDTH = 280;
@@ -4348,12 +4343,6 @@ const handleFitToScreen = useCallback(() => {
             mindmapId={id}
             sendPatch={sendPatch}
           />
-        )}
-
-        {mode === 'share' && isReadOnly && (
-          <div className="absolute top-14 left-1/2 -translate-x-1/2 bg-blue-100 text-blue-800 px-4 py-1 rounded-full text-xs font-medium z-50 pointer-events-none opacity-80">
-            Chế độ xem (View Only)
-          </div>
         )}
 
         {/* Textarea edit node */}

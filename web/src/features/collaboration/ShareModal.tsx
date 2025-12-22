@@ -58,17 +58,20 @@ export default function ShareModal({
   const [collaborators, setCollaborators] = useState<Collaborator[]>([]);
   const [shareSettings, setShareSettings] = useState<ShareSettingsResponse | null>(null);
 
-  // Form states
+  const [workspaceVisibility, setWorkspaceVisibility] = useState<
+    'PRIVATE' | 'WORKSPACE_VIEW' | 'WORKSPACE_EDIT'
+  >('PRIVATE');
+
+  // State cho form mời
   const [inviteEmail, setInviteEmail] = useState('');
   const [invitePermission, setInvitePermission] = useState<Permission>('VIEWER');
   const [isInviting, setIsInviting] = useState(false);
   const [requestPermissions, setRequestPermissions] = useState<Record<string, Permission>>({});
 
-  // Confirm Modal state
+  // State cho Confirm Modal
   const [isConfirmModalOpen, setIsConfirmModalOpen] = useState(false);
   const [userToRemove, setUserToRemove] = useState<{ userId: string; name: string } | null>(null);
 
-  // --- Handlers
   const handleApproveRequestInternal = async (uid: string, perm: Permission) => {
     if (!onApproveRequest) return;
     try {
@@ -93,6 +96,7 @@ export default function ShareModal({
       void loadData();
       setActiveTab('invite');
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, mindmapId]);
 
   const loadData = async () => {
@@ -104,17 +108,21 @@ export default function ShareModal({
       ]);
 
       setCollaborators(collabs);
+
       const doc: any = settings;
       const viewLink = doc.accessSettings?.isPublic
-        ? `${window.location.origin}/share/${mindmapId}`
+        ? `${window.location.origin}/editor/${mindmapId}`
         : null;
-        
       setShareSettings({
         mindmapId,
         isPublic: doc.accessSettings?.isPublic || false,
         publicAccessLevel: doc.accessSettings?.publicAccessLevel || 'DISABLED',
         shareLink: viewLink,
       });
+
+      if (doc.accessSettings?.workspaceVisibility) {
+        setWorkspaceVisibility(doc.accessSettings.workspaceVisibility);
+      }
     } catch (e) {
       console.error(e);
       addToast('Không thể tải thông tin chia sẻ', 'error');
@@ -170,6 +178,23 @@ export default function ShareModal({
     }
   };
 
+  const handleRemoveCancel = () => {
+    setIsConfirmModalOpen(false);
+    setUserToRemove(null);
+  };
+
+  const handleUpdateWorkspaceVisibility = async (
+    value: 'PRIVATE' | 'WORKSPACE_VIEW' | 'WORKSPACE_EDIT'
+  ) => {
+    try {
+      setWorkspaceVisibility(value);
+      addToast('Đã cập nhật chế độ chia sẻ trong Workspace', 'success');
+    } catch (e) {
+      console.error(e);
+      addToast('Lỗi cập nhật', 'error');
+    }
+  };
+
   const handleUpdatePublicAccess = async (value: 'NONE' | 'VIEW' | 'EDIT') => {
     const isPublic = value !== 'NONE';
     const publicAccessLevel =
@@ -180,7 +205,8 @@ export default function ShareModal({
         isPublic,
         publicAccessLevel,
       });
-      const link = isPublic ? `${window.location.origin}/share/${mindmapId}` : null;
+
+      const link = isPublic ? `${window.location.origin}/editor/${mindmapId}` : null;
       setShareSettings({ ...res, shareLink: link });
       addToast('Đã cập nhật chế độ chia sẻ công khai', 'success');
     } catch (e) {
@@ -189,36 +215,31 @@ export default function ShareModal({
   };
 
   const copyToClipboard = (text: string) => {
-    navigator.clipboard.writeText(text).then(
-      () => addToast('Đã sao chép vào bộ nhớ tạm', 'success'),
-      () => addToast('Lỗi sao chép', 'error')
-    );
+    navigator.clipboard
+      .writeText(text)
+      .then(() => addToast('Đã sao chép vào bộ nhớ tạm', 'success'))
+      .catch(() => addToast('Không thể sao chép', 'error'));
   };
 
   // Helpers
   const currentUrl = shareSettings?.shareLink || window.location.href;
-  const editLink =
-    shareSettings?.isPublic && shareSettings?.publicAccessLevel === 'EDIT'
-      ? `${window.location.origin}/editor/${mindmapId}`
-      : null;
-  const embedCode = `<iframe src="${currentUrl}?embed=true" width="800" height="600" frameborder="0" style="border:1px solid #eee; border-radius:8px;"></iframe>`;
+  const embedCode = `<iframe src="${currentUrl}?embed=true" width="800" height="600" frameborder="0" style="border:1px solid #eee; border-radius:8px; box-shadow:0 4px 12px rgba(0,0,0,0.1);"></iframe>`;
 
   const shareToSocial = (platform: 'facebook' | 'twitter' | 'linkedin') => {
     if (!shareSettings?.isPublic) {
-      addToast('Vui lòng bật "Chia sẻ công khai" trước khi chia sẻ.', 'error');
+      addToast('Vui lòng bật "Chia sẻ công khai" trước.', 'error');
       return;
     }
     let url = '';
-    const encodedUrl = encodeURIComponent(currentUrl);
     switch (platform) {
       case 'facebook':
-        url = `https://www.facebook.com/sharer/sharer.php?u=${encodedUrl}`;
+        url = `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(currentUrl)}`;
         break;
       case 'twitter':
-        url = `https://twitter.com/intent/tweet?url=${encodedUrl}&text=Check out my mindmap!`;
+        url = `https://twitter.com/intent/tweet?url=${encodeURIComponent(currentUrl)}&text=Check out my mindmap!`;
         break;
       case 'linkedin':
-        url = `https://www.linkedin.com/sharing/share-offsite/?url=${encodedUrl}`;
+        url = `https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(currentUrl)}`;
         break;
     }
     window.open(url, '_blank', 'width=600,height=400');
@@ -226,7 +247,7 @@ export default function ShareModal({
 
   if (!isOpen) return null;
 
-  return (
+    return (
     <div
       className="fixed inset-0 bg-gray-900/60 z-[60] flex items-center justify-center p-4 backdrop-blur-sm animate-[fadeIn_0.2s_ease-out]"
       onClick={onClose}
@@ -328,13 +349,14 @@ export default function ShareModal({
 
                     {shareSettings?.isPublic && shareSettings.shareLink && (
                       <div className="space-y-3 pt-2">
-                         {/* Link Xem */}
                          <div>
                             <label className="text-[11px] font-semibold text-gray-500 uppercase tracking-wide mb-1.5 flex items-center gap-1">
-                                Link xem (View Only)
+                                {shareSettings.publicAccessLevel === 'EDIT' ? 'Link chia sẻ (Chỉnh sửa)' : 'Link chia sẻ (Chỉ xem)'}
                             </label>
                             <div className="flex items-center gap-2 bg-white border border-gray-200 rounded-lg p-1.5 focus-within:ring-2 focus-within:ring-blue-500/20 focus-within:border-blue-500 transition-all">
-                                <div className="pl-2 text-gray-400"><Eye size={14}/></div>
+                                <div className="pl-2 text-gray-400">
+                                  {shareSettings.publicAccessLevel === 'EDIT' ? <Pencil size={14}/> : <Eye size={14}/>}
+                                </div>
                                 <input
                                     readOnly
                                     value={shareSettings.shareLink}
@@ -348,29 +370,6 @@ export default function ShareModal({
                                 </button>
                             </div>
                          </div>
-
-                         {/* Link Sửa - Chỉ hiện khi bật quyền Edit */}
-                         {editLink && (
-                           <div className="animate-[fadeIn_0.3s_ease-out]">
-                                <label className="text-[11px] font-semibold text-amber-600 uppercase tracking-wide mb-1.5 flex items-center gap-1">
-                                    Link chỉnh sửa (Full Access)
-                                </label>
-                                <div className="flex items-center gap-2 bg-amber-50/50 border border-amber-200 rounded-lg p-1.5 focus-within:ring-2 focus-within:ring-amber-500/20 focus-within:border-amber-500 transition-all">
-                                    <div className="pl-2 text-amber-500"><Pencil size={14}/></div>
-                                    <input
-                                        readOnly
-                                        value={editLink}
-                                        className="flex-1 text-xs text-gray-700 outline-none min-w-0 bg-transparent font-mono font-medium"
-                                    />
-                                    <button
-                                        onClick={() => copyToClipboard(editLink)}
-                                        className="bg-white border border-amber-200 hover:bg-amber-100 text-amber-800 px-3 py-1.5 rounded-md text-xs font-medium transition-colors flex items-center gap-1.5 shadow-sm"
-                                    >
-                                        <Copy size={12} />
-                                    </button>
-                                </div>
-                           </div>
-                         )}
                       </div>
                     )}
                   </div>
