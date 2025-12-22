@@ -4330,6 +4330,7 @@ const handleFitToScreen = useCallback(() => {
           onToggleBoundary={handleToggleBoundary}
           onAddRelationship={handleAddRelationship}
           onAddSummary={handleAddSummary}
+          isFormattingToolbarOpen={isFormattingToolbarOpen}
           stageRef={stageRef}
         />
         {!presentationMode && <Sidebar />}
