@@ -57,6 +57,7 @@ infra/logs/
 infra/tmp/
 *.pid
 infra/.yml
+infra/
 
 # ==============================
 #  Environment and secrets

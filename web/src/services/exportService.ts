@@ -592,8 +592,13 @@ function calculateBoundingBox(nodes: NodeData[]): {
 function findCursorLayer(stage: Konva.Stage): Konva.Layer | null {
   // Giả định CursorLayer là layer cuối cùng (convention)
   // Hoặc tìm theo tên nếu có đặt name
+<<<<<<< HEAD
   const layers = stage.getChildren(node => node instanceof Konva.Layer) as Konva.Layer[];
 
+=======
+  const layers = stage.children as any as Konva.Layer[];
+  
+>>>>>>> 10f3c4938d616f6c3e307b3e8bbf2b76b8860e77
   // Tìm layer có listening = false (CursorLayer có listening={false})
   for (let i = 0; i < layers.length; i++) {
     const layer = layers[i] as Konva.Layer;
